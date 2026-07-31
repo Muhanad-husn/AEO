@@ -1,9 +1,9 @@
 # Source inventory
 
-What was copied into `source/`, where it came from, and what is missing. Assembled
-from the five per-source manifests in [`source/_manifests/`](../source/_manifests/).
+What was copied into `source/`, where it came from, and what is missing. Assembled from
+the seven per-source manifests in [`source/_manifests/`](../source/_manifests/).
 
-**Total: 299 files, 1,431,585 bytes (1.4 MB).**
+**Total: 556 files, 2,648,377 bytes (2.5 MB). All 556 tracked in git.**
 
 | Destination | Files | Bytes | Copied from | Manifest |
 | --- | ---: | ---: | --- | --- |
@@ -12,20 +12,22 @@ from the five per-source manifests in [`source/_manifests/`](../source/_manifest
 | `source/axial/` | 66 | 599,418 | `D:\axial\` — `.claude/`, selected `docs/`, root files | [03](../source/_manifests/03-axial-claude.md), [04](../source/_manifests/04-principles-and-metrics.md) |
 | `source/eval-tooling/` | 21 | 237,004 | `skill-creator` plugin (marketplace copy) | [05](../source/_manifests/05-eval-tooling.md) |
 | `source/global-claude/` | 3 | 1,337 | `~/.claude/` CLAUDE.md + settings | [04](../source/_manifests/04-principles-and-metrics.md) |
+| `source/v1-archive/` | 174 | 596,641 | The pre-v2 harness, recovered from the recycle bin | [06](../source/_manifests/06-v1-archive.md) |
+| `source/plugin-format/` | 43 | 314,895 | `~/.claude/plugins/marketplaces/claude-plugins-official/` | [07](../source/_manifests/07-plugin-format.md) |
 | `source/upstream-red-green-refactor/` | 38 | 300,120 | `github.com/brainqub3/red-green-refactor` @ `593e7ab` (MIT, © john-adeojo) | [DECISIONS D2](DECISIONS.md) |
-| `source/_manifests/` | 5 | 96,354 | Written during the copy | — |
+| `source/_manifests/` | 7 | 101,490 | Written during the copy | — |
 
 ## What each source contributes
 
 **`global-skill/`** — the artifact being generalized. `SKILL.md` (33 KB) plus five
 references (`agents`, `hooks`, `harness-and-sprint`, `directory-tree`,
-`claude-md-handbook`) and `evals/evals.json`. Two plugins it names are vendored
-under `_deps/`: `github` (a thin remote-MCP declaration) and `pr-review-toolkit`
-(cited as design lineage).
+`claude-md-handbook`) and `evals/evals.json`. Two plugins it names are vendored under
+`_deps/`: `github` (a thin remote-MCP declaration) and `pr-review-toolkit` (cited as
+design lineage).
 
-**`axial/.claude/`** — the matured implementation, and the most load-bearing
-source here. Four role agents (builder, reviewer, spec-author, triage), five
-PowerShell hooks, ten skills, three Python tools.
+**`axial/dot-claude/`** — the matured implementation, and the most load-bearing source
+here. Four role agents (builder, reviewer, spec-author, triage), five PowerShell hooks,
+ten skills, three Python tools.
 
 Hook wiring, from `settings.json`:
 
@@ -35,12 +37,13 @@ Hook wiring, from `settings.json`:
 | PreToolUse | Bash | `commit-gate.ps1` | Blocks commits on `main` (except docs-only); blocks commit when pytest or ruff is red |
 | PreToolUse | Bash, GitHub merge tools | `block-merge.ps1` | Blocks subagent merge, push-to-main, branch delete |
 | PreToolUse | Edit\|Write | `path-guard.ps1` | Blocks role subagents writing into `.claude/` |
-| PostToolUse | Edit\|Write | `format.ps1` | Runs `ruff format`; never blocks |
+| PostToolUse | Edit\|Write | `format.ps1` | Runs `ruff format`; never blocks. **Not ported** — [D13](DECISIONS.md) |
 
-Each role agent re-declares `path-guard` and `block-merge` in its own frontmatter
-as defense-in-depth against a known Claude Code frontmatter-hook bug.
+Each role agent re-declares `path-guard` and `block-merge` in its own frontmatter as
+defence-in-depth against a known Claude Code frontmatter-hook bug. That second layer is
+impossible in a plugin (C-01).
 
-**Process-metrics tooling** (`axial/.claude/tools/` and `axial/docs/_found/src/`):
+**Process-metrics tooling** (`axial/dot-claude/tools/` and `axial/docs/_found/src/`):
 
 | Mechanism | What it measures | Output |
 | --- | --- | --- |
@@ -52,15 +55,29 @@ as defense-in-depth against a known Claude Code frontmatter-hook bug.
 | `run_report.py` | Per-brief run report | report file |
 | `docs/tdd-evidence/` | Pytest evidence trail, 61 feature dirs / 191 files | described only, not copied |
 
-**`global-workspace/`** — the measurement history. Two things live here: skill-trigger
-accuracy (`probe.json`, `trigger-eval*.json`, `trigger-validation.*`, `trigger-opt/`)
-and scaffold grading (`grade_repo.py`, 170 lines, 9–11 deterministic checks).
-`benchmark.json` records the skill's measured value: **with_skill pass_rate 1.0 vs
-without_skill 0.27–0.45** in iteration-2.
+**`v1-archive/`** — the pre-v2 harness recovered from the recycle bin, from a *different
+product*: a web app with a map frontend, a Playwright e2e layer and a Node/Python split.
+The only non-Python instance of this harness that exists, which makes it primary evidence
+for the generalization. It holds two things present nowhere else: **`hooks/lib.ps1`**, the
+shared hook library v2 lost (V-13), and **`hooks/tests/`**, the only gate tests that exist.
+Also six slash-command lanes (V-15) and a committed `VENDORED.md` + `UPSTREAM-LICENSE`
+(V-14).
 
-**`eval-tooling/skill-creator/`** — the orchestrator that produced the workspace data.
-It was not in the original scope; the workspace holds the grader but not the runner,
-so it was pulled in separately.
+**`plugin-format/`** — three official plugins as format references. `example-plugin` is
+the canonical minimal layout. `pr-review-toolkit` is the closest structural analogue to
+our role roster, and its six specialists are candidate optional reviewer lenses.
+**`hookify` is the one that matters**: it ships gates through `hooks/hooks.json` with
+`${CLAUDE_PLUGIN_ROOT}` and per-hook timeouts — the precedent for our own wiring. Its
+`python3` invocation is the precedent we do **not** follow ([D8](DECISIONS.md)).
+
+**`global-workspace/`** — the measurement history. Two things live here: skill-trigger
+accuracy (`probe.json`, `trigger-eval*.json`, `trigger-validation.*`, `trigger-opt/`) and
+scaffold grading (`grade_repo.py`, 170 lines, 9–11 deterministic checks). `benchmark.json`
+records the skill's measured value: **with_skill pass_rate 1.0 vs without_skill 0.27–0.45**
+in iteration-2. That is the number Phase 2 must reproduce against the plugin.
+
+**`eval-tooling/skill-creator/`** — the orchestrator that produced the workspace data. The
+workspace holds the grader but not the runner, so it was pulled in separately.
 
 | Script | Produces |
 | --- | --- |
@@ -70,52 +87,41 @@ so it was pulled in separately.
 | `generate_review.py` | `review.html`, or `feedback.json` via server POST |
 | — hand-authored — | `grading.json`, `eval_metadata.json`, `probe.json`, `trigger-eval.json` |
 
-**Principles** — `axial/root/CLAUDE.md` lines 23–36 ("Developer principles") and
-44–62 ("Answering the founder"); `axial/root/CLAUDE.local.md` lines 55–75 ("Build
-philosophy", the same four principles with worked examples), 12–20 ("two rules"),
-123–129 ("Run logging" mandate). The global `~/.claude/CLAUDE.md` "Core Principle"
-is consistent with Axial's "specs are living documentation, not law". No
-contradictions found. The active subset is restated in [`CLAUDE.md`](../CLAUDE.md).
+**Principles** — `axial/root/CLAUDE.md` lines 23–36 ("Developer principles") and 44–62
+("Answering the founder"); `axial/root/CLAUDE.local.md` lines 55–75 ("Build philosophy",
+the same four principles with worked examples), 12–20 ("two rules"), 123–129 ("Run logging"
+mandate). The global `~/.claude/CLAUDE.md` "Core Principle" is consistent with production's
+"specs are living documentation, not law". No contradictions found. The active subset is
+restated in [`CLAUDE.md`](../CLAUDE.md).
 
 ## Gaps and open questions
 
-1. ~~**`red-green-refactor` is docs-only.**~~ **Resolved** by [D2](DECISIONS.md).
-   The upstream repo is vendored at `source/upstream-red-green-refactor/`. It turned
-   out to be the origin of five of Axial's ten skills, with all executable code
-   byte-identical — Axial's divergence is confined to SKILL.md prose. The runtime
-   clone step can be removed. MIT licensed; redistribution requires preserving the
-   notice.
-2. **`package_skill.py` cannot build a plugin.** It packages a bare skill folder into a
-   `.skill` zip and has no `.claude-plugin/plugin.json` awareness at all. The existing
-   tooling cannot produce the artifact this repo is aiming for.
-3. **Grading is not reproducible from the copy alone.** `grade_repo.py` grades the
-   `ai-enterprise-template` scaffold specifically, and `grading.json` is hand-authored
-   per the skill-creator workflow — no script in `eval-tooling/` generates it.
-4. **The eval pipeline shells out to `claude -p`** and must run from inside
-   `skills/skill-creator/` because of module-style imports. Running it from `D:\AEO`
-   needs a wrapper.
+1. **`package_skill.py` cannot build a plugin.** It packages a bare skill folder into a
+   `.skill` zip with no `.claude-plugin/plugin.json` awareness. Closed by
+   [D3](DECISIONS.md): we write our own.
+2. **Grading is not reproducible from the copy alone, and is about to be wrong anyway.**
+   `grade_repo.py` grades the `ai-enterprise-template` scaffold specifically — a
+   `.claude/{agents,skills,hooks}` tree the plugin will no longer produce, so every check
+   fails by design after migration. `grading.json` is hand-authored per the skill-creator
+   workflow; no script generates it. Owned by Phase 2's measurement slice.
+3. **The eval pipeline shells out to `claude -p`** and must run from inside
+   `skills/skill-creator/` because of module-style imports. Running it from `D:\AEO` needs
+   a wrapper.
 
 ## Portability blockers for plugin packaging
 
-Collected across manifests; each is cited with file and line in its manifest.
+Each is cited with file and line in its manifest. Every one now has an owner.
 
-- All five hooks are Windows PowerShell only, with MSYS path normalization baked in.
-  No POSIX implementation exists anywhere.
-- Hook invocation is hardcoded to `powershell -NoProfile -ExecutionPolicy Bypass -File`,
-  from an empirical finding pinned to Claude Code 2.1.201.
-- The Python/`uv`/`pytest`/`ruff` toolchain is hardcoded into `commit-gate.ps1`,
-  `format.ps1`, and the directory-tree skeleton.
-- Absolute paths: `D:/axial`, `D:/axial-vault-query`, `../axial-vault-hold` in
-  `settings.local.json`; `D:\proj-xref` / `D:\proj` in worked examples;
-  `D:/eval-scratch/...` in `evals/evals.json` and captured grading records.
-- `run-monitor.py` uses `REPO = parents[2]` and an Axial-specific pipeline-stage map;
-  `axial-watch.py` carries a hardcoded per-model price table and shells out to
-  `powershell.exe Get-CimInstance`.
-- The GitHub MCP tool namespace (`mcp__plugin_github_github__…`) is hardcoded from one
-  observed install.
-- Multiple skills assume `main` as the default branch and `gh`/GitHub as the forge.
-- `directory-tree.md` hardcodes the example repo name `ai-enterprise-template` and
-  states a GitHub Pro tier assumption as settled fact.
+| Blocker | Owner |
+| --- | --- |
+| All five hooks are Windows PowerShell only, with MSYS path normalization baked in. No POSIX implementation exists | [D8](DECISIONS.md) · Phase 1 |
+| Hook invocation hardcoded to `powershell -NoProfile -ExecutionPolicy Bypass -File`, from a finding pinned to Claude Code 2.1.201 | [D8](DECISIONS.md) · C-05 |
+| The Python/`uv`/`pytest`/`ruff` toolchain is hardcoded into `commit-gate.ps1`, `format.ps1` and the directory-tree skeleton | [D10](DECISIONS.md) · P1.3 |
+| Absolute paths: `D:/axial`, `D:/axial-vault-query`, `../axial-vault-hold` in `settings.local.json`; `D:\proj-xref` / `D:\proj` in worked examples; `D:/eval-scratch/…` in `evals/evals.json` | Phase 2 |
+| `run-monitor.py` uses `REPO = parents[2]` and an Axial-specific stage map; `axial-watch.py` carries a hardcoded price table and shells out to `powershell.exe Get-CimInstance` | Phase 3 · V-10 |
+| The GitHub MCP tool namespace (`mcp__plugin_github_github__…`) is hardcoded from one observed install | [D14](DECISIONS.md) · P1.2 |
+| Multiple skills assume `main` as the default branch and `gh`/GitHub as the forge | [D14](DECISIONS.md) · P1.2 |
+| `directory-tree.md` hardcodes the example repo name `ai-enterprise-template` and states a GitHub Pro tier assumption as settled fact | Phase 6 |
 
 ## Deliberately not copied
 
@@ -127,36 +133,43 @@ Collected across manifests; each is cited with file and line in its manifest.
 | `axial/data/`, `.venv/`, caches | Bulk and binary |
 | `axial/secrets/` | Secrets policy |
 | Axial product specs, CHARTER, experiments, config, scratchpad | Domain-specific to Axial |
+| v1's binary evidence blobs (`.png`, `.webm`, Playwright HTML reports) | Bulk; all `.txt` and `.json` evidence kept |
 | `~/.claude/.credentials.json` | Never touched |
 
-No secrets were copied. Across all five agents the only finding was a placeholder
-token (`ghp_example_replace_me`) in captured eval data, which is not a real
-credential. Zero redactions were required.
+No secrets were copied. Across all seven copies the only finding was a placeholder token
+(`ghp_example_replace_me`) in captured eval data, which is not a real credential. Zero
+redactions were required.
 
 ## Snapshot integrity notes
 
-- `.gitattributes` sets `source/** -text` so git performs no line-ending
-  normalization on the copies. Without it, `core.autocrlf` would rewrite LF to
-  CRLF and the snapshot would no longer be byte-identical to its originals.
-- `source/axial/root/.gitignore` is a **copy** of Axial's ignore file, but git
-  treats it as a live nested rule in this repo. It suppressed three verbatim
-  files — `CLAUDE.local.md`, `PR_BODY.generated.md`, `.tdd-branch-cleanup.log`.
-  They were committed with `git add -f` rather than by editing the copied ignore
-  file, which would have broken verbatim fidelity. Any future file added under
-  `source/axial/root/` may need the same treatment.
-- `source/upstream-red-green-refactor/.gitattributes` is likewise a **copy** that
-  git treats as live, and it sets `* text=auto`. Nested attributes files win over
-  the root, so `source/** -text` cannot suppress it and git normalizes that
-  subtree to LF. This is harmless: the round-trip (upstream stores LF → clone
-  writes CRLF into the working tree → we commit LF) lands on upstream's own
-  bytes. Verified by comparing blob hashes against the source repo — `SKILL.md`,
-  `tdd-harness/SKILL.md`, and `README.md` all match `593e7ab` exactly. Preserving
-  the CRLF working-tree artifact would have been *less* faithful.
-- Verified: 337 files under `source/` on disk, 337 tracked in git.
+- **The two `.claude/` directories under `source/` were renamed to `dot-claude/`** —
+  `source/axial/` and `source/upstream-red-green-refactor/`. Claude Code discovers
+  directory-scoped skills from any `<dir>/.claude/skills/`, so the frozen snapshot was
+  loading **sixteen skills into every session in this repo**, competing for triggers and
+  spending context on material that is reference, not product. Worse, one of them
+  (`safe-pr`) shells out to `uv run pytest`. The rename changes no file bytes and git
+  tracked it as a pure rename, so verbatim fidelity is intact. Any future `.claude/`
+  copied under `source/` needs the same treatment. The eight `.claude/` directories inside
+  `global-workspace/` eval outputs contain no `skills/` and were left alone.
+- `.gitattributes` sets `source/** -text` so git performs no line-ending normalization on
+  the copies. Without it, `core.autocrlf` would rewrite LF to CRLF and the snapshot would
+  no longer be byte-identical to its originals.
+- `source/axial/root/.gitignore` is a **copy** of Axial's ignore file, but git treats it as
+  a live nested rule in this repo. It suppressed three verbatim files — `CLAUDE.local.md`,
+  `PR_BODY.generated.md`, `.tdd-branch-cleanup.log`. They were committed with `git add -f`
+  rather than by editing the copied ignore file, which would have broken fidelity. Any
+  future file added under `source/axial/root/` may need the same treatment.
+- `source/upstream-red-green-refactor/.gitattributes` is likewise a **copy** that git
+  treats as live, and it sets `* text=auto`. Nested attributes files win over the root, so
+  `source/** -text` cannot suppress it and git normalizes that subtree to LF. This is
+  harmless: the round-trip (upstream stores LF → clone writes CRLF into the working tree →
+  we commit LF) lands on upstream's own bytes. Verified by comparing blob hashes against
+  the source repo — `SKILL.md`, `tdd-harness/SKILL.md` and `README.md` all match `593e7ab`
+  exactly. Preserving the CRLF working-tree artifact would have been *less* faithful.
 
 ## Provenance rules
 
-`source/` is a verbatim snapshot. Nothing in it was edited during the copy. Do not
-edit it during migration either — changes belong in the plugin tree once that tree
-exists. The originals at `~/.claude/` and `D:\axial` remain untouched and are not
-read at runtime by anything in this repo.
+`source/` is a verbatim snapshot. No file content was edited during the copy. Do not edit
+it during migration either — changes belong in the plugin tree once that tree exists. The
+originals at `~/.claude/` and `D:\axial` remain untouched and are not read at runtime by
+anything in this repo.
