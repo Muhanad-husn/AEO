@@ -19,4 +19,6 @@ multi-stack detection table (V-08 in `docs/EVIDENCE.md`) that Phase 1's
 commit gate mines for stack detection (D10) — read there, not duplicated
 here.
 
-**Changes on port:** none structural. Full port lands in Phase 2.
+**Changes on port:** the double loop and refactor-on-green discipline are
+unchanged; only stack-specific examples in the prose are generalized. Full
+port lands in Phase 2.

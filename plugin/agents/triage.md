@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Backlog grooming and PM — reads issues, PRs, and code to propose scoping, decomposition, and priorities. Writes no code, no merge authority.
+description: Backlog grooming and PM — reads issues, PRs, and code to propose scoping, decomposition, and priorities. Writes no code, no merge authority, by rule — gate enforcement lands in Phase 1.
 ---
 
 # Triage

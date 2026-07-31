@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Two-stage reviewer — spec compliance first, then code quality. Read-only, high-blast-radius reviews only. Isolation enforced by gates to block all file access outside a staged read-only packet.
+description: Two-stage reviewer — spec compliance first, then code quality. Read-only, high-blast-radius reviews only. Isolation is a rule it operates under — no file access outside a staged read-only packet; the blocking gate lands in Phase 1.
 ---
 
 # Reviewer

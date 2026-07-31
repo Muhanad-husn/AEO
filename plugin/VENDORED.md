@@ -13,7 +13,8 @@ Five skills will derive by copy from:
 
 Upstream also ships `tdd-harness`, which this plugin does not carry.
 
-Files unchanged from upstream:
+Files verified byte-identical between upstream and the production copy —
+these will port unchanged:
 
 | File | Type |
 | --- | --- |
