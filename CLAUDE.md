@@ -44,21 +44,28 @@ Copy-in complete or in progress. **No enhancements yet** — the migration from
 
 ## Working principles
 
-Inherited from `D:\axial\CLAUDE.md`. They govern work in this repo, pending
-review during generalization — some are Axial-specific and should be examined
-before they are baked into a plugin meant for other people's projects.
+**[docs/PRINCIPLES.md](docs/PRINCIPLES.md) is authoritative.** Seven fixed
+principles set by the founder, plus thirteen proposed enhancements. The fixed
+principles are settled and are not renegotiated during migration.
+
+The load-bearing four, in short:
 
 - **Practicality over perfectionism.** 80/20: build the smallest thing that
-  meets the acceptance bar, and keep the bar strict, not the mechanism.
-  Polishing past the bar is a process bug, not diligence.
+  meets a strict acceptance bar. Polishing past the bar is a process defect.
 - **Over-engineering tripwires** — stop and simplify, or justify in one line in
   the PR body: a hand-tuned constant or magic number in a heuristic; an
   abstraction with one implementation; a config option nobody sets; a fix larger
   than its bug.
-- **Don't reinvent the wheel.** Check existing tools and libraries — or a single
-  LLM call — before building.
-- **Measure, don't speculate.** Prototype and measure rather than analyze
-  indefinitely. This repo has an eval harness; use it.
+- **Specs are working agreements, not laws** — revisable when a change fixes a
+  persistent issue without materially moving product behaviour, but every change
+  needs founder approval plus a documented rationale and expected impact.
+- **Don't reinvent the wheel.** Check for an existing MCP server, plugin, tool,
+  library, or a single well-designed LLM call first. New dependencies need
+  founder approval.
+- **Measure, don't speculate.** This repo has an eval harness; use it.
+
+[docs/ENHANCEMENT-ASSESSMENT.md](docs/ENHANCEMENT-ASSESSMENT.md) grades the
+thirteen proposals against the 80/20 bar and sets the migration sequence.
 
 ## Writing conventions
 
