@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# TDD harness transient artifacts
+# Playwright output (evidence is copied into docs/tdd-evidence/ by safe-pr; raw output stays local)
+test-results/
+playwright-report/
+# ...but the collected, committed evidence under docs/tdd-evidence/ must NEVER be ignored,
+# otherwise the screenshots/recordings safe-pr embeds would 404. Re-include that subtree.
+!docs/tdd-evidence/**
+
+# safe-pr generated PR bodies
+PR_BODY.md
+PR_BODY.generated.md
+
+# safe-cleanup recovery log (local record of deleted branch SHAs)
+.tdd-branch-cleanup.log
+
+# Vendored third-party dev skill — kept local only, not part of the published harness.
+# skill-creator (from anthropics/skills) is used locally to author this repo's skills.
+.agents/skills/skill-creator/
+# skills-lock.json only records the local skill-creator install, so keep it local too.
+skills-lock.json

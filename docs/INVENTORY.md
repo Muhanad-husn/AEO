@@ -12,6 +12,7 @@ from the five per-source manifests in [`source/_manifests/`](../source/_manifest
 | `source/axial/` | 66 | 599,418 | `D:\axial\` — `.claude/`, selected `docs/`, root files | [03](../source/_manifests/03-axial-claude.md), [04](../source/_manifests/04-principles-and-metrics.md) |
 | `source/eval-tooling/` | 21 | 237,004 | `skill-creator` plugin (marketplace copy) | [05](../source/_manifests/05-eval-tooling.md) |
 | `source/global-claude/` | 3 | 1,337 | `~/.claude/` CLAUDE.md + settings | [04](../source/_manifests/04-principles-and-metrics.md) |
+| `source/upstream-red-green-refactor/` | 38 | 300,120 | `github.com/brainqub3/red-green-refactor` @ `593e7ab` (MIT, © john-adeojo) | [DECISIONS D2](DECISIONS.md) |
 | `source/_manifests/` | 5 | 96,354 | Written during the copy | — |
 
 ## What each source contributes
@@ -78,11 +79,12 @@ contradictions found. The active subset is restated in [`CLAUDE.md`](../CLAUDE.m
 
 ## Gaps and open questions
 
-1. **`red-green-refactor` is docs-only.** Axial vendors `SKILL.md` plus two reference
-   docs (40 KB) — no harness code. The skill instructs the builder agent to clone
-   `brainqub3/red-green-refactor` from GitHub at runtime. That external dependency is
-   still unmet, and the repo is not self-contained until it is resolved. **Not fetched
-   — awaiting your decision.**
+1. ~~**`red-green-refactor` is docs-only.**~~ **Resolved** by [D2](DECISIONS.md).
+   The upstream repo is vendored at `source/upstream-red-green-refactor/`. It turned
+   out to be the origin of five of Axial's ten skills, with all executable code
+   byte-identical — Axial's divergence is confined to SKILL.md prose. The runtime
+   clone step can be removed. MIT licensed; redistribution requires preserving the
+   notice.
 2. **`package_skill.py` cannot build a plugin.** It packages a bare skill folder into a
    `.skill` zip and has no `.claude-plugin/plugin.json` awareness at all. The existing
    tooling cannot produce the artifact this repo is aiming for.
