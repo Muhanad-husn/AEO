@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "aeo",
+  "version": "0.1.0",
+  "description": "A solo-operator AI software engineering harness: test-first build, on-demand review and triage, deterministic merge and test gates, and a GitHub-native issue and PR workflow that keeps a human in the merge seat.",
+  "author": {
+    "name": "Muhanad Abulhusn",
+    "url": "https://github.com/Muhanad-husn/AEO"
+  }
+}
