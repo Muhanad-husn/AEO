@@ -2,14 +2,9 @@
 
 How the work gets dispatched.
 
-> **Provenance note.** This was written against a parallel line of work that is not
-> on `main`; it is preserved on the **`salvage/import-line`** branch (commit
-> `3bd9da9`). References to `PLAN.md`, `ENHANCEMENT-BACKLOG.md`,
-> `IMPORT-MANIFEST.md` and `reference/…` resolve on that branch, not here. A
-> GitHub issue backlog (#1–#15) existed and **has been deleted**; the slice
-> identifiers below (`P0.1`, `P1.1`, …) are kept as stable names so the plan
-> survives the fork. The dispatch discipline itself is layout-independent and
-> stands on its own.
+The phases are in [`PLAN.md`](PLAN.md); this file says who authors each slice and
+at which model tier. Slices are named `P0.1`, `P1.1`, … — stable identifiers, not
+issue numbers, so the plan does not depend on a tracker existing yet.
 
 ## The rule
 
@@ -97,7 +92,7 @@ small and its parts are independent, so per-slice review would be ceremony.
 | Slice | Model | Authors | Must not |
 |---|---|---|---|
 | **P1.1** hook runtime | **Opus** | The shared library — stdin parsing, `agent_type` semantics, worktree resolution, trailing-separator path checks, one block path — and its tests | Ship a single untested function. This library is why the other three gates stop drifting |
-| **P1.2** block-merge | **Sonnet** | The port, carrying both fixes the skill never absorbed, plus tests | Copy the skill's version. Port from the *live* one on the salvage branch |
+| **P1.2** block-merge | **Sonnet** | The port, carrying both fixes the skill never absorbed, plus tests | Copy the skill's version. Port from the *live* one under `source/axial/` |
 | **P1.3** commit-gate + detection | **Opus** | The port, deletion of the red-commit hatch, and **manifest walk-up stack detection**, plus tests | Introduce a config file. Detection or nothing — this is the piece the whole generalisation rests on |
 | **P1.4** path-guard + format | **Sonnet** | Both ports with the `format` resolution fix, plus tests | Drop the root-*named*-`.claude` check; it looks redundant and is not |
 | **P1.5** data-sandbox guard | **Opus** | Injected data path, fail-closed test fixture, gate refusal, plus tests | Warn instead of refuse. Advice is what cost 19,000 documents |

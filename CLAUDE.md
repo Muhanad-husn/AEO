@@ -29,18 +29,47 @@ on is copied in under `source/`. Nothing here reads from `~/.claude/` or
 | `source/global-skill/` | The `agentic-engineering-org` skill, verbatim — the thing being generalized |
 | `source/global-workspace/` | Eval harness, graders, and iteration metrics for the skill |
 | `source/axial/` | The matured local implementation: agents, hooks, skills, metrics tooling, principles |
+| `source/v1-archive/` | The **pre-v2 harness**, recovered from the recycle bin — the only non-Python instance that exists, and the only one with a shared hook library and gate tests |
+| `source/plugin-format/` | Official plugin references. `hookify` is the one that matters: it ships gates via `hooks/hooks.json` and `python3` |
+| `source/upstream-red-green-refactor/` | Pristine upstream harness @ `593e7ab`, MIT, with its licence |
+| `source/eval-tooling/`, `source/global-claude/` | `skill-creator`, and the global directives the skill inherits |
 | `source/_manifests/` | Per-source provenance records written during the copy |
-| `docs/INVENTORY.md` | Assembled manifest: what was copied, from where, and what was deliberately left out |
 
 `source/` is **reference material, not the product**. It is a verbatim snapshot
 kept for fidelity during migration. The plugin layout (`.claude-plugin/`,
-`skills/`, `agents/`, `hooks/`) does not exist yet and will be designed in the
-migration plan.
+`skills/`, `agents/`, `hooks/`) does not exist yet and is designed in `docs/PLAN.md`.
+
+### Planning docs, and what each answers
+
+| Doc | Answers |
+| --- | --- |
+| [docs/PRINCIPLES.md](docs/PRINCIPLES.md) | What is fixed, what is proposed. **Authoritative** |
+| [docs/ENHANCEMENT-ASSESSMENT.md](docs/ENHANCEMENT-ASSESSMENT.md) | Which proposals are worth building. Sets priority |
+| [docs/PLAN.md](docs/PLAN.md) | In what order, with the checkpoints |
+| [docs/BUILD-METHOD.md](docs/BUILD-METHOD.md) | Who authors each slice, at which model tier |
+| [docs/DIVERGENCES.md](docs/DIVERGENCES.md) | Where the vendored skill and production disagree — production is the evidence |
+| [docs/DOCS-CURRENCY.md](docs/DOCS-CURRENCY.md) | Where **current Claude Code contradicts the vendored skill**. Read before writing any hook or agent |
+| [docs/LESSONS.md](docs/LESSONS.md) | What production learned the hard way, including the incident that destroyed ~19,000 documents |
+| [docs/INVENTORY.md](docs/INVENTORY.md) | What was copied, from where, and what was left out |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | The decision log |
 
 ## Current stage
 
-Copy-in complete or in progress. **No enhancements yet** — the migration from
-`source/` into plugin shape is to be planned before any is made.
+Copy-in and planning complete. **No plugin code written yet.** Next is Phase 0 of
+[docs/PLAN.md](docs/PLAN.md) — the plugin skeleton.
+
+Three findings in `docs/DOCS-CURRENCY.md` overturn decisions the vendored skill
+still states as settled. They are cheap to miss and expensive to discover late:
+plugin subagents **cannot** carry `hooks:` frontmatter (so gates cannot be
+double-wired); `agent_type` is **not** a subagent flag; and commands have been
+merged into skills, so new plugins ship `skills/` only.
+
+## How the work is done
+
+**Every artifact is authored by a dispatched subagent with a model matched to the
+job. Nothing with content is emitted by a generator script.** Creating an empty
+directory is not generating a file; prose, prompts, code and tests are. Tiering
+and the per-slice dispatch table are in [docs/BUILD-METHOD.md](docs/BUILD-METHOD.md).
 
 ## Working principles
 
