@@ -1,0 +1,22 @@
+Evaluating: Scaffold a solo-operator AI software enterprise inside Claude Code: tool-locked role subagents (triage, spec, test, implement, review), deterministic merge and test gates enforced by hooks, a vendored behavior-first TDD harness, and a GitHub-native issue/PR/sprint workflow that keeps a human in the merge seat. Use this whenever the user wants to set up an agentic engineering workflow, an AI "team" or "roles" in Claude Code, PR/review/merge gates, a TDD or behavior-first agent loop, subagent-based development, a red-green-refactor harness wired to roles, or a reusable project template where agents build but never merge — even if they don't call it a "skill" or name the template. Trigger on requests like "set up an AI dev team in Claude Code", "make agents that can't merge to main", "wire up spec/test/implement/review roles", or "build me a reusable agentic repo template".
+Results: 10/20 passed
+  [FAIL] rate=1/3 expected=True: i want to set up a little AI software company inside claude code — i'm
+  [FAIL] rate=1/3 expected=True: set up spec/test/implement/review roles in claude code, each locked to
+  [FAIL] rate=1/3 expected=True: I keep letting Claude merge its own half-broken PRs to main. I want a 
+  [FAIL] rate=1/3 expected=True: build me a red-green-refactor agent loop where one role writes the fai
+  [FAIL] rate=1/3 expected=True: can you create an AI 'team' in claude code with a triage PM, a spec au
+  [FAIL] rate=0/3 expected=True: I want a project template where architecture and merge decisions stay 
+  [FAIL] rate=1/3 expected=True: wire up a behavior-first TDD harness (the brainqub3 red-green-refactor
+  [FAIL] rate=1/3 expected=True: help me set up subagent-based development in claude code — sprints dri
+  [FAIL] rate=1/3 expected=True: scaffold an agentic engineering workflow: agents open PRs but a human 
+  [FAIL] rate=0/3 expected=True: I'm a solo dev. Give me a repeatable claude code setup where 'roles' h
+  [PASS] rate=0/3 expected=False: review this pull request for me and leave inline comments on the diff
+  [PASS] rate=0/3 expected=False: set up branch protection on my main branch so PRs need one approval be
+  [PASS] rate=0/3 expected=False: write pytest unit tests for the functions in src/utils.py, TDD style —
+  [PASS] rate=0/3 expected=False: create a claude code subagent that summarizes long PDFs and returns bu
+  [PASS] rate=0/3 expected=False: help me build a multi-agent app with LangGraph where a planner agent a
+  [PASS] rate=0/3 expected=False: add a GitHub Actions CI workflow that runs pytest and ruff on every pu
+  [PASS] rate=0/3 expected=False: my git merge is failing with a conflict in settings.json, can you help
+  [PASS] rate=0/3 expected=False: set up a hook that runs prettier on my files after every edit
+  [PASS] rate=0/3 expected=False: what model should i use for automated code review — opus or sonnet?
+  [PASS] rate=0/3 expected=False: create a reusable cookiecutter template for a python package with a py

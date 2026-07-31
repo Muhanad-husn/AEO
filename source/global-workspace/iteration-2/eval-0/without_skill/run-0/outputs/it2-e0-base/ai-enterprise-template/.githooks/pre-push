@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+# Native git backstop for "agents never push".
+# The human founder can override intentionally with:  git push --no-verify
+# (agents run non-interactively and must not use --no-verify).
+
+echo "[pre-push] BLOCKED: pushing is disabled for automated agents in this repo." >&2
+echo "[pre-push] The human founder pushes deliberately. To push manually, review the" >&2
+echo "[pre-push] change and run: git push --no-verify   (or remove this hook)." >&2
+exit 1

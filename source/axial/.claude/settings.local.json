@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p ../axial-vault-hold)",
+      "Bash(mv data/vault/prose ../axial-vault-hold/prose)",
+      "Bash(mv data/vault/artifacts ../axial-vault-hold/artifacts)",
+      "Bash(mkdir -p data/vault/prose data/vault/artifacts)",
+      "Bash(uv run *)",
+      "Bash(rm -rf data/vault/prose data/vault/artifacts)",
+      "Bash(mv ../axial-vault-hold/prose data/vault/prose)",
+      "Bash(mv ../axial-vault-hold/artifacts data/vault/artifacts)",
+      "Bash(rmdir ../axial-vault-hold)",
+      "Bash(cd /d/axial-vault-query && sed -n '226,256p' src/axial/vault.py; echo \"=== real vault? ===\"; ls data/vault/prose 2>/dev/null | head -3; ls ../axial/data/vault/prose 2>/dev/null | head -3)",
+      "Bash(git checkout *)",
+      "Bash(powershell.exe -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { $_.Name -match '\\\\''python|uv'\\\\'' } | Select-Object ProcessId,Name,CommandLine | Format-List')",
+      "Bash(git stash *)",
+      "Bash(awk '{print $1}')",
+      "Bash(powershell.exe -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { $_.Name -match '\\\\''axial.exe'\\\\'' } | Select-Object ProcessId,CreationDate | Sort-Object ProcessId')",
+      "Bash(git -C D:/axial fetch origin)",
+      "Bash(git -C D:/axial pull)"
+    ]
+  }
+}

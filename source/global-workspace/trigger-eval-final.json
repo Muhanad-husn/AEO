@@ -1,0 +1,82 @@
+[
+  {
+    "query": "i want to set up a little AI software company inside claude code — i'm the founder and i have subagents that do the speccing, testing, coding, and reviewing, but they're never allowed to merge my PRs, only i can. can you scaffold that as a template i can reuse for new projects?",
+    "should_trigger": true
+  },
+  {
+    "query": "set up spec/test/implement/review roles in claude code, each locked to certain tools and pinned to a model, with hooks that stop any agent from committing when the tests are red",
+    "should_trigger": true
+  },
+  {
+    "query": "I keep letting Claude merge its own half-broken PRs to main. I want a hard setup where the agents literally cannot merge and cannot commit a failing test suite. Make it a reusable repo template.",
+    "should_trigger": true
+  },
+  {
+    "query": "build me a red-green-refactor agent loop where one role writes the failing acceptance test and locks it, and a separate implementer role only makes it pass — wired into a github issue/PR sprint flow",
+    "should_trigger": true
+  },
+  {
+    "query": "can you create an AI 'team' in claude code with a triage PM, a spec author, a test author, an implementer and a reviewer? the reviewer should be read-only and the implementer must not be able to touch the tests or specs folder",
+    "should_trigger": true
+  },
+  {
+    "query": "I want a project template where architecture and merge decisions stay with me but agents do all the building, with deterministic gates enforced by hooks not just prompts. python/uv/pytest stack.",
+    "should_trigger": true
+  },
+  {
+    "query": "wire up a behavior-first TDD harness (the brainqub3 red-green-refactor one) into claude code roles and gates so no implementation commit can land before its red outer test",
+    "should_trigger": true
+  },
+  {
+    "query": "help me set up subagent-based development in claude code — sprints driven by github issues, per-role tool locking, a spec-freeze rule so specs can't be edited mid-implementation, and a human-in-the-merge-seat gate",
+    "should_trigger": true
+  },
+  {
+    "query": "scaffold an agentic engineering workflow: agents open PRs but a human always merges, tests must be green to commit, and spec drift becomes a github issue instead of an in-place edit",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm a solo dev. Give me a repeatable claude code setup where 'roles' handle triage then spec then test then code then review, and the whole thing is gated so I only ever step in to approve the plan, adjudicate spec changes, and merge.",
+    "should_trigger": true
+  },
+  {
+    "query": "review this pull request for me and leave inline comments on the diff",
+    "should_trigger": false
+  },
+  {
+    "query": "set up branch protection on my main branch so PRs need one approval before merging",
+    "should_trigger": false
+  },
+  {
+    "query": "write pytest unit tests for the functions in src/utils.py, TDD style — red then green",
+    "should_trigger": false
+  },
+  {
+    "query": "create a claude code subagent that summarizes long PDFs and returns bullet points",
+    "should_trigger": false
+  },
+  {
+    "query": "help me build a multi-agent app with LangGraph where a planner agent and a coder agent collaborate on tasks",
+    "should_trigger": false
+  },
+  {
+    "query": "add a GitHub Actions CI workflow that runs pytest and ruff on every push to a PR",
+    "should_trigger": false
+  },
+  {
+    "query": "my git merge is failing with a conflict in settings.json, can you help me resolve it",
+    "should_trigger": false
+  },
+  {
+    "query": "set up a hook that runs prettier on my files after every edit",
+    "should_trigger": false
+  },
+  {
+    "query": "what model should i use for automated code review — opus or sonnet?",
+    "should_trigger": false
+  },
+  {
+    "query": "create a reusable cookiecutter template for a python package with a pyproject.toml and a pytest setup",
+    "should_trigger": false
+  }
+]

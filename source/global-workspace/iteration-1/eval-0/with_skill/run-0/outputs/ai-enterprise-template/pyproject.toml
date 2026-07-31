@@ -1,0 +1,22 @@
+[project]
+name = "ai-enterprise-template"
+version = "0.1.0"
+description = "Reusable template for a solo-operator AI software enterprise inside Claude Code."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.uv]
+package = false

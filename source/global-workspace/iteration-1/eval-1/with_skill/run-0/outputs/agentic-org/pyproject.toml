@@ -1,0 +1,20 @@
+[project]
+name = "ai-enterprise-template"
+version = "0.1.0"
+description = "A reusable template for a solo-operator AI software enterprise in Claude Code: tool-locked role subagents build, hard hook gates hold the line, and only the founder merges."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100

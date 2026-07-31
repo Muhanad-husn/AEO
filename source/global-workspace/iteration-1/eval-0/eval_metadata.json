@@ -1,0 +1,17 @@
+{
+  "eval_id": 0,
+  "eval_name": "full-scaffold-through-roles",
+  "prompt": "I want to set up an AI software dev 'team' inside Claude Code: subagents that do triage, spec-writing, test-writing, implementation, and review, but where they can never merge to main and can never commit when tests are failing. Build me a reusable template repo for this. I'm the only human. Use Python as the default stack. Act as the founder, self-approve checkpoints, stop after the role subagents.",
+  "assertions": [
+    { "text": "Directory tree present (.claude/{agents,skills,hooks}, specs, src, tests, plans, docs/tdd-evidence, secrets)", "check": "tree" },
+    { "text": "A baseline test file exists under tests/", "check": "baseline_test" },
+    { "text": "CLAUDE.md exists and states the founder is the only one who may merge", "check": "claude_md_merge" },
+    { "text": "CLAUDE.md states specs are frozen during implementation / spec-author edits them in a separate pass", "check": "claude_md_specfreeze" },
+    { "text": "All five role subagent files exist (triage, spec-author, test-author, implementer, reviewer)", "check": "five_agents" },
+    { "text": "Reviewer subagent has no Edit/Write in its tools", "check": "reviewer_readonly" },
+    { "text": "Models pinned per roster (triage=haiku, spec-author=opus, test/impl/review=sonnet)", "check": "models" },
+    { "text": "Implementer, spec-author, and test-author carry PreToolUse frontmatter path guards", "check": "path_guards" },
+    { "text": "gh repo create / branch-protection commands were prepared but NOT executed (no real remote)", "check": "gh_not_run" },
+    { "text": "Stopped at Phase 2 — no .claude/settings.json hook wiring written", "check": "stopped_phase2" }
+  ]
+}

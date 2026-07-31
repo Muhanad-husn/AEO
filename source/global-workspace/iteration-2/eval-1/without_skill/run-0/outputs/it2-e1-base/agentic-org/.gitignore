@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# uv / venv
+.venv/
+uv.lock
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Local, non-shared Claude settings (per-developer overrides)
+.claude/settings.local.json
+
+# Runtime role stack written by the role_guard hook
+.claude/.role_state/

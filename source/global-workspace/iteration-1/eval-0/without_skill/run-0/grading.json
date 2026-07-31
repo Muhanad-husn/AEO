@@ -1,0 +1,61 @@
+{
+  "repo_root": "D:\\eval-scratch\\e0-base\\ai-enterprise-template",
+  "summary": {
+    "pass_rate": 1.0,
+    "passed": 10,
+    "failed": 0,
+    "total": 10
+  },
+  "expectations": [
+    {
+      "text": "Directory tree present (.claude/{agents,skills,hooks}, specs, src, tests, plans, docs/tdd-evidence, secrets)",
+      "passed": true,
+      "evidence": "all present"
+    },
+    {
+      "text": "A baseline test file exists under tests/",
+      "passed": true,
+      "evidence": "['test_baseline.py']"
+    },
+    {
+      "text": "CLAUDE.md exists and states the founder is the only one who may merge",
+      "passed": true,
+      "evidence": "mentions founder+merge"
+    },
+    {
+      "text": "CLAUDE.md states specs are frozen during implementation / drift-to-issue",
+      "passed": true,
+      "evidence": "mentions spec freeze/drift"
+    },
+    {
+      "text": "All five role subagent files exist (triage, spec-author, test-author, implementer, reviewer)",
+      "passed": true,
+      "evidence": "found: ['implementer', 'reviewer', 'spec-author', 'test-author', 'triage'] / all files: ['implementer', 'reviewer', 'spec-author', 'test-author', 'triage']"
+    },
+    {
+      "text": "Reviewer subagent has no Edit/Write in its tools",
+      "passed": true,
+      "evidence": "tools: tools: read, grep, glob, bash"
+    },
+    {
+      "text": "Models pinned per roster (triage=haiku, spec=opus, test/impl/review=sonnet)",
+      "passed": true,
+      "evidence": "triage=haiku, spec-author=opus, test-author=sonnet, implementer=sonnet, reviewer=sonnet"
+    },
+    {
+      "text": "Implementer, spec-author, and test-author carry PreToolUse frontmatter path guards",
+      "passed": true,
+      "evidence": "implementer=guard, spec-author=guard, test-author=guard"
+    },
+    {
+      "text": "gh repo create / branch-protection prepared but NOT executed (no real remote)",
+      "passed": true,
+      "evidence": "no github remote in .git/config"
+    },
+    {
+      "text": "Stopped at Phase 2 \u2014 no Phase-3 hook wiring (settings.json PreToolUse / hook scripts) written",
+      "passed": true,
+      "evidence": "settings has hooks=no, hook scripts=[]"
+    }
+  ]
+}

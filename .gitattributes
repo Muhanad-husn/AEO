@@ -1,0 +1,8 @@
+# source/ is a verbatim byte-for-byte snapshot of external material.
+# Disable all line-ending normalization there so the copies stay identical
+# to their originals — see the "Verbatim means verbatim" rule in CLAUDE.md.
+source/** -text
+
+# Repo-authored files use LF.
+*.md text eol=lf
+*.json text eol=lf

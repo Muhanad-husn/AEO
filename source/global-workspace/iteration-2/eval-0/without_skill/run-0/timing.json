@@ -1,0 +1,6 @@
+{
+  "total_tokens": 57060,
+  "duration_ms": 414918,
+  "total_duration_seconds": 414.9,
+  "note": "TRUE no-skill baseline (skill hidden from discovery). Diverged from the contract: own role names, reviewer=opus, git_guard.py instead of frontmatter guards, built gates instead of stopping at Phase 2."
+}

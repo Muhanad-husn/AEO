@@ -1,0 +1,356 @@
+{
+  "metadata": {
+    "skill_name": "agentic-engineering-org",
+    "skill_path": "<path/to/skill>",
+    "executor_model": "<model-name>",
+    "analyzer_model": "<model-name>",
+    "timestamp": "2026-07-05T02:35:47Z",
+    "evals_run": [
+      0,
+      1
+    ],
+    "runs_per_configuration": 3
+  },
+  "runs": [
+    {
+      "eval_id": 0,
+      "configuration": "with_skill",
+      "run_number": 0,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 11,
+        "failed": 0,
+        "total": 11,
+        "time_seconds": 261.8,
+        "tokens": 59859,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Directory tree present (.claude/{agents,skills,hooks}, specs, src, tests, plans, docs/tdd-evidence, secrets)",
+          "passed": true,
+          "evidence": "all present"
+        },
+        {
+          "text": "A baseline test file exists under tests/",
+          "passed": true,
+          "evidence": "['test_baseline.py']"
+        },
+        {
+          "text": "CLAUDE.md exists and states the founder is the only one who may merge",
+          "passed": true,
+          "evidence": "mentions founder+merge"
+        },
+        {
+          "text": "CLAUDE.md states specs are frozen during implementation / drift-to-issue",
+          "passed": true,
+          "evidence": "mentions spec freeze/drift"
+        },
+        {
+          "text": "All five role subagent files exist (triage, spec-author, test-author, implementer, reviewer)",
+          "passed": true,
+          "evidence": "found: ['implementer', 'reviewer', 'spec-author', 'test-author', 'triage'] / all files: ['implementer', 'reviewer', 'spec-author', 'test-author', 'triage']"
+        },
+        {
+          "text": "Reviewer subagent has no Edit/Write in its tools",
+          "passed": true,
+          "evidence": "tools: tools: read, grep, glob, bash"
+        },
+        {
+          "text": "Models pinned per roster (triage=haiku, spec=opus, test/impl/review=sonnet)",
+          "passed": true,
+          "evidence": "triage=haiku, spec-author=opus, test-author=sonnet, implementer=sonnet, reviewer=sonnet"
+        },
+        {
+          "text": "Implementer, spec-author, and test-author carry PreToolUse frontmatter path guards",
+          "passed": true,
+          "evidence": "implementer=guard, spec-author=guard, test-author=guard"
+        },
+        {
+          "text": "Path guards cover Write() (create-new-file) not only Edit() \u2014 no guard leak",
+          "passed": true,
+          "evidence": "implementer=Write-guarded, spec-author=Write-guarded, test-author=Write-guarded"
+        },
+        {
+          "text": "gh repo create / branch-protection prepared but NOT executed (no real remote)",
+          "passed": true,
+          "evidence": "no github remote in .git/config"
+        },
+        {
+          "text": "Stopped at Phase 2 \u2014 no Phase-3 hook wiring (settings.json PreToolUse / hook scripts) written",
+          "passed": true,
+          "evidence": "settings has hooks=no, hook scripts=[]"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "with_skill",
+      "run_number": 0,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 11,
+        "failed": 0,
+        "total": 11,
+        "time_seconds": 236.7,
+        "tokens": 56136,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Directory tree present (.claude/{agents,skills,hooks}, specs, src, tests, plans, docs/tdd-evidence, secrets)",
+          "passed": true,
+          "evidence": "all present"
+        },
+        {
+          "text": "A baseline test file exists under tests/",
+          "passed": true,
+          "evidence": "['test_baseline.py']"
+        },
+        {
+          "text": "CLAUDE.md exists and states the founder is the only one who may merge",
+          "passed": true,
+          "evidence": "mentions founder+merge"
+        },
+        {
+          "text": "CLAUDE.md states specs are frozen during implementation / drift-to-issue",
+          "passed": true,
+          "evidence": "mentions spec freeze/drift"
+        },
+        {
+          "text": "All five role subagent files exist (triage, spec-author, test-author, implementer, reviewer)",
+          "passed": true,
+          "evidence": "found: ['implementer', 'reviewer', 'spec-author', 'test-author', 'triage'] / all files: ['implementer', 'reviewer', 'spec-author', 'test-author', 'triage']"
+        },
+        {
+          "text": "Reviewer subagent has no Edit/Write in its tools",
+          "passed": true,
+          "evidence": "tools: tools: read, grep, glob, bash"
+        },
+        {
+          "text": "Models pinned per roster (triage=haiku, spec=opus, test/impl/review=sonnet)",
+          "passed": true,
+          "evidence": "triage=haiku, spec-author=opus, test-author=sonnet, implementer=sonnet, reviewer=sonnet"
+        },
+        {
+          "text": "Implementer, spec-author, and test-author carry PreToolUse frontmatter path guards",
+          "passed": true,
+          "evidence": "implementer=guard, spec-author=guard, test-author=guard"
+        },
+        {
+          "text": "Path guards cover Write() (create-new-file) not only Edit() \u2014 no guard leak",
+          "passed": true,
+          "evidence": "implementer=Write-guarded, spec-author=Write-guarded, test-author=Write-guarded"
+        },
+        {
+          "text": "gh repo create / branch-protection prepared but NOT executed (no real remote)",
+          "passed": true,
+          "evidence": "no github remote in .git/config"
+        },
+        {
+          "text": "Stopped at Phase 2 \u2014 no Phase-3 hook wiring (settings.json PreToolUse / hook scripts) written",
+          "passed": true,
+          "evidence": "settings has hooks=no, hook scripts=[]"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 0,
+      "configuration": "without_skill",
+      "run_number": 0,
+      "result": {
+        "pass_rate": 0.4545,
+        "passed": 5,
+        "failed": 6,
+        "total": 11,
+        "time_seconds": 414.9,
+        "tokens": 57060,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Directory tree present (.claude/{agents,skills,hooks}, specs, src, tests, plans, docs/tdd-evidence, secrets)",
+          "passed": false,
+          "evidence": "missing: ['.claude/skills', 'specs', 'plans', 'docs/tdd-evidence', 'secrets']"
+        },
+        {
+          "text": "A baseline test file exists under tests/",
+          "passed": true,
+          "evidence": "['test_smoke.py']"
+        },
+        {
+          "text": "CLAUDE.md exists and states the founder is the only one who may merge",
+          "passed": true,
+          "evidence": "mentions founder+merge"
+        },
+        {
+          "text": "CLAUDE.md states specs are frozen during implementation / drift-to-issue",
+          "passed": false,
+          "evidence": "no spec-freeze language"
+        },
+        {
+          "text": "All five role subagent files exist (triage, spec-author, test-author, implementer, reviewer)",
+          "passed": true,
+          "evidence": "found: ['implementer', 'reviewer', 'spec-author', 'test-author', 'triage'] / all files: ['implementer', 'reviewer', 'spec-writer', 'test-writer', 'triage']"
+        },
+        {
+          "text": "Reviewer subagent has no Edit/Write in its tools",
+          "passed": true,
+          "evidence": "tools: tools: read, grep, glob, bash"
+        },
+        {
+          "text": "Models pinned per roster (triage=haiku, spec=opus, test/impl/review=sonnet)",
+          "passed": false,
+          "evidence": "triage=haiku, spec-author=opus, test-author=sonnet, implementer=sonnet, reviewer=opus(want sonnet)"
+        },
+        {
+          "text": "Implementer, spec-author, and test-author carry PreToolUse frontmatter path guards",
+          "passed": false,
+          "evidence": "implementer=NO-guard, spec-author=NO-guard, test-author=NO-guard"
+        },
+        {
+          "text": "Path guards cover Write() (create-new-file) not only Edit() \u2014 no guard leak",
+          "passed": false,
+          "evidence": "implementer=EDIT-ONLY(leaks), spec-author=EDIT-ONLY(leaks), test-author=EDIT-ONLY(leaks)"
+        },
+        {
+          "text": "gh repo create / branch-protection prepared but NOT executed (no real remote)",
+          "passed": true,
+          "evidence": "no github remote in .git/config"
+        },
+        {
+          "text": "Stopped at Phase 2 \u2014 no Phase-3 hook wiring (settings.json PreToolUse / hook scripts) written",
+          "passed": false,
+          "evidence": "settings has hooks=yes, hook scripts=[]"
+        }
+      ],
+      "notes": []
+    },
+    {
+      "eval_id": 1,
+      "configuration": "without_skill",
+      "run_number": 0,
+      "result": {
+        "pass_rate": 0.2727,
+        "passed": 3,
+        "failed": 8,
+        "total": 11,
+        "time_seconds": 557.1,
+        "tokens": 73877,
+        "tool_calls": 0,
+        "errors": 0
+      },
+      "expectations": [
+        {
+          "text": "Directory tree present (.claude/{agents,skills,hooks}, specs, src, tests, plans, docs/tdd-evidence, secrets)",
+          "passed": false,
+          "evidence": "missing: ['.claude/skills', 'plans', 'docs/tdd-evidence', 'secrets']"
+        },
+        {
+          "text": "A baseline test file exists under tests/",
+          "passed": true,
+          "evidence": "['test_running_total.py']"
+        },
+        {
+          "text": "CLAUDE.md exists and states the founder is the only one who may merge",
+          "passed": false,
+          "evidence": "CLAUDE.md missing or lacks founder/merge"
+        },
+        {
+          "text": "CLAUDE.md states specs are frozen during implementation / drift-to-issue",
+          "passed": false,
+          "evidence": "no spec-freeze language"
+        },
+        {
+          "text": "All five role subagent files exist (triage, spec-author, test-author, implementer, reviewer)",
+          "passed": false,
+          "evidence": "found: ['implementer', 'reviewer', 'test-author'] / all files: ['architect', 'implementer', 'integrator', 'reviewer', 'test-author']"
+        },
+        {
+          "text": "Reviewer subagent has no Edit/Write in its tools",
+          "passed": true,
+          "evidence": "tools: tools: read, grep, glob"
+        },
+        {
+          "text": "Models pinned per roster (triage=haiku, spec=opus, test/impl/review=sonnet)",
+          "passed": false,
+          "evidence": "triage=MISSING, spec-author=MISSING, test-author=opus(want sonnet), implementer=sonnet, reviewer=opus(want sonnet)"
+        },
+        {
+          "text": "Implementer, spec-author, and test-author carry PreToolUse frontmatter path guards",
+          "passed": false,
+          "evidence": "implementer=NO-guard, spec-author=MISSING, test-author=NO-guard"
+        },
+        {
+          "text": "Path guards cover Write() (create-new-file) not only Edit() \u2014 no guard leak",
+          "passed": false,
+          "evidence": "implementer=EDIT-ONLY(leaks), spec-author=MISSING, test-author=EDIT-ONLY(leaks)"
+        },
+        {
+          "text": "gh repo create / branch-protection prepared but NOT executed (no real remote)",
+          "passed": true,
+          "evidence": "no github remote in .git/config"
+        },
+        {
+          "text": "Stopped at Phase 2 \u2014 no Phase-3 hook wiring (settings.json PreToolUse / hook scripts) written",
+          "passed": false,
+          "evidence": "settings has hooks=yes, hook scripts=[]"
+        }
+      ],
+      "notes": []
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {
+        "mean": 1.0,
+        "stddev": 0.0,
+        "min": 1.0,
+        "max": 1.0
+      },
+      "time_seconds": {
+        "mean": 249.25,
+        "stddev": 17.7484,
+        "min": 236.7,
+        "max": 261.8
+      },
+      "tokens": {
+        "mean": 57997.5,
+        "stddev": 2632.5585,
+        "min": 56136,
+        "max": 59859
+      }
+    },
+    "without_skill": {
+      "pass_rate": {
+        "mean": 0.3636,
+        "stddev": 0.1286,
+        "min": 0.2727,
+        "max": 0.4545
+      },
+      "time_seconds": {
+        "mean": 486.0,
+        "stddev": 100.5506,
+        "min": 414.9,
+        "max": 557.1
+      },
+      "tokens": {
+        "mean": 65468.5,
+        "stddev": 11891.4147,
+        "min": 57060,
+        "max": 73877
+      }
+    },
+    "delta": {
+      "pass_rate": "+0.64",
+      "time_seconds": "-236.8",
+      "tokens": "-7471"
+    }
+  },
+  "notes": []
+}

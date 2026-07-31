@@ -1,0 +1,6 @@
+{
+  "total_tokens": 58419,
+  "duration_ms": 252109,
+  "total_duration_seconds": 252.1,
+  "note": "CONTAMINATED baseline: this run auto-discovered and used the globally-installed skill despite being told to use its own judgment. Not a true no-skill baseline."
+}

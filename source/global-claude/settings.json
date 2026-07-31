@@ -1,0 +1,31 @@
+{
+  "env": {
+    "CLAUDE_CODE_USE_POWERSHELL_TOOL": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(gh pr merge:*)"
+    ]
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "figma@claude-plugins-official": true,
+    "chrome-devtools-mcp@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "pr-review-toolkit@claude-plugins-official": true
+  },
+  "extraKnownMarketplaces": {
+    "aeo": {
+      "source": {
+        "source": "directory",
+        "path": "D:\\AEO"
+      }
+    }
+  },
+  "effortLevel": "xhigh",
+  "autoUpdatesChannel": "latest",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "agentPushNotifEnabled": true
+}

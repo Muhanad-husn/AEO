@@ -1,0 +1,33 @@
+#!/usr/bin/env sh
+# Native git backstop for "never commit while tests are failing".
+# Active after: git config core.hooksPath .githooks
+# This fires even if a commit is made outside Claude Code.
+
+set -e
+
+# symbolic-ref works on an unborn branch; rev-parse would return "HEAD" there.
+branch="$(git symbolic-ref --short -q HEAD 2>/dev/null || git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')"
+case "$branch" in
+  main|master|release|production)
+    echo "[pre-commit] BLOCKED: direct commits on protected branch '$branch' are not allowed." >&2
+    echo "[pre-commit] Create a feature branch: git switch -c feat/<slug>" >&2
+    exit 1
+    ;;
+esac
+
+# Prefer uv if available, else fall back to the ambient python.
+if command -v uv >/dev/null 2>&1; then
+  uv run pytest -q
+  code=$?
+else
+  python -m pytest -q
+  code=$?
+fi
+
+# 0 = passed, 5 = no tests collected. Both acceptable; anything else blocks.
+if [ "$code" -ne 0 ] && [ "$code" -ne 5 ]; then
+  echo "[pre-commit] BLOCKED: test suite is not green (pytest exit $code). Commit refused." >&2
+  exit 1
+fi
+
+exit 0

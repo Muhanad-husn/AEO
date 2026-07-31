@@ -1,0 +1,33 @@
+# Local Claude Code state for THIS repo (not the copied sources under source/)
+/.claude/settings.local.json
+/.claude/sessions/
+/.claude/tasks/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# Secrets — never commit
+.env
+*.credentials.json
+secrets/*
+!secrets/*.example.*
+
+# source/ is a verbatim reference snapshot and MUST be tracked in full,
+# including the copied .claude/ config trees. Re-include it explicitly so
+# the generic patterns above cannot swallow it.
+!source/
+!source/**

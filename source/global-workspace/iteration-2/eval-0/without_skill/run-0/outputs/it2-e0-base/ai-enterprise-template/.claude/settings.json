@@ -1,0 +1,29 @@
+{
+  "$comment": "Repo-level Claude Code settings. Two layers of guardrails: (1) a deny permission list that stops the worst commands outright, and (2) a PreToolUse hook (git_guard.py) that runs tests before commits and blocks merges/pushes to protected branches. Native git hooks in .githooks/ are the backstop if Claude Code is bypassed.",
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git push --force:*)",
+      "Bash(gh repo create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(gh api:*)"
+    ],
+    "ask": [
+      "Bash(git merge:*)",
+      "Bash(git rebase:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/git_guard.py"
+          }
+        ]
+      }
+    ]
+  }
+}

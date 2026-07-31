@@ -1,0 +1,66 @@
+{
+  "repo_root": "D:\\eval-scratch\\it2-e1-base\\agentic-org",
+  "summary": {
+    "pass_rate": 0.2727,
+    "passed": 3,
+    "failed": 8,
+    "total": 11
+  },
+  "expectations": [
+    {
+      "text": "Directory tree present (.claude/{agents,skills,hooks}, specs, src, tests, plans, docs/tdd-evidence, secrets)",
+      "passed": false,
+      "evidence": "missing: ['.claude/skills', 'plans', 'docs/tdd-evidence', 'secrets']"
+    },
+    {
+      "text": "A baseline test file exists under tests/",
+      "passed": true,
+      "evidence": "['test_running_total.py']"
+    },
+    {
+      "text": "CLAUDE.md exists and states the founder is the only one who may merge",
+      "passed": false,
+      "evidence": "CLAUDE.md missing or lacks founder/merge"
+    },
+    {
+      "text": "CLAUDE.md states specs are frozen during implementation / drift-to-issue",
+      "passed": false,
+      "evidence": "no spec-freeze language"
+    },
+    {
+      "text": "All five role subagent files exist (triage, spec-author, test-author, implementer, reviewer)",
+      "passed": false,
+      "evidence": "found: ['implementer', 'reviewer', 'test-author'] / all files: ['architect', 'implementer', 'integrator', 'reviewer', 'test-author']"
+    },
+    {
+      "text": "Reviewer subagent has no Edit/Write in its tools",
+      "passed": true,
+      "evidence": "tools: tools: read, grep, glob"
+    },
+    {
+      "text": "Models pinned per roster (triage=haiku, spec=opus, test/impl/review=sonnet)",
+      "passed": false,
+      "evidence": "triage=MISSING, spec-author=MISSING, test-author=opus(want sonnet), implementer=sonnet, reviewer=opus(want sonnet)"
+    },
+    {
+      "text": "Implementer, spec-author, and test-author carry PreToolUse frontmatter path guards",
+      "passed": false,
+      "evidence": "implementer=NO-guard, spec-author=MISSING, test-author=NO-guard"
+    },
+    {
+      "text": "Path guards cover Write() (create-new-file) not only Edit() \u2014 no guard leak",
+      "passed": false,
+      "evidence": "implementer=EDIT-ONLY(leaks), spec-author=MISSING, test-author=EDIT-ONLY(leaks)"
+    },
+    {
+      "text": "gh repo create / branch-protection prepared but NOT executed (no real remote)",
+      "passed": true,
+      "evidence": "no github remote in .git/config"
+    },
+    {
+      "text": "Stopped at Phase 2 \u2014 no Phase-3 hook wiring (settings.json PreToolUse / hook scripts) written",
+      "passed": false,
+      "evidence": "settings has hooks=yes, hook scripts=[]"
+    }
+  ]
+}

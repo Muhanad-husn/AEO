@@ -1,0 +1,22 @@
+{
+  "skill_name": "agentic-engineering-org",
+  "note": "Structural evals exercise the skill through Phase 0-2 only. Because the real workflow is supervised, each eval prompt tells the runner to act as the founder and auto-approve checkpoints 0-2 so the early-phase artifacts (repo tree, CLAUDE.md, 4 role subagents) get produced without a human in the loop. We do NOT run Phases 3-6 in automated evals.",
+  "evals": [
+    {
+      "id": 0,
+      "name": "full-scaffold-through-roles",
+      "prompt": "I want to set up an AI software dev 'team' inside Claude Code: a builder subagent that takes issues test-first to PRs, plus triage and review support, but where subagents can never merge to main and can never commit when tests are failing. Build me a reusable template repo for this. I'm the only human. Use Python as the default stack. For this run, act as the founder yourself: when you hit a human checkpoint, record what you'd present, approve it, and continue — but only go as far as the role subagents being created (stop after that phase). Don't actually create a GitHub remote or run gh; just show me the commands you'd hand me. Do everything under D:/eval-scratch/ai-enterprise-template.",
+      "expected_output": "A scaffolded template repo with the Phase 0 directory tree (pyproject.toml, specs/ src/ tests/ plans/ docs/tdd-evidence/ secrets/ .claude/{agents,skills,hooks}/), a green baseline test, a CLAUDE.md handbook under ~100 lines answering 'who may merge?' and 'what happens when code and spec disagree?' (living specs, same-PR updates), and 4 role subagent files under .claude/agents/ (builder, reviewer, triage, spec-author) with correct tools+model per the roster and reviewer read-only. gh commands prepared but not run.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 1,
+      "name": "roles-and-gates-emphasis",
+      "prompt": "Set me up an agentic engineering workflow in Claude Code with tool-locked roles and hard gates so the agents build but I stay in the merge seat. I care most that no subagent can merge or push to main, that agents can't rewrite their own harness config, and that the reviewer can only read. I don't want heavy ceremony — one capable builder agent is fine. Scaffold the template and create the role subagents. Act as the founder and approve your own checkpoints as you go, but stop once the role subagents exist. Work under D:/eval-scratch/agentic-org and don't create any real GitHub repo.",
+      "expected_output": "Template scaffold plus 4 role subagents. Builder writes src/, tests/, and specs/ and carries frontmatter hooks for the .claude/ harness fence and the merge guard; reviewer has no Edit/Write and is described as on-demand; models pinned (triage haiku, builder/reviewer sonnet, spec-author opus). CLAUDE.md states merges require founder approval (the orchestrator executes on approval; subagents never merge) and specs are living documentation updated in the same PR as the behavior change — no spec-freeze.",
+      "files": [],
+      "assertions": []
+    }
+  ]
+}

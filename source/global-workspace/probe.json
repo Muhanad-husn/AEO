@@ -1,0 +1,4 @@
+[
+  {"query": "set up spec/test/implement/review role subagents in claude code with hooks that stop any agent from merging to main or committing when tests are red, as a reusable template", "should_trigger": true},
+  {"query": "what model should i use for automated code review - opus or sonnet?", "should_trigger": false}
+]

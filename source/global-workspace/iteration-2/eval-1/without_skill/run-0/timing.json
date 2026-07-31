@@ -1,0 +1,6 @@
+{
+  "total_tokens": 73877,
+  "duration_ms": 557089,
+  "total_duration_seconds": 557.1,
+  "note": "TRUE no-skill baseline (skill hidden). Diverged from contract: roles architect/integrator, reviewer=opus, role_guard.py SubagentStart hook + permissions.deny instead of frontmatter guards, shipped extra seed feature."
+}

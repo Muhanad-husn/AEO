@@ -1,0 +1,72 @@
+[project]
+name = "axial"
+version = "0.1.0"
+description = "Axial: corpus ingestion pipeline turning academic sources into a tagged Obsidian knowledge graph. Built by a one-person agentic engineering org."
+requires-python = ">=3.13"
+dependencies = [
+    "docling>=2.110.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth>=2.30.0",
+    "httpx>=0.28.1",
+    "langdetect>=1.0.9",
+    "openpyxl>=3.1.5",
+    "pypdf>=6.14.2",
+    "python-docx>=1.2.0",
+    "pyyaml>=6.0.3",
+    "unstructured-inference>=1.6.13",
+    "unstructured[pdf]>=0.24.0",
+]
+
+[project.scripts]
+axial = "axial.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/axial"]
+
+[dependency-groups]
+dev = [
+    "filelock>=3",
+    "pytest>=8",
+    "pytest-xdist>=3",
+    "ruff>=0.6",
+]
+# Stage-5 distillation runtime deps (DEC-35, issue #296): a local
+# sentence-transformer for the embedding pass + LanceDB for the vector
+# store. Neither belongs in `dependencies` (not needed by the Phase A
+# pipeline) nor `dev` (not CI tooling) -- its own group, installed via
+# `uv sync --group distill`. scikit-learn + hdbscan added in #297 (stage
+# 5b: PCA reduction + HDBSCAN clustering for the readiness map) --
+# `umap-learn` deliberately NOT added: DEC-35 named it for notebook-only
+# visualization, but #297 builds no notebook, so it would be an unused
+# dependency.
+# Mechanical name-merge experiment (PR #441 follow-up): model-free entity
+# resolution over the recorded merge decisions. Not needed by any pipeline
+# pass -- installed via `uv sync --group experiment`.
+experiment = [
+    "jellyfish>=1.2",
+    "rapidfuzz>=3.14",
+    "unidecode>=1.4",
+]
+
+distill = [
+    "hdbscan>=0.8.38",
+    "lancedb>=0.15",
+    "scikit-learn>=1.5",
+    "sentence-transformers>=3.0",
+]
+
+# tests/ holds only outer acceptance contracts (test-author, locked once red);
+# inner unit tests are co-located under src/ (implementer's domain) - DEC-20.
+[tool.pytest.ini_options]
+testpaths = ["tests", "src"]
+markers = [
+    "slow: exercises the real docling conversion pipeline (model load, no network once cached)",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
