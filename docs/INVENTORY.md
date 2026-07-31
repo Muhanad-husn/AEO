@@ -144,7 +144,15 @@ credential. Zero redactions were required.
   They were committed with `git add -f` rather than by editing the copied ignore
   file, which would have broken verbatim fidelity. Any future file added under
   `source/axial/root/` may need the same treatment.
-- Verified: 299 files under `source/` on disk, 299 tracked in git.
+- `source/upstream-red-green-refactor/.gitattributes` is likewise a **copy** that
+  git treats as live, and it sets `* text=auto`. Nested attributes files win over
+  the root, so `source/** -text` cannot suppress it and git normalizes that
+  subtree to LF. This is harmless: the round-trip (upstream stores LF → clone
+  writes CRLF into the working tree → we commit LF) lands on upstream's own
+  bytes. Verified by comparing blob hashes against the source repo — `SKILL.md`,
+  `tdd-harness/SKILL.md`, and `README.md` all match `593e7ab` exactly. Preserving
+  the CRLF working-tree artifact would have been *less* faithful.
+- Verified: 337 files under `source/` on disk, 337 tracked in git.
 
 ## Provenance rules
 
