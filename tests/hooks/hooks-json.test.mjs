@@ -21,6 +21,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { HOOK_TIMEOUT_SECONDS } from '../../plugin/hooks/commit-gate.mjs';
 import { RUNTIME_MISSING_BANNER, preflight } from '../../plugin/hooks/lib.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
@@ -29,12 +30,13 @@ const hooksJsonPath = path.join(pluginRoot, 'hooks', 'hooks.json');
 const rawText = readFileSync(hooksJsonPath, 'utf8');
 const parsed = JSON.parse(rawText);
 
-// Scripts P1.2/P1.3/P1.6 own and are building in sibling worktrees at the same time as
-// this slice (see PLAN.md's concurrency schedule). They are wired here deliberately --
-// single ownership of hooks.json is the point (L-04) -- but they will not exist on disk
-// in THIS worktree until those branches merge. A missing file for one of these is a
-// scheduling fact, not a defect in this slice, so its existence check skips loudly
-// (L-08: a loud skip, never a silent pass) instead of failing red.
+// Scripts P1.2/P1.3/P1.6 own and were building in sibling worktrees while P1.7 wrote
+// this file. They are wired here deliberately -- single ownership of hooks.json is the
+// point (L-04) -- but they did not exist on disk in that worktree until those branches
+// merged. A missing file for one of these was a scheduling fact, not a defect, so its
+// existence check skips loudly (L-08: a loud skip, never a silent pass) instead of
+// failing red. All three have now merged, so nothing here skips; the allowance stays
+// only because the next slice to be wired ahead of its merge needs it.
 const PENDING_SIBLING_SLICES = new Set(['hooks/commit-gate.mjs', 'hooks/block-merge.mjs', 'hooks/review-jail.mjs']);
 
 // ---------------------------------------------------------------------------
@@ -225,11 +227,58 @@ describe('matchers', () => {
   test('the forge-tool matcher matches D14\'s namespace-agnostic pattern, not one literal server name', () => {
     const group = parsed.hooks.PreToolUse.find((g) => g.matcher?.includes('github'));
     assert.ok(group, 'expected a PreToolUse group matching github-namespaced tools');
-    assert.equal(group.matcher, 'mcp__.*github.*__.*(merge|create_or_update_file|push_files|delete_file)');
+    // Every github-namespaced tool, not the subset of action names block-merge blocks
+    // today. C-04: the matcher is a best-effort pre-filter and never the security
+    // boundary, so a looser one that invokes the gate more often is safe while a
+    // tighter one that misses is not. Naming the action list here would also be the
+    // same list in two files, and the copy in this one goes stale silently the first
+    // time the gate learns a new action.
+    assert.equal(group.matcher, 'mcp__.*github.*__.*');
   });
 
   test('review-jail is wired against every tool, not a named subset', () => {
     const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('review-jail.mjs')));
     assert.equal(group.matcher, '*');
+  });
+
+  test('block-merge is wired on both arms it decides: Bash and the forge', () => {
+    const matchers = parsed.hooks.PreToolUse.filter((g) =>
+      g.hooks.some((h) => scriptOf(h)?.endsWith('block-merge.mjs')),
+    ).map((g) => g.matcher);
+    assert.deepEqual(matchers.sort(), ['^Bash$', 'mcp__.*github.*__.*']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Timeouts -- each one is the value the slice that built the gate asked for
+// ---------------------------------------------------------------------------
+
+describe('timeouts', () => {
+  const timeoutOf = (suffix) => {
+    for (const { hook } of allCommandHooks(parsed)) {
+      if (scriptOf(hook)?.endsWith(suffix)) return hook.timeout;
+    }
+    return undefined;
+  };
+
+  test('commit-gate declares the timeout its own code is written against', () => {
+    // Not a tuned number: it is the documented default for a command hook, stated so
+    // that the gate's internal suite budget can be checked against it in one place.
+    // What Claude Code does on a hook timeout is undocumented, so the gate does not
+    // rely on it -- it holds its own 570s budget, sees the overrun itself and blocks.
+    assert.equal(timeoutOf('commit-gate.mjs'), HOOK_TIMEOUT_SECONDS);
+    assert.equal(timeoutOf('commit-gate.mjs'), 600);
+  });
+
+  test('review-jail declares the short timeout its slice specified', () => {
+    // The jail reads a payload and compares two paths. It spawns nothing, so there is
+    // nothing for a long timeout to protect.
+    assert.equal(timeoutOf('review-jail.mjs'), 10);
+  });
+
+  test('block-merge declares no timeout override', () => {
+    for (const { hook } of allCommandHooks(parsed)) {
+      if (scriptOf(hook)?.endsWith('block-merge.mjs')) assert.equal(hook.timeout, undefined);
+    }
   });
 });

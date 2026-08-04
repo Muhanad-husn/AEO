@@ -31,6 +31,7 @@
 // this check. That narrowing, and why it was accepted, is recorded in the slice log.
 
 import {
+  DEFAULT_BRANCH_UNRESOLVED,
   block,
   currentBranch,
   defaultBranch,
@@ -39,6 +40,15 @@ import {
   resolveWorktree,
   runGate,
 } from './lib.mjs';
+
+// defaultBranch returns null when the repository does not say which branch it protects
+// (D14, as corrected in lib.mjs). Every use of it here is a "does this call target the
+// protected branch" question, and null makes that question unanswerable, so it blocks.
+// blockMerge's own closing line is wrong for this case: the fix is one git command, not
+// a PR, so these two block directly with the remedy instead.
+function blockUnresolvedDefault(what) {
+  block(`this repository does not say what its default branch is, so ${what} cannot be shown to miss it. ${DEFAULT_BRANCH_UNRESOLVED}`);
+}
 
 // Every block shares the PowerShell original's closing line, in one place so the
 // wording cannot drift block-call by block-call.
@@ -85,6 +95,7 @@ function checkForgeTool(payload, action) {
     if (!branch) return;
     const protectedBranch = defaultBranch(resolveWorktree(payload).toplevel);
     const target = branch.replace(/^refs\/heads\//, '');
+    if (protectedBranch === null) blockUnresolvedDefault(`a forge write to \`${target}\``);
     if (target === protectedBranch) {
       blockMerge(`no direct writes to ${protectedBranch} through the forge.`);
     }
@@ -163,6 +174,7 @@ function checkBashCommand(payload, command) {
 
     const dir = resolveWorktree(payload).toplevel;
     const protectedBranch = defaultBranch(dir);
+    if (protectedBranch === null) blockUnresolvedDefault('this push');
     const targetsProtected =
       destinations.length > 0 ? destinations.includes(protectedBranch) : currentBranch(dir) === protectedBranch;
     if (targetsProtected) blockMerge(`subagents never push to ${protectedBranch}.`);

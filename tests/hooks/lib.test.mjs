@@ -320,16 +320,53 @@ describe('defaultBranch', () => {
     assert.equal(defaultBranch(repo), 'release/stable');
   });
 
-  test('falls back to the configured default branch', () => {
+  test("this repository's own init.defaultBranch is honoured", () => {
     const repo = makeRepo({ branch: 'whatever' });
-    run(repo, 'config', 'init.defaultBranch', 'mainline');
+    run(repo, 'config', 'init.defaultBranch', 'mainline'); // --local scope, which is the only scope read
     assert.equal(defaultBranch(repo), 'mainline');
   });
 
-  test('falls back to main when nothing resolves', () => {
+  test('a repo with no origin resolves from its own branches, not the machine gitconfig', () => {
+    // THE REGRESSION. This machine's SYSTEM gitconfig sets init.defaultBranch=master.
+    // Reading that key in any scope but --local made this repo, whose real branch is
+    // `main`, resolve to `master`, so the commit gate compared main against master,
+    // never fired, and let a code commit land directly on main.
+    const repo = makeRepo({ branch: 'main' });
+    assert.equal(run(repo, 'remote'), '', 'fixture must have no remote at all');
+    assert.equal(defaultBranch(repo), 'main');
+  });
+
+  test('a no-origin repo on an unconventional single branch resolves to that branch', () => {
+    // One branch is the default branch, whatever it is called. Also proves nothing is
+    // reading the machine's `master` any more: no name here matches it.
+    const repo = makeRepo({ branch: 'develop' });
+    assert.equal(defaultBranch(repo), 'develop');
+  });
+
+  test('a no-origin repo picks the one conventional name among several branches', () => {
+    const repo = makeRepo({ branch: 'main' });
+    run(repo, 'branch', 'feat/a');
+    run(repo, 'branch', 'feat/b');
+    assert.equal(defaultBranch(repo), 'main');
+  });
+
+  test('a no-origin repo carrying BOTH main and master is unresolved, not guessed', () => {
+    const repo = makeRepo({ branch: 'main' });
+    run(repo, 'branch', 'master');
+    assert.equal(defaultBranch(repo), null);
+  });
+
+  test('a no-origin repo of only unconventional branches is unresolved, not guessed', () => {
+    const repo = makeRepo({ branch: 'develop' });
+    run(repo, 'branch', 'staging');
+    assert.equal(defaultBranch(repo), null);
+  });
+
+  test('returns null when nothing resolves, never the literal main', () => {
     // A path that is not a directory at all, so every git call fails regardless of
-    // the machine's global git config. Keeps the last-resort case deterministic.
-    assert.equal(defaultBranch(path.join(os.tmpdir(), 'aeo-p11-absent-repo')), 'main');
+    // the machine's git config. D14's `main` last resort is deliberately gone: a guess
+    // makes a gate that cannot tell what it protects behave like one that can.
+    assert.equal(defaultBranch(path.join(os.tmpdir(), 'aeo-p11-absent-repo')), null);
   });
 
   test('a master repo resolves to master, not the literal main', () => {

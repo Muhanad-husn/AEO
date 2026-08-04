@@ -240,6 +240,62 @@ describe('the protected branch is resolved, never assumed', () => {
     assert.equal(result.status, 2);
     assert.match(result.stderr, /did not resolve to a git repository/);
   });
+
+  test('a code commit on main in a repo with NO origin is blocked', () => {
+    // THE INTEGRATION DEFECT, in the suite. This machine's SYSTEM gitconfig sets
+    // init.defaultBranch=master. defaultBranch used to read that key in every scope,
+    // so this repo, whose real branch is main, resolved to master; main !== master, no
+    // block fired, and a commit of source code landed directly on the default branch.
+    // Nothing here sets any git config: the fixture is the bare failing case.
+    const dir = tempDir();
+    run(dir, 'init', '-q', '-b', 'main');
+    run(dir, 'config', 'user.name', 'aeo-test');
+    run(dir, 'config', 'user.email', 'aeo-test@example.invalid');
+    run(dir, 'config', 'commit.gpgsign', 'false');
+    writeInto(dir, { 'package.json': npmPackage('node -e ""'), 'src/a.js': 'const a = 1;\n' });
+    run(dir, 'add', '-A');
+    run(dir, 'commit', '-q', '-m', 'init');
+    writeInto(dir, { 'src/a.js': 'const a = 2;\n' });
+    run(dir, 'add', '-A');
+
+    assert.equal(run(dir, 'remote'), '', 'fixture must have no remote at all');
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /BLOCKED: no direct commits on main/);
+  });
+
+  test('an unresolvable default branch blocks and names the remedy, never passes quietly', () => {
+    // No origin, no local init.defaultBranch, and both main and master present, so the
+    // repository genuinely does not say which branch it protects. D10's escape-hatch
+    // rule: the gate stops and says what it needs rather than guessing (L-08).
+    const dir = tempDir();
+    run(dir, 'init', '-q', '-b', 'main');
+    run(dir, 'config', 'user.name', 'aeo-test');
+    run(dir, 'config', 'user.email', 'aeo-test@example.invalid');
+    run(dir, 'commit', '-q', '--allow-empty', '-m', 'init');
+    run(dir, 'branch', 'master');
+
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /does not say what its default branch is/);
+    assert.match(result.stderr, /git config init\.defaultBranch/);
+  });
+
+  test('the first commit in a repo with no commits yet is not blocked as a branch', () => {
+    // An unborn HEAD has no branch to compare and no branches for the default to be
+    // read from. Demanding one here would make `git init` followed by a first commit
+    // impossible, which is over-blocking, not fail-closed. Documentation only, so this
+    // asserts the branch arm alone and not detection.
+    const dir = tempDir();
+    run(dir, 'init', '-q', '-b', 'main');
+    run(dir, 'config', 'user.name', 'aeo-test');
+    run(dir, 'config', 'user.email', 'aeo-test@example.invalid');
+    writeInto(dir, { 'README.md': '# new project' });
+    run(dir, 'add', '-A');
+
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 0, result.stderr);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -35,7 +35,16 @@ import { spawnSync } from 'node:child_process';
 import { writeSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-import { block, currentBranch, defaultBranch, git, matchesGitSubcommand, resolveWorktree, runGate } from './lib.mjs';
+import {
+  DEFAULT_BRANCH_UNRESOLVED,
+  block,
+  currentBranch,
+  defaultBranch,
+  git,
+  matchesGitSubcommand,
+  resolveWorktree,
+  runGate,
+} from './lib.mjs';
 import { LOOKED_FOR, resolveTestPlan } from './stack.mjs';
 
 /**
@@ -197,10 +206,24 @@ export function commitGate(payload) {
   // HEAD currentBranch reports the literal `HEAD`, which is not the default branch and
   // is the right answer here, since such a commit lands on no branch at all.
   const branch = currentBranch(toplevel);
-  const protectedBranch = defaultBranch(toplevel);
-  if (branch !== null && branch === protectedBranch) {
-    block(`no direct commits on ${protectedBranch}. Work on a branch and merge via PR after founder approval.`);
+  if (branch !== null) {
+    const protectedBranch = defaultBranch(toplevel);
+    if (protectedBranch === null) {
+      // A gate that cannot name the branch it protects cannot tell that this commit is
+      // not on it. Guessing `main` here is what let a code commit land on `main` in a
+      // repo with no origin; the honest answer is to stop and ask for one fact.
+      block(
+        `this repository does not say what its default branch is, so the gate cannot tell whether this commit lands on it. ${DEFAULT_BRANCH_UNRESOLVED}`,
+      );
+    }
+    if (branch === protectedBranch) {
+      block(`no direct commits on ${protectedBranch}. Work on a branch and merge via PR after founder approval.`);
+    }
   }
+  // A null branch is an unborn HEAD: `git init`, no commit yet, so there are no
+  // branches for defaultBranch to read and nothing for this check to compare. Asking
+  // for a default branch here would make the first commit in a new repository
+  // impossible, which is over-blocking rather than fail-closed. The suite still runs.
 
   // Fails safe in every direction: an empty set, any non-documentation file, any path
   // under a dot-directory, or a git failure that empties the set all fall through to

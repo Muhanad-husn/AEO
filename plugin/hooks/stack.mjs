@@ -163,7 +163,9 @@ const STACKS = [
 
 function dotnetProject(dir) {
   try {
-    return readdirSync(dir).find((name) => DOTNET_PROJECT.test(name)) ?? null;
+    // Sorted, because readdir order is the filesystem's business: with two project
+    // files in one directory an unsorted pick is a different test command per platform.
+    return readdirSync(dir).sort().find((name) => DOTNET_PROJECT.test(name)) ?? null;
   } catch {
     return null;
   }

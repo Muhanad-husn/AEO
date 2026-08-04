@@ -20,7 +20,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/commit-gate.mjs"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/commit-gate.mjs"],
+            "timeout": 600
           },
           {
             "type": "command",
@@ -30,7 +31,7 @@
         ]
       },
       {
-        "matcher": "mcp__.*github.*__.*(merge|create_or_update_file|push_files|delete_file)",
+        "matcher": "mcp__.*github.*__.*",
         "hooks": [
           {
             "type": "command",
@@ -45,7 +46,8 @@
           {
             "type": "command",
             "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/review-jail.mjs"]
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/review-jail.mjs"],
+            "timeout": 10
           }
         ]
       }

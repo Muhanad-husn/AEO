@@ -92,7 +92,39 @@ function renderSection(label, result, formatItem) {
   return [`**${label} (${result.data.length}):**`, ...result.data.map(formatItem), ''];
 }
 
-/** The most recently written `logs/<job>/summary.md` under the repo root, and its first few non-blank lines. */
+// A run log directory is named `<YYYY-MM-DD>-<job>`. That date is the primary ordering
+// key because mtime alone cannot order these at all: two summaries written in the same
+// millisecond carry the same mtime, and the tie then falls to readdir order, which is
+// the filesystem's business and not a fact about the runs.
+const RUN_LOG_DATE = /^(\d{4}-\d{2}-\d{2})\b/;
+
+/**
+ * Newest first. Four keys, each doing work the one before it could not:
+ *
+ * 1. Dated directories outrank undated ones. `<date>-<job>` is the convention this
+ *    hook reports on; a directory that does not follow it is not a run log by name.
+ * 2. Date descending. This is what makes the answer deterministic, and it is what a
+ *    reader means by "newest run log": the run's own date, not when the file was last
+ *    touched. Re-editing an old summary does not make it the current one.
+ * 3. mtime descending. Real signal within one date, and the only signal at all for
+ *    undated directories.
+ * 4. Name descending. Directory names are unique, so this always decides, which is
+ *    the property the old comparison lacked.
+ */
+function compareRunLogs(a, b) {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1; // '' sorts last, so undated ranks below dated
+  if (a.mtimeMs !== b.mtimeMs) return b.mtimeMs - a.mtimeMs;
+  return a.name < b.name ? 1 : a.name > b.name ? -1 : 0;
+}
+
+/**
+ * The newest `logs/<job>/summary.md` under the repo root, and its first few non-blank
+ * lines.
+ *
+ * Reporting a stale log as the current one is the exact failure this hook exists to
+ * prevent (L-08), so "newest" here is a total order rather than a comparison that can
+ * tie.
+ */
 function findNewestRunLog(root) {
   const logsDir = path.join(root, 'logs');
   if (!existsSync(logsDir)) return null;
@@ -104,7 +136,7 @@ function findNewestRunLog(root) {
     return null;
   }
 
-  let newest = null;
+  const candidates = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const summaryPath = path.join(logsDir, entry.name, 'summary.md');
@@ -115,9 +147,15 @@ function findNewestRunLog(root) {
     } catch {
       continue;
     }
-    if (!newest || mtimeMs > newest.mtimeMs) newest = { mtimeMs, summaryPath };
+    candidates.push({
+      name: entry.name,
+      date: RUN_LOG_DATE.exec(entry.name)?.[1] ?? '',
+      mtimeMs,
+      summaryPath,
+    });
   }
-  if (!newest) return null;
+  if (candidates.length === 0) return null;
+  const newest = candidates.sort(compareRunLogs)[0];
 
   let head = [];
   try {
