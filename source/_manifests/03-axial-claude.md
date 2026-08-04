@@ -1,7 +1,8 @@
 # 03 — Axial `.claude/` Harness Copy
 
 Source: `D:\axial\.claude\` (read-only, not modified, no git commands run against it)
-Destination: `D:\AEO\source\axial\.claude\`
+Destination: `D:\AEO\source\axial\dot-claude\` (copied as `.claude\`; renamed later so
+Claude Code stops discovering the frozen skills — file bytes unchanged, see INVENTORY)
 
 ## Copy summary
 

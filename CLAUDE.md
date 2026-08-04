@@ -30,46 +30,59 @@ on is copied in under `source/`. Nothing here reads from `~/.claude/` or
 | `source/global-workspace/` | Eval harness, graders, and iteration metrics for the skill |
 | `source/axial/` | The matured local implementation: agents, hooks, skills, metrics tooling, principles |
 | `source/v1-archive/` | The **pre-v2 harness**, recovered from the recycle bin — the only non-Python instance that exists, and the only one with a shared hook library and gate tests |
-| `source/plugin-format/` | Official plugin references. `hookify` is the one that matters: it ships gates via `hooks/hooks.json` and `python3` |
+| `source/plugin-format/` | Official plugin references. `hookify` is the one that matters: it ships gates via `hooks/hooks.json` and `${CLAUDE_PLUGIN_ROOT}` |
 | `source/upstream-red-green-refactor/` | Pristine upstream harness @ `593e7ab`, MIT, with its licence |
 | `source/eval-tooling/`, `source/global-claude/` | `skill-creator`, and the global directives the skill inherits |
 | `source/_manifests/` | Per-source provenance records written during the copy |
 
 `source/` is **reference material, not the product**. It is a verbatim snapshot
-kept for fidelity during migration. The plugin layout (`.claude-plugin/`,
-`skills/`, `agents/`, `hooks/`) does not exist yet and is designed in `docs/PLAN.md`.
+kept for fidelity during migration. The product is `plugin/`, whose shape is
+designed in `docs/PLAN.md`. A marketplace manifest at `.claude-plugin/` in the
+repo root makes it installable.
 
 ### Planning docs, and what each answers
 
 | Doc | Answers |
 | --- | --- |
 | [docs/PRINCIPLES.md](docs/PRINCIPLES.md) | What is fixed, what is proposed. **Authoritative** |
-| [docs/ENHANCEMENT-ASSESSMENT.md](docs/ENHANCEMENT-ASSESSMENT.md) | Which proposals are worth building. Sets priority |
-| [docs/PLAN.md](docs/PLAN.md) | In what order, with the checkpoints |
-| [docs/BUILD-METHOD.md](docs/BUILD-METHOD.md) | Who authors each slice, at which model tier |
-| [docs/DIVERGENCES.md](docs/DIVERGENCES.md) | Where the vendored skill and production disagree — production is the evidence |
-| [docs/DOCS-CURRENCY.md](docs/DOCS-CURRENCY.md) | Where **current Claude Code contradicts the vendored skill**. Read before writing any hook or agent |
-| [docs/LESSONS.md](docs/LESSONS.md) | What production learned the hard way, including the incident that destroyed ~19,000 documents |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | What is settled, and why. Includes the enhancement disposition |
+| [docs/PLAN.md](docs/PLAN.md) | In what order, by whom, at which model tier, with the checkpoints |
+| [docs/EVIDENCE.md](docs/EVIDENCE.md) | What the build must not get wrong. **Read before writing any hook or agent** |
 | [docs/INVENTORY.md](docs/INVENTORY.md) | What was copied, from where, and what was left out |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | The decision log |
+
+Five docs, five questions. Identifiers do not collide: **D*n*** decisions, **EN-*n***
+enhancements, **C/V/L** evidence — currency, divergence, lesson. `DEC-*n*` belongs to
+the vendored skill and is only ever quoted.
 
 ## Current stage
 
-Copy-in and planning complete. **No plugin code written yet.** Next is Phase 0 of
-[docs/PLAN.md](docs/PLAN.md) — the plugin skeleton.
+Phase 0 complete. The plugin installs and reports eleven skills, three agents and
+**zero hooks** — the gates do not exist yet. Everything under `plugin/skills/` and
+`plugin/agents/` is a stub that names its port source and what must change; the
+real content lands in Phase 2.
 
-Three findings in `docs/DOCS-CURRENCY.md` overturn decisions the vendored skill
-still states as settled. They are cheap to miss and expensive to discover late:
-plugin subagents **cannot** carry `hooks:` frontmatter (so gates cannot be
-double-wired); `agent_type` is **not** a subagent flag; and commands have been
-merged into skills, so new plugins ship `skills/` only.
+Next is **Phase 1** of [docs/PLAN.md](docs/PLAN.md) — the gates, in Node, with
+tests. It is the foundation, and dogfooding starts the moment it closes.
+
+Four findings overturn things the vendored skill states as settled. They are cheap to
+miss and expensive to discover late:
+
+- Plugin subagents **cannot** carry `hooks:` frontmatter, so gates cannot be
+  double-wired — `hooks/hooks.json` is the whole gate (C-01).
+- `agent_type` is **not** a subagent flag; it is also set by `--agent`, and plugin
+  subagents report a namespaced identity (C-02).
+- Commands have been merged into skills, so new plugins ship `skills/` only (C-03).
+- The gates are **Node**, not Python — `python3` on this machine is a Microsoft Store
+  alias stub, and a hook that cannot start fails *open* ([D8](docs/DECISIONS.md)).
 
 ## How the work is done
 
 **Every artifact is authored by a dispatched subagent with a model matched to the
 job. Nothing with content is emitted by a generator script.** Creating an empty
 directory is not generating a file; prose, prompts, code and tests are. Tiering
-and the per-slice dispatch table are in [docs/BUILD-METHOD.md](docs/BUILD-METHOD.md).
+and the per-slice dispatch table are in [docs/PLAN.md](docs/PLAN.md). The rule
+governs plugin artifacts; the planning docs in `docs/` are the orchestrator's own
+work product and are exempt.
 
 ## Working principles
 
@@ -93,8 +106,9 @@ The load-bearing four, in short:
   founder approval.
 - **Measure, don't speculate.** This repo has an eval harness; use it.
 
-[docs/ENHANCEMENT-ASSESSMENT.md](docs/ENHANCEMENT-ASSESSMENT.md) grades the
-thirteen proposals against the 80/20 bar and sets the migration sequence.
+The enhancement disposition in [docs/DECISIONS.md](docs/DECISIONS.md) grades the
+thirteen proposals — plus three late additions — against the 80/20 bar and maps each
+to its phase.
 
 ## Writing conventions
 

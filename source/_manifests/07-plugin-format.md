@@ -43,6 +43,6 @@ was reaching for and that the v2 harness lost.
 
 All three `plugin.json` files are minimal — `{name, description, author}` only.
 Per the current documentation the manifest is itself optional and `name` is its
-only required field. See `docs/DOCS-CURRENCY.md` for the fields worth setting
+only required field. See `docs/EVIDENCE.md` (C-09) for the fields worth setting
 anyway (`$schema`, and an explicit `version`, without which the git SHA is used
 and every commit reads as a new release).

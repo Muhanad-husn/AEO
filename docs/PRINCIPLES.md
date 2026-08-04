@@ -3,8 +3,8 @@
 Authored by the founder. This is the governing document for turning the
 `agentic-engineering-org` skill into a reusable plugin. The fixed principles are
 settled and are not up for renegotiation during migration. The proposed
-enhancements are candidates, assessed in
-[ENHANCEMENT-ASSESSMENT.md](ENHANCEMENT-ASSESSMENT.md).
+enhancements are candidates, assessed in the enhancement disposition in
+[DECISIONS.md](DECISIONS.md), where each carries the stable identifier **EN-*n***.
 
 The skill was developed while working on other projects and still carries
 repository-specific references and settings. Generalizing it means removing those

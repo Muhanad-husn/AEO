@@ -1,7 +1,7 @@
 # Manifest 04 — Founder/developer principles and process-metric mechanisms
 
 Scope: `D:\AEO\source\axial\docs\`, `D:\AEO\source\axial\root\`, `D:\AEO\source\global-claude\`.
-Sources are read-only: `D:\axial`, `C:\Users\mou97\.claude`. `D:\AEO\source\axial\.claude\` was not touched (pre-existing, 36 files / 208,422 bytes, owned by another agent).
+Sources are read-only: `D:\axial`, `C:\Users\mou97\.claude`. `D:\AEO\source\axial\.claude\` was not touched (pre-existing, 36 files / 208,422 bytes, owned by another agent; since renamed to `dot-claude\`).
 
 ## Copy summary per destination
 
