@@ -10,6 +10,179 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-04 — Four decisions from Checkpoint 1
+
+Taken after the seven Phase 1 gates were built, merged and verified together. All
+four were approved by the founder at the checkpoint. Three close gaps the build
+found; one amends a decision that turned out to carry the assumption it was
+written to remove.
+
+### D16 — The default branch is resolved from repository evidence, amending D14
+
+**Problem.** [D14](#d14--the-forge-and-the-default-branch-are-detected-not-assumed)
+specified `git symbolic-ref refs/remotes/origin/HEAD`, then the local default, then
+`main`. Two of those three steps were wrong, and the build proved it rather than
+argued it.
+
+The middle step was implemented as `git config --get init.defaultBranch`.
+Unqualified, that reads system and global scope. `init.defaultBranch` is a
+creation-time preference about the repositories a machine makes *next*; it says
+nothing about the repository in hand.
+
+The consequence was a confirmed fail-open, reproduced end to end on the founder's
+machine, whose **system** config sets `init.defaultBranch=master`:
+
+```
+actual branch : main   (no origin remote)
+defaultBranch() resolves to: master
+commit of CODE on main -> exit=0
+```
+
+A direct commit of code on `main` was not blocked. That is D14's own failure
+inverted. D14 exists because a repo on `master` would silently no-op; this was a
+repo on `main` silently no-opping.
+
+The third step was worse in a quieter way. A literal `main` last resort is exactly
+the assumption D14 was written to remove, and it survived into D14's own text.
+
+**Decision.** Resolution is `origin/HEAD`, then `git config --local`, then evidence
+the repository actually carries: its own branches. One branch means that is the
+default. Otherwise exactly one conventional name among `main`, `master`, `trunk`
+is the default. Two conventional names, or none alongside several branches,
+resolves to **unresolved**.
+
+**Unresolved is never a pass.** Both the commit gate and the merge gate block on it
+and name the command that fixes it. That is
+[D10](#d10--stack-detection-with-no-project-config-file)'s escape hatch applied to
+branch resolution, and L-08's rule that an unset threshold must never make a gate
+skip quietly.
+
+One exemption, pinned by a test: a repository with no commit yet has no branch to
+compare and no branches to read a default from. Demanding one there would make the
+first commit in any new repository impossible, which is over-blocking rather than
+fail-closed.
+
+**Impact.** D14's forge-namespace half stands unchanged. Its default-branch half is
+replaced by this. The fail-open is closed, verified on the original reproduction:
+the same commit now exits 2 on `main` and 0 on a branch.
+
+**Also amended: D14's forge pattern text.** D14 states
+`mcp__.*github.*__.*(merge|…)`, which matches `merge` as a bare substring and would
+false-positive on a read-only tool such as `get_merge_status`. The shipped gate
+anchors the action to the leading verb instead. The matcher stays deliberately
+loose, because C-04 makes it a best-effort pre-filter and never the security
+boundary; the *gate* is where the narrowing happens.
+
+**Reversal path.** One function in `plugin/hooks/lib.mjs` and its tests. Nothing
+else reads branch resolution directly.
+
+### D17 — Two test tiers: in-process is the commit gate's, process-level is CI's
+
+**Problem.** The Phase 1 battery is 449 tests, and almost all of its cost is process
+spawn: the gate suites build real git repositories and spawn the real hook per case,
+which is what makes them trustworthy.
+
+**The first measurement of this was wrong, and the way it was wrong is worth
+recording.** A verification pass reported 17 to 20 minutes across three runs and
+concluded the battery exceeded the commit gate's 570-second budget, so AEO could not
+pass its own gate. Re-measurement did not reproduce it. The same tree, same tests,
+on an idle machine:
+
+| Shell | Runs | Wall clock | Result |
+|---|---|---|---|
+| Git Bash | 3 | 91 s, 127 s, 173 s | 449 pass, **0 skipped** |
+| PowerShell | 2 | 305 s, 353 s | 446 pass, **3 skipped** |
+| Original pass | 3 | 1067 s, 1127 s, 1206 s | 446 pass, 3 skipped |
+
+A 13x spread on identical work, tracking the environment rather than the code. The
+skip count moves with it: `sh` is on PATH under Git Bash, so the runtime-fallback
+tests execute there and skip elsewhere. A suite duration quoted without its
+environment is not a measurement, which is L-10's discipline applied to our own
+numbers.
+
+**The figure that actually decides this is neither of those.** The only consumer of
+the budget is the commit gate itself, and the gate running against AEO takes
+**322 seconds**. It fits inside 570 comfortably. So the original conclusion —
+dogfooding blocked — was false.
+
+The real problem is the one the spread obscured. Five and a half minutes per commit
+fails the plan's first efficiency rule, **fast signal before iteration**. A gate that
+passes its budget and still costs five minutes of founder wall-clock per commit is a
+gate people work around.
+
+**Decision.** Split the suite. The in-process library layer is the fast tier the
+commit gate runs. The process-level gate suites move behind a separate script that
+CI runs as a required check.
+
+**Impact.** The commit gate becomes a fast signal rather than a five-minute pause,
+which is what dogfooding from Phase 2 onward depends on. The cost is L-06's exactly,
+and it is accepted with its name on it: a gate regression is then only ever
+discovered in CI. The countermeasure is L-06's own, already owned by Phase 2 — a
+change touching a module with outer contracts either runs those contracts locally or
+waits for CI green before approval.
+
+**A standing measurement rule this produced.** Any duration this project quotes
+carries the environment it was measured in. The 13x spread above was invisible for
+as long as one environment reported it, and it was caught only because the number
+was re-run rather than re-read.
+
+**What this is not.** Not a claim that the process-level tests are less important.
+They are the ones that catch fail-open, and three of them did during Phase 1. They
+move to where a ten-minute suite belongs.
+
+### D18 — An undeclared production data root is reported, not made mandatory
+
+**Problem.** The sandbox guard (P1.5) compares an effective data location against a
+declared one. With `AEO_LIVE_DATA_ROOT` unset there is nothing to compare, so the
+guard is inert. The guard that exists because of 19,000 lost documents is one unset
+variable from doing nothing.
+
+**Decision.** Unset stays permitted and becomes **visible**. The SessionStart
+reporter states whether a production data root has been declared, alongside the
+gate health it already reports. The variable is not made mandatory.
+
+**Impact.** A project that has declared nothing has nothing to protect, and
+requiring a declaration before anything may run is a config option nobody sets that
+then blocks everything — tripwire 2, and the failure D10 rejected a config file to
+avoid. Making the absence loud is L-08's answer to the same shape: an unconfigured
+threshold is a loud skip, never a quiet pass.
+
+Note the asymmetry that stays: `AEO_DATA_ROOT` unset **while a live root is
+declared** blocks. That is L-03's second incident exactly, a lookup falling through
+to a default directory.
+
+### D19 — The runtime banner's shell dependency is a known Windows risk, tested live
+
+**Problem.** D8 accepted that a missing `node` cannot be reported by a Node script,
+and made the SessionStart banner the mitigation. The banner needs `||`, which needs
+a shell, so the entry declares `"shell": "bash"`.
+
+On the founder's machine, outside Git Bash, `bash` resolves to
+`C:\WINDOWS\system32\bash.exe` — a WSL stub with no distribution installed, which
+fails with `execvpe(/bin/bash) failed`. `sh` is not on PATH at all. Inside Git Bash
+both resolve correctly and the mechanism works; its three tests pass there and skip
+elsewhere.
+
+So the risk is not that the mitigation is untested. It is that on Windows it may
+have no working shell to run in, in which case D8's only mitigation silently does
+nothing — a guard advertising safety it does not provide, which is the C-01 shape.
+
+**Decision.** The wiring stays as it is, and the question is settled by **live test
+against an installed plugin**, not by argument. Until that test runs, this is a
+recorded open risk rather than a closed one.
+
+**Impact.** Bounded. Everything `preflight()` covers still works, since it runs
+inside Node and needs no shell: old Node, absent `git`, unset plugin root, missing
+or unparseable `hooks.json`, no gate scripts registered, a wired-but-missing script.
+Only the *totally missing interpreter* case depends on the shell, and that case also
+implies Claude Code's own npm installation is broken.
+
+**Reversal path.** If `bash` proves unreliable on Windows, the fallback moves to the
+exec form and the missing-interpreter case becomes unreported by design, documented
+in the README as a prerequisite rather than mitigated by a banner.
+
+---
+
 ## 2026-08-04 — One decision from Checkpoint 0
 
 ### D15 — The marketplace manifest ships in Phase 0, and `validate` is not the gate

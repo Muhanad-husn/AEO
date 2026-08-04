@@ -25,6 +25,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 
 import { currentBranch, git, preflight, resolveWorktree, runReporter } from './lib.mjs';
+import { LIVE_DATA_ROOT_ENV, resolveRoots } from './sandbox-guard.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -169,6 +170,55 @@ function findNewestRunLog(root) {
   return { rel: path.relative(root, newest.summaryPath).replace(/\\/g, '/'), head };
 }
 
+/**
+ * Whether this session has declared where production data is (D18).
+ *
+ * The sandbox guard compares an effective data root against a declared one, so with
+ * AEO_LIVE_DATA_ROOT unset it has nothing to compare and does nothing at all. Unset
+ * stays permitted: a project with no production data has nothing to protect, and
+ * demanding a declaration before anything may run is a config option nobody sets that
+ * then blocks everything. What it must not be is invisible. The guard exists because a
+ * run resolved its data path through a default and 19,000 documents went with it, and a
+ * guard that is one unset variable away from silence should say so out loud.
+ *
+ * Three states, none collapsing into another, and none of the three reading as an
+ * all-clear -- L-08's rule that an unconfigured threshold is a loud skip, never a quiet
+ * pass. A declared root is reported as declared, not as safe; where it points is the
+ * declaration's business and this hook does not vouch for it.
+ */
+function renderDataRoot() {
+  const { live } = resolveRoots({ command: '', env: process.env });
+
+  if (!live.set) {
+    return [
+      `**Production data root: NOT DECLARED.** \`${LIVE_DATA_ROOT_ENV}\` is unset, so the sandbox`,
+      'guard has nothing to compare a run against and does nothing for this whole session.',
+      'A command pointed at production data would not be refused. That is a gap in cover,',
+      'not a clean bill of health; the guard exists because such a run once cost 19,000',
+      `documents. If this project touches production data, declare \`${LIVE_DATA_ROOT_ENV}\`.`,
+      '',
+    ];
+  }
+
+  if (live.root === null) {
+    return [
+      `**Production data root: DECLARED BUT UNUSABLE.** \`${LIVE_DATA_ROOT_ENV}\` is set to`,
+      `\`${live.raw}\`, which is not an absolute path. The sandbox guard cannot tell production`,
+      'data from a sandbox with it, so it is refusing every command until this is set to an',
+      'absolute path or unset.',
+      '',
+    ];
+  }
+
+  return [
+    `**Production data root: declared** at \`${live.root}\` (\`${LIVE_DATA_ROOT_ENV}\`). The sandbox`,
+    "guard is comparing every run's data root against it. That the declaration exists is",
+    'what is being reported here; whether it names the right directory is not something',
+    'this hook can check.',
+    '',
+  ];
+}
+
 async function run(payload) {
   const lines = [];
 
@@ -176,6 +226,12 @@ async function run(payload) {
   // buried under repo state that may itself be stale if the gates are open.
   const health = preflight();
   if (!health.ok) lines.push(health.banner, '');
+
+  // Then the sandbox guard's one precondition (D18). Both of these are facts about
+  // whether enforcement is running at all, so they belong above repo state and ahead of
+  // the not-a-worktree return below: an undeclared production root is worth saying even
+  // in a session that has no git repository to report on.
+  lines.push(...renderDataRoot());
 
   // Resolved from the session's own cwd via lib.mjs, never CLAUDE_PROJECT_DIR or this
   // script's own location -- both are session-fixed and wrong for a worktree session,

@@ -1,0 +1,29 @@
+# The full battery, both tiers (D17).
+#
+# The commit gate runs `npm test`, which is the fast tier only, so the process-level
+# gate suites are enforced here or nowhere. That is L-06's cost, accepted with its name
+# on it in D17: a gate regression is discovered in CI rather than at commit time. Make
+# this a required check on the default branch, or the trade is not paid for.
+#
+# Not yet observed green on Linux. Everything in this repo has run on Windows under
+# Git Bash; the suites spawn `git`, `node` and `sh`, all of which a GitHub runner has,
+# but the first run of this workflow is also its first evidence.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  battery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # No install step and no dependencies, by design: node --test only.
+      - run: npm run test:all

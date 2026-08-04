@@ -80,7 +80,18 @@ function makePassingPluginRoot() {
 /** Env with CLAUDE_PLUGIN_ROOT and every gh-related seam removed, then overrides applied. */
 function buildEnv(overrides = {}) {
   const env = { ...process.env };
-  for (const key of ['CLAUDE_PLUGIN_ROOT', 'AEO_GH_COMMAND', 'AEO_GH_PREFIX_ARGS', 'AEO_FAKE_GH_MODE', 'AEO_GH_TIMEOUT_MS']) {
+  // AEO_LIVE_DATA_ROOT and AEO_DATA_ROOT are cleared for the same reason as the gh
+  // seams: the D18 report reads them, and a test whose expected output depends on
+  // whether the founder's shell happens to export one is not a test.
+  for (const key of [
+    'CLAUDE_PLUGIN_ROOT',
+    'AEO_GH_COMMAND',
+    'AEO_GH_PREFIX_ARGS',
+    'AEO_FAKE_GH_MODE',
+    'AEO_GH_TIMEOUT_MS',
+    'AEO_LIVE_DATA_ROOT',
+    'AEO_DATA_ROOT',
+  ]) {
     delete env[key];
   }
   for (const [key, value] of Object.entries(overrides)) {
@@ -153,7 +164,11 @@ describe('never blocks', () => {
     const notARepo = tempDir('aeo-p17-not-a-repo-');
     const r = runHook({ payload: { cwd: notARepo }, env: fakeGhEnv({ pluginRoot: makePassingPluginRoot() }) });
     assert.equal(r.status, 0);
-    assert.equal(r.stdout, '', 'nothing to report outside a git worktree');
+    // No repo state, because there is no repo. Not silence, though: D18's data-root
+    // line is a fact about whether the sandbox guard is doing anything, which is true
+    // of the session rather than of any repository, so it survives this early return.
+    assert.doesNotMatch(r.stdout, /Live repo state/, 'nothing about a repo outside a git worktree');
+    assert.doesNotMatch(r.stdout, /\*\*Branch:/);
   });
 
   test('exits 0 when gh is not installed', () => {
@@ -299,6 +314,104 @@ describe('gate-health banner', () => {
     const repo = makeRepo();
     const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
     assert.doesNotMatch(r.stdout, /AEO GATES ARE NOT ENFORCING/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Production data root (D18)
+// ---------------------------------------------------------------------------
+
+// Out of process, like everything else here, because the claim is about what the
+// session actually reads: this hook has its own top-level await and its own env
+// handling, and the variable is read from process.env inside the spawned script.
+//
+// The load-bearing assertion is not that some line appears. It is that the three
+// states are told apart and that the undeclared one does not read as an all-clear
+// (L-08). So each case asserts what the report says AND what it must not say.
+
+describe('production data root', () => {
+  test('an undeclared root is reported, and named as undeclared', () => {
+    const repo = makeRepo();
+    const r = runHook({
+      payload: { cwd: repo },
+      env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: undefined }),
+    });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Production data root: NOT DECLARED/);
+    assert.match(r.stdout, /AEO_LIVE_DATA_ROOT/);
+  });
+
+  test('an undeclared root says the guard does nothing, not that all is well', () => {
+    const repo = makeRepo();
+    const r = runHook({
+      payload: { cwd: repo },
+      env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: undefined }),
+    });
+    // The negative-signal rule, asserted as a negative: nothing in this branch may
+    // present the absence as cover. "not a clean bill of health" is in the text; the
+    // words that would make it read as one are not.
+    assert.match(r.stdout, /not a clean bill of health/);
+    assert.match(r.stdout, /would not be refused/);
+    assert.doesNotMatch(r.stdout, /Production data root: declared/);
+  });
+
+  test('a declared absolute root reads as declared, and names the path', () => {
+    const repo = makeRepo();
+    const live = tempDir('aeo-p17-live-');
+    const r = runHook({
+      payload: { cwd: repo },
+      env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: live }),
+    });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Production data root: declared/);
+    assert.ok(r.stdout.includes(live), `expected the declared path ${live} in the report`);
+    assert.doesNotMatch(r.stdout, /NOT DECLARED/);
+  });
+
+  test('a declared root is not reported as safe, only as declared', () => {
+    const repo = makeRepo();
+    const live = tempDir('aeo-p17-live-');
+    const r = runHook({
+      payload: { cwd: repo },
+      env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: live }),
+    });
+    assert.match(r.stdout, /whether it names the right directory is not something/);
+  });
+
+  test('a relative declaration is a third state, distinct from both', () => {
+    const repo = makeRepo();
+    const r = runHook({
+      payload: { cwd: repo },
+      env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: 'data' }),
+    });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Production data root: DECLARED BUT UNUSABLE/);
+    assert.match(r.stdout, /refusing every command/);
+    assert.doesNotMatch(r.stdout, /Production data root: declared at/);
+  });
+
+  test('it is reported even outside a git worktree, where nothing else is', () => {
+    // The report returns early when the cwd is not a worktree. An undeclared root is a
+    // fact about enforcement, not about the repo, so it has to survive that return.
+    const plain = tempDir('aeo-p17-nogit-');
+    const r = runHook({
+      payload: { cwd: plain },
+      env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: undefined }),
+    });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Production data root: NOT DECLARED/);
+    assert.doesNotMatch(r.stdout, /Live repo state/);
+  });
+
+  test('reporting it never blocks, whatever the variable holds', () => {
+    const repo = makeRepo();
+    for (const value of ['', '   ', 'data', 'C:\\definitely\\not\\here', '../up', '"quoted"']) {
+      const r = runHook({
+        payload: { cwd: repo },
+        env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: value }),
+      });
+      assert.equal(r.status, 0, `AEO_LIVE_DATA_ROOT=${JSON.stringify(value)} must not block`);
+    }
   });
 });
 
