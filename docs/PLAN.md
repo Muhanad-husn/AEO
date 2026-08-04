@@ -114,7 +114,7 @@ Cheap, and it makes every later phase's target concrete.
 
 | Slice | Model | Authors | Must not |
 |---|---|---|---|
-| **P0.1** skeleton | **Sonnet** | `.claude-plugin/plugin.json` (with `$schema` and an explicit `version`, C-09); the directory shape `agents/ skills/ hooks/ scripts/`; **eleven skill stubs**, each with a real, distinct `description`, written individually; `logs/<YYYY-MM-DD>-<job>/` established in this repo (EN-14) | Template the stubs. A description is what makes a skill trigger; eleven copies of one sentence is eleven skills that compete |
+| **P0.1** skeleton | **Sonnet** | `.claude-plugin/plugin.json` (with `$schema` and an explicit `version`, C-09); a minimal `.claude-plugin/marketplace.json` at the repo root, because nothing installs without one ([D15](DECISIONS.md)); the directory shape `agents/ skills/ hooks/ scripts/`; **eleven skill stubs**, each with a real, distinct `description`, written individually; `logs/<YYYY-MM-DD>-<job>/` established in this repo (EN-14) | Template the stubs. A description is what makes a skill trigger; eleven copies of one sentence is eleven skills that compete |
 | **P0.2** provenance | **Haiku** | Upstream LICENSE in place; `VENDORED.md` recording source, the `593e7ab` SHA, and what was adapted (V-14) | Paraphrase the licence |
 | **P0.3** roster | **Haiku** | Roster reduced to three — builder, reviewer, triage; every dangling `spec-author` reference swept (V-07) | Touch vendored sources — they are frozen |
 
@@ -124,7 +124,13 @@ Cheap, and it makes every later phase's target concrete.
 `red-green-refactor`, `tdd-plan`, `tdd-ci`) trigger on description.
 
 **Verify:** `claude plugin validate ./plugin --strict` passes; the plugin installs
-locally; all eleven skills are listed; the six lanes do not appear as model-invocable.
+locally; `claude plugin details` reports eleven skills, three agents and zero hooks;
+the six lanes carry `disable-model-invocation: true` and no other skill does.
+
+**`validate --strict` is not the gate** ([D15](DECISIONS.md)). It reads the manifest
+and never opens a skill or agent file, so it can say nothing about the stubs. The
+install-and-inventory check is what tests them, and every later phase's verify step
+that names `validate` means *validate plus install plus inventory*.
 **⛔ CHECKPOINT 0.**
 
 **Review at phase close:** one Opus pass over the whole phase. It is small and its parts

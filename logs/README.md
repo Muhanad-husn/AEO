@@ -15,7 +15,7 @@ logs/<YYYY-MM-DD>-<job>/
 
 `<YYYY-MM-DD>` is the date the job started; `<job>` is a short slug for
 what ran (a slice name, a phase, an eval pass). Example:
-`logs/2026-07-31-p0.1-skeleton/`.
+`logs/2026-08-04-p0.1-skeleton/`.
 
 ## What goes in each directory
 

@@ -8,7 +8,7 @@ Addressed V-14 (MIT attribution is incomplete) by establishing a complete proven
 
 1. plugin/UPSTREAM-LICENSE — Byte-for-byte copy of the upstream MIT license.
 2. plugin/VENDORED.md — Provenance record identifying source, commit, scope, and divergence.
-3. logs/2026-07-31-p0.2-provenance/summary.md — This log entry.
+3. logs/2026-08-04-p0.2-provenance/summary.md — This log entry.
 
 ## Verification
 

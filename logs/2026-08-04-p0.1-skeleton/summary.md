@@ -1,6 +1,6 @@
 # P0.1 — plugin skeleton
 
-2026-07-31. Branch `feat/phase-0/p0.1-skeleton`.
+2026-08-04. Branch `feat/phase-0/p0.1-skeleton`.
 
 ## What was built
 

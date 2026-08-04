@@ -36,8 +36,9 @@ on is copied in under `source/`. Nothing here reads from `~/.claude/` or
 | `source/_manifests/` | Per-source provenance records written during the copy |
 
 `source/` is **reference material, not the product**. It is a verbatim snapshot
-kept for fidelity during migration. The plugin layout (`.claude-plugin/`,
-`skills/`, `agents/`, `hooks/`) does not exist yet and is designed in `docs/PLAN.md`.
+kept for fidelity during migration. The product is `plugin/`, whose shape is
+designed in `docs/PLAN.md`. A marketplace manifest at `.claude-plugin/` in the
+repo root makes it installable.
 
 ### Planning docs, and what each answers
 
@@ -55,8 +56,13 @@ the vendored skill and is only ever quoted.
 
 ## Current stage
 
-Copy-in and planning complete. **No plugin code written yet.** Next is Phase 0 of
-[docs/PLAN.md](docs/PLAN.md) — the plugin skeleton.
+Phase 0 complete. The plugin installs and reports eleven skills, three agents and
+**zero hooks** — the gates do not exist yet. Everything under `plugin/skills/` and
+`plugin/agents/` is a stub that names its port source and what must change; the
+real content lands in Phase 2.
+
+Next is **Phase 1** of [docs/PLAN.md](docs/PLAN.md) — the gates, in Node, with
+tests. It is the foundation, and dogfooding starts the moment it closes.
 
 Four findings overturn things the vendored skill states as settled. They are cheap to
 miss and expensive to discover late:

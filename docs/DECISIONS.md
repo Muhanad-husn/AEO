@@ -10,6 +10,46 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-04 — One decision from Checkpoint 0
+
+### D15 — The marketplace manifest ships in Phase 0, and `validate` is not the gate
+
+**Problem.** Two things surfaced when Phase 0 was actually verified rather than
+planned.
+
+Phase 0's verify line requires that the plugin installs locally. Nothing installs
+without a `marketplace.json`, and the plan assigned that file to Phase 7. The phase
+could not meet its own acceptance bar with its own deliverables. Verification was
+completed with a throwaway manifest built outside the repo and deleted afterwards.
+
+Separately, `claude plugin validate ./plugin --strict` reads
+`plugin/.claude-plugin/plugin.json` and nothing else. It never opens a `SKILL.md` or
+an agent file. The plan treated it as the phase gate, so a phase whose entire content
+is eleven skill stubs and three agent stubs would have been gated by a check that
+cannot see any of them.
+
+**Decision.** A minimal `.claude-plugin/marketplace.json` ships in Phase 0, at the
+repo root. Phase 7 extends it for distribution rather than creating it.
+
+`validate --strict` is a manifest check, not the gate. Wherever a verify step names
+it, the requirement is validate **plus** a local install **plus** a
+`claude plugin details` inventory. The inventory is what reads the stubs.
+
+**Impact.** The plugin becomes installable from Phase 0 forward, which matters
+because it will be installed many times before Phase 7. The strengthened check is
+what caught that a manifest-only pass proves nothing about eleven skills, and it is
+the same failure shape as C-01: a check that reads as coverage and is not.
+
+**Residual gap, recorded rather than closed.** No runtime check proves the six lanes
+are absent from the model-invocable set. `disable-model-invocation` is confirmed as
+the correct key — it is the only spelling present anywhere in the local plugin cache,
+and a shipped first-party plugin uses it — and it is present on exactly those six.
+That is the strongest evidence available without a live negative test.
+
+**Cost of reversal.** One file and one paragraph. Nothing depends on it.
+
+---
+
 ## 2026-07-31 — Seven decisions from the plan review
 
 Taken after a full read of the planning set against the vendored source. Four resolve
