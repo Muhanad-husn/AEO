@@ -86,6 +86,17 @@ function makeRepo({ base = {}, defaultBranch = 'main', branch = 'feat/slice', ch
   }
   // Written after staging, so these show up only in the unstaged diff.
   if (Object.keys(modify).length > 0) writeInto(dir, modify);
+
+  // Asserted, not assumed. A system or global gitconfig setting init.defaultBranch is
+  // common, and this machine's sets `master`. A fixture that inherited it would make
+  // the main, master and trunk cases the same case while all three stayed green, which
+  // is the L-08 shape: the assertion was never the weak part, the input set was.
+  assert.equal(run(dir, 'rev-parse', '--abbrev-ref', 'HEAD'), branch, 'fixture is not on the branch it claims');
+  assert.equal(
+    run(dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD'),
+    `origin/${defaultBranch}`,
+    'fixture default branch is not the one it claims',
+  );
   return dir;
 }
 
@@ -196,6 +207,31 @@ describe('the protected branch is resolved, never assumed', () => {
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 2);
     assert.match(result.stderr, /no direct commits on main/);
+  });
+
+  test('the three branch fixtures are genuinely three different fixtures', () => {
+    // Guards the cross-slice finding P1.2 reported: an ambient init.defaultBranch
+    // would otherwise collapse main, master and trunk into one condition asserted
+    // three times.
+    const seen = ['main', 'master', 'trunk'].map((name) => {
+      const dir = makeRepo({ branch: name, defaultBranch: name });
+      return run(dir, 'rev-parse', '--abbrev-ref', 'HEAD');
+    });
+    assert.deepEqual(seen, ['main', 'master', 'trunk']);
+  });
+
+  test('with no origin, the protected branch still resolves from config', () => {
+    // defaultBranch falls back to init.defaultBranch when origin/HEAD is absent. Pinned
+    // in the repo's own config so the result does not depend on this machine's.
+    const dir = tempDir();
+    run(dir, 'init', '-q', '-b', 'trunk');
+    run(dir, 'config', 'user.name', 'aeo-test');
+    run(dir, 'config', 'user.email', 'aeo-test@example.invalid');
+    run(dir, 'config', 'init.defaultBranch', 'trunk');
+    run(dir, 'commit', '-q', '--allow-empty', '-m', 'init');
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /no direct commits on trunk/);
   });
 
   test('a commit outside any git repository blocks rather than passing', () => {
