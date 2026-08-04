@@ -45,6 +45,7 @@ import {
   resolveWorktree,
   runGate,
 } from './lib.mjs';
+import { projectAnchor, runInProgress } from './sentinel.mjs';
 import { LOOKED_FOR, resolveTestPlan } from './stack.mjs';
 
 /**
@@ -233,6 +234,20 @@ export function commitGate(payload) {
     note(`commit-gate: documentation only (${files.length} file(s)); no code changed, so the suite is not run.`);
     return;
   }
+
+  // L-02, and the reason this gate is the one that needs it. Every other gate blocks an
+  // action; this one performs one, because running the suite executes code. Four
+  // simultaneous external kills of a live four-hour pipeline were traced to a concurrent
+  // session's commit gate firing tests. So a run-in-progress sentinel is a hard stop
+  // here, before a test command is even resolved.
+  //
+  // Placed after the documentation-only return on purpose. A docs-only commit runs
+  // nothing and cannot disturb a live job. The runbook's blanket "no commits" is a human
+  // standing in for "no test execution"; the gate enforces the mechanism, and holding a
+  // note-taking commit for four hours is what teaches people to delete the sentinel.
+  const liveRun = runInProgress(projectAnchor(toplevel));
+  for (const line of liveRun.notes) note(`commit-gate: ${line}`);
+  if (liveRun.reason !== null) block(liveRun.reason);
 
   const plan = resolveTestPlan({ toplevel, files });
   if (plan.missing.length > 0 || plan.units.some((u) => u.command === null)) {
