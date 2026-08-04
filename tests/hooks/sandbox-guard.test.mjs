@@ -314,6 +314,16 @@ describe('the seam', () => {
       guard({ payload: bash(`npm test -- --data-dir=${sibling}/x`, repo), env: { [LIVE]: live, [DATA]: path.join(base, 'sandbox') } }),
       'name-prefix sibling named on the command line',
     );
+
+    // The other direction, which a substring test also gets wrong: a directory whose
+    // name is a PREFIX of the production root's name. `<base>/produc` is not an ancestor
+    // of `<base>/production`, and one of the two substring comparisons says it is.
+    const shorter = path.join(base, 'produc');
+    mkdirSync(shorter, { recursive: true });
+    assertAllowed(
+      guard({ payload: bash('npm test', repo), env: { [LIVE]: live, [DATA]: shorter } }),
+      'a seam whose name is a prefix of the production root',
+    );
   });
 
   test('an inline assignment in the command is the seam the child will see', () => {
