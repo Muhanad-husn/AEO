@@ -1,0 +1,15 @@
+{
+  "name": "aeo",
+  "description": "A solo-operator AI software engineering harness with test-first build, on-demand review and triage, deterministic merge and test gates, and a GitHub-native issue and PR workflow.",
+  "owner": {
+    "name": "Muhanad Abulhusn",
+    "url": "https://github.com/Muhanad-husn/AEO"
+  },
+  "plugins": [
+    {
+      "name": "aeo",
+      "source": "./plugin",
+      "description": "A solo-operator AI software engineering harness: test-first build, on-demand review and triage, deterministic merge and test gates, and a GitHub-native issue and PR workflow that keeps a human in the merge seat."
+    }
+  ]
+}
