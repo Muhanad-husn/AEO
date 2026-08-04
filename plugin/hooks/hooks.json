@@ -1,0 +1,54 @@
+{
+  "description": "AEO Phase 1 gates and the SessionStart ground-truth reporter.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-status.mjs\" || echo '[AEO] GATES NOT ENFORCING: node did not resolve, so every AEO hook fails open. Install Node 18+ on PATH and restart Claude Code.'",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/commit-gate.mjs"]
+          },
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/block-merge.mjs"]
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*github.*__.*(merge|create_or_update_file|push_files|delete_file)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/block-merge.mjs"]
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/review-jail.mjs"]
+          }
+        ]
+      }
+    ]
+  }
+}
