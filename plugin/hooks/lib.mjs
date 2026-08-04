@@ -1,0 +1,497 @@
+// AEO hook runtime — the shared library every gate sits on.
+//
+// Why this exists (V-13): the v2 PowerShell harness dropped its shared library and
+// its tests. Four standalone scripts each re-implemented stdin parsing and worktree
+// resolution, and the same worktree fix then had to be found three times and still
+// never landed in one of the three. One tested library is the fix. Every gate imports
+// this; no gate re-derives any of it.
+//
+// Three contracts every gate obeys.
+//
+// 1. THE BLOCK PATH. A gate never calls process.exit. It calls block(reason), which
+//    throws, or it returns. runGate owns the only exit(2) in the plugin. Exit 2 is the
+//    hard block and stays the hard block (C-06); every other non-zero exit is a
+//    NON-blocking error, meaning the tool call proceeds and the gate has failed open.
+//    So runGate never exits with anything but 0 or 2, and an internal error becomes an
+//    explicit block rather than an accidental open door.
+//
+// 2. IDENTITY IS WHOLE-TOKEN OR WHOLE-SEGMENT, NEVER SUBSTRING (V-12). An argv identity
+//    test goes through matchesGitSubcommand; a path containment test goes through
+//    isPathInside. `git merge-base` is not `git merge`, and D:/project is not inside
+//    D:/proj. Both bugs have been paid for.
+//
+// 3. agent_type IS NOT A SUBAGENT FLAG (C-02). It is also set when a main session runs
+//    with --agent, and a plugin subagent reports a namespaced name (aeo:builder). Test
+//    isAeoRole/isAnyAeoRole, never presence. Presence blocks the orchestrator's own
+//    approved merge path; the bare name never fires.
+//
+// Node built-ins only, no dependencies, no install step.
+//
+// Encoding note (L-09): all output goes through fs.writeSync on the raw fd as UTF-8
+// bytes. None of the five PowerShell encoding incidents can recur here — there is no
+// console codepage, no *>> redirection and no ${var}: parsing hazard.
+
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync, writeSync } from 'node:fs';
+import path from 'node:path';
+
+/** The plugin's namespace. Plugin subagents report `<namespace>:<role>` (C-02). */
+export const PLUGIN_NAMESPACE = 'aeo';
+
+/**
+ * The one-line banner a shell fallback prints when `node` itself does not resolve.
+ *
+ * A Node script cannot report that Node is missing. The only mitigation that survives
+ * a missing runtime is a non-Node fallback in the hooks.json command string:
+ *
+ *   node "${CLAUDE_PLUGIN_ROOT}/hooks/session-status.mjs" || echo "<this string>"
+ *
+ * It is deliberately one line with no quotes, `$`, or backticks so it survives sh,
+ * cmd.exe and pwsh quoting unchanged. Exported so hooks.json and its test share one
+ * source of truth for a string that must be byte-identical in both.
+ */
+export const RUNTIME_MISSING_BANNER =
+  '[AEO] GATES NOT ENFORCING: node did not resolve, so every AEO hook fails open. Install Node 18+ on PATH and restart Claude Code.';
+
+const MIN_NODE_MAJOR = 18; // Node 18 is the plugin's stated prerequisite (D8): ESM and node:test.
+
+// ---------------------------------------------------------------------------
+// The block path
+// ---------------------------------------------------------------------------
+
+class BlockDecision extends Error {
+  constructor(reason) {
+    super(reason);
+    this.name = 'BlockDecision';
+    this.reason = reason;
+  }
+}
+
+// Latched as well as thrown. A gate that wraps its own body in try/catch would
+// otherwise swallow the throw and fall through to allow — the exact accident this
+// library exists to make impossible. runGate checks the latch before allowing.
+let blockLatched = null;
+
+/**
+ * Block the tool call. Throws; never returns. Safe to call without `return`.
+ * @param {string} reason Stated to the model on stderr, prefixed with `BLOCKED: `.
+ * @returns {never}
+ */
+export function block(reason) {
+  blockLatched = String(reason ?? 'blocked');
+  throw new BlockDecision(blockLatched);
+}
+
+function finish(code, message) {
+  if (message) {
+    try {
+      writeSync(2, message.endsWith('\n') ? message : `${message}\n`);
+    } catch {
+      // A failed stderr write must not turn a block into an open gate.
+    }
+  }
+  process.exit(code);
+}
+
+async function readStdin() {
+  // A hook always receives its payload on stdin. A TTY means it was run by hand;
+  // reading would hang. Hang protection otherwise belongs to hooks.json `timeout`,
+  // not to a constant invented here.
+  if (process.stdin.isTTY) return '';
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+/**
+ * Entry point for a blocking gate. Reads and parses the payload, runs the gate, and
+ * owns every exit.
+ *
+ * Malformed or empty payload => allow, with a line on stderr. The model cannot cause
+ * this: Claude Code serializes the payload, and every model-controlled string sits
+ * inside valid JSON. A parse failure is a platform fault, not a bypass, so blocking
+ * would brick the session for no security gain. The PowerShell originals allowed too,
+ * but silently — a payload-shape change would have disabled every gate with no signal
+ * (L-08, "an unset threshold makes a gate silently skip"). The stderr line is the loud
+ * skip.
+ *
+ * Internal error after a readable payload => block. The gate had a decision to make
+ * and could not make it; a gate that cannot decide does not pass the call.
+ *
+ * @param {{name: string, run: (payload: object) => unknown}} spec
+ */
+export async function runGate({ name, run }) {
+  let payload;
+  try {
+    const raw = await readStdin();
+    if (!raw.trim()) {
+      return finish(0, `${name}: empty hook payload; nothing to judge, allowing.`);
+    }
+    payload = JSON.parse(raw);
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new TypeError('payload is not a JSON object');
+    }
+  } catch (err) {
+    return finish(0, `${name}: unreadable hook payload (${err.message}); allowing.`);
+  }
+
+  try {
+    await run(payload);
+  } catch (err) {
+    if (err instanceof BlockDecision) return finish(2, `BLOCKED: ${err.reason}`);
+    return finish(
+      2,
+      `BLOCKED: the ${name} gate could not evaluate this call (${err.message}). ` +
+        'A gate that cannot decide does not pass the call. Fix the gate, or ask the orchestrator.',
+    );
+  }
+
+  if (blockLatched !== null) return finish(2, `BLOCKED: ${blockLatched}`);
+  return finish(0, null);
+}
+
+/**
+ * Entry point for a hook that reports and never blocks (SessionStart, P1.7). Whatever
+ * happens, the exit code is 0. `run` returns the text to place on stdout; a returned
+ * empty value writes nothing. Making non-blocking structural rather than a promise is
+ * the point — P1.7's stated must-not is "block anything".
+ *
+ * @param {{name: string, run: (payload: object|null) => unknown}} spec
+ */
+export async function runReporter({ name, run }) {
+  let out = '';
+  try {
+    let payload = null;
+    try {
+      const raw = await readStdin();
+      if (raw.trim()) payload = JSON.parse(raw);
+    } catch {
+      payload = null; // A reporter reports what it can; an unreadable payload is not fatal.
+    }
+    const text = await run(payload);
+    if (typeof text === 'string') out = text;
+  } catch (err) {
+    // Never costs a session. The name is included so a silently empty report is
+    // attributable when someone goes looking.
+    try {
+      writeSync(2, `${name}: report failed (${err?.message ?? err}); continuing.\n`);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (out) {
+    try {
+      writeSync(1, out.endsWith('\n') ? out : `${out}\n`);
+    } catch {
+      /* ignore */
+    }
+  }
+  process.exit(0);
+}
+
+// ---------------------------------------------------------------------------
+// Identity (C-02)
+// ---------------------------------------------------------------------------
+
+/** The raw `agent_type`, trimmed, or null. For messages — never for a policy test. */
+export function agentIdentity(payload) {
+  const value = payload?.agent_type;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/** True only for exactly this plugin's `<namespace>:<role>`. Anchored, role escaped. */
+export function isAeoRole(payload, role) {
+  const id = agentIdentity(payload);
+  if (id === null) return false;
+  return new RegExp(`^${escapeRegExp(PLUGIN_NAMESPACE)}:${escapeRegExp(role)}$`).test(id);
+}
+
+/** True for any subagent this plugin ships. A bare `builder` from --agent is not one. */
+export function isAnyAeoRole(payload) {
+  const id = agentIdentity(payload);
+  if (id === null) return false;
+  return new RegExp(`^${escapeRegExp(PLUGIN_NAMESPACE)}:[a-z][a-z0-9._-]*$`).test(id);
+}
+
+// ---------------------------------------------------------------------------
+// Identity matching (V-12)
+// ---------------------------------------------------------------------------
+
+/**
+ * True when `command` invokes `git <sub>` as a whole token, allowing git's own
+ * pre-subcommand options. The trailing lookahead is load-bearing: without it `merge`
+ * matches `git merge-base`, which is read-only, and `commit` matches `git commit-tree`.
+ * The option prefix is equally load-bearing: without it `git -C <dir> merge` is missed
+ * (V-02). Ported from the live block-merge/commit-gate matcher, not the skill's.
+ */
+export function matchesGitSubcommand(command, sub) {
+  if (typeof command !== 'string' || command === '') return false;
+  const pattern = String.raw`\bgit\s+((-C|-c)\s+\S+\s+|-\S+\s+)*` + escapeRegExp(sub) + String.raw`(?![-\w])`;
+  return new RegExp(pattern).test(command);
+}
+
+/**
+ * True when `child` is `parent` or lies under it, compared by whole path segment.
+ * The trailing-separator rule is the point: D:/project is not inside D:/proj.
+ * Case-insensitive on Windows, where the filesystem is.
+ */
+export function isPathInside(parent, child) {
+  const a = canonicalise(parent);
+  const b = canonicalise(child);
+  if (a === null || b === null) return false;
+  if (a === b) return true;
+  return b.startsWith(a.endsWith('/') ? a : `${a}/`);
+}
+
+function canonicalise(p) {
+  if (typeof p !== 'string' || p.trim() === '') return null;
+  try {
+    let s = path.resolve(p).replace(/\\/g, '/');
+    s = s.replace(/(.)\/+$/, '$1'); // drop trailing separators, but keep a bare root
+    if (process.platform === 'win32') s = s.toLowerCase();
+    return s;
+  } catch {
+    return null;
+  }
+}
+
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ---------------------------------------------------------------------------
+// Worktree resolution
+// ---------------------------------------------------------------------------
+
+// A worktree commit is issued as `cd <worktree> && git commit ...`. Single quotes are
+// accepted alongside double because the shell behind Bash tool calls is POSIX.
+const LEADING_CD = /^\s*cd\s+(?:"([^"]+)"|'([^']+)'|([^\s&|;]+))\s*&&/;
+
+/**
+ * `/d/proj` -> `D:/proj`. Windows only: on POSIX, `/d/proj` is a real path.
+ *
+ * A session-provided cwd can arrive in MSYS form, which `git -C` cannot consume
+ * (L-09). The drive letter must be followed by `/` or end-of-string, so `/tmp` and
+ * `/usr` are not drives and pass through untouched. Already-Windows paths pass through.
+ */
+export function normalizeHookPath(p, { platform = process.platform } = {}) {
+  if (typeof p !== 'string' || p === '') return p;
+  if (platform !== 'win32') return p;
+  const m = /^\/([A-Za-z])(\/.*)?$/.exec(p);
+  if (!m) return p;
+  return `${m[1].toUpperCase()}:${m[2] || '/'}`;
+}
+
+/**
+ * The directory a tool call actually operates in, and where that came from.
+ *
+ * The order is not arbitrary; each step was paid for by an incident.
+ *
+ * 1. An explicit leading `cd <dir> &&`. A PreToolUse hook inspects the call BEFORE the
+ *    command body runs, so the in-command `cd` is not yet in effect — and for a
+ *    subagent the reported cwd is unreliable, often pinned to the launch checkout on
+ *    the default branch. A feature-worktree commit was blocked as "on main" because of
+ *    it, and the same bug then recurred in the push path (V-02).
+ * 2. `payload.cwd` — the tool call's own declared directory.
+ * 3. `CLAUDE_PROJECT_DIR` — session-fixed, so it is wrong for every worktree session.
+ *    Third for that reason, not second.
+ * 4. `process.cwd()`. The PowerShell fell back to the hook script's grandparent; in a
+ *    plugin that is the ephemeral plugin cache (C-09, D12), which would resolve gates
+ *    against the wrong repo entirely. Deliberately not ported.
+ *
+ * @returns {{dir: string|null, source: 'cd'|'payload.cwd'|'CLAUDE_PROJECT_DIR'|'process.cwd'|'none'}}
+ */
+export function resolveOperationDir(payload, { env = process.env, cwd = process.cwd, platform = process.platform } = {}) {
+  const command = payload?.tool_input?.command;
+  if (typeof command === 'string') {
+    const m = LEADING_CD.exec(command);
+    const target = m ? (m[1] ?? m[2] ?? m[3]) : null;
+    if (target) return { dir: normalizeHookPath(target, { platform }), source: 'cd' };
+  }
+
+  const fromPayload = typeof payload?.cwd === 'string' ? payload.cwd.trim() : '';
+  if (fromPayload) return { dir: normalizeHookPath(fromPayload, { platform }), source: 'payload.cwd' };
+
+  const fromEnv = typeof env?.CLAUDE_PROJECT_DIR === 'string' ? env.CLAUDE_PROJECT_DIR.trim() : '';
+  if (fromEnv) return { dir: normalizeHookPath(fromEnv, { platform }), source: 'CLAUDE_PROJECT_DIR' };
+
+  const fromProcess = typeof cwd === 'function' ? cwd() : '';
+  if (fromProcess) return { dir: normalizeHookPath(fromProcess, { platform }), source: 'process.cwd' };
+
+  return { dir: null, source: 'none' };
+}
+
+/**
+ * resolveOperationDir, then normalised to the git toplevel of that directory, so a
+ * branch check and a test run both target the tree actually being operated on.
+ * `toplevel` is null when the directory is not inside a git worktree.
+ *
+ * @returns {{dir: string|null, source: string, toplevel: string|null}}
+ */
+export function resolveWorktree(payload, options) {
+  const resolved = resolveOperationDir(payload, options);
+  return { ...resolved, toplevel: resolved.dir ? gitToplevel(resolved.dir) : null };
+}
+
+// ---------------------------------------------------------------------------
+// git
+// ---------------------------------------------------------------------------
+
+/** Run git in `dir`. Returns trimmed stdout, or null on any failure. Never throws. */
+export function git(dir, ...args) {
+  if (!dir) return null;
+  let result;
+  try {
+    result = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', windowsHide: true });
+  } catch {
+    return null;
+  }
+  if (result.error || result.status !== 0) return null;
+  const out = (result.stdout ?? '').trim();
+  return out === '' ? null : out;
+}
+
+/** The git toplevel of `dir`, or null. */
+export function gitToplevel(dir) {
+  return git(dir, 'rev-parse', '--show-toplevel');
+}
+
+/** The checked-out branch name of `dir`, or null. */
+export function currentBranch(dir) {
+  return git(dir, 'rev-parse', '--abbrev-ref', 'HEAD');
+}
+
+// Cached per process, which is per hook invocation — not per session (D14). Keyed by
+// directory so a hook that inspects two worktrees gets two answers.
+const defaultBranchCache = new Map();
+
+/**
+ * The repository's default branch (D14). `main` is matched by no gate as a literal;
+ * a repo on `master` or `trunk` must gate identically or the merge guard silently
+ * no-ops for the first external user.
+ *
+ * origin's HEAD, then the local `init.defaultBranch`, then `main`.
+ */
+export function defaultBranch(dir) {
+  const key = dir ?? '';
+  if (defaultBranchCache.has(key)) return defaultBranchCache.get(key);
+
+  let branch = git(dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD');
+  if (branch) {
+    const slash = branch.indexOf('/'); // `origin/main` -> `main`; `origin/feat/x` -> `feat/x`
+    if (slash !== -1) branch = branch.slice(slash + 1);
+  }
+  if (!branch) branch = git(dir, 'config', '--get', 'init.defaultBranch');
+  if (!branch) branch = 'main';
+
+  defaultBranchCache.set(key, branch);
+  return branch;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime preflight (D8)
+// ---------------------------------------------------------------------------
+
+/**
+ * Gate health, for P1.7's SessionStart banner and /aeo:status.
+ *
+ * What it covers: a Node too old to run the gates, a missing `git`, a missing or
+ * unparseable hooks.json, and a hooks.json entry pointing at a script that is not
+ * there. Each of those makes a gate fail open silently, and each is reachable from
+ * inside Node.
+ *
+ * What it CANNOT cover: `node` not resolving at all. This function is Node. If the
+ * runtime is missing, nothing here runs, and the hook exits non-zero-but-not-2, which
+ * Claude Code treats as a non-blocking error — the tool call proceeds (C-06). The only
+ * mitigation is the non-Node shell fallback described on RUNTIME_MISSING_BANNER.
+ *
+ * @returns {{ok: boolean, checks: Array<{name: string, ok: boolean, detail: string}>, banner: string|null}}
+ */
+export function preflight({ pluginRoot = process.env.CLAUDE_PLUGIN_ROOT } = {}) {
+  const checks = [];
+
+  const major = Number.parseInt(process.versions.node.split('.')[0], 10);
+  checks.push({
+    name: 'node runtime',
+    ok: Number.isFinite(major) && major >= MIN_NODE_MAJOR,
+    detail: `node ${process.versions.node} (need ${MIN_NODE_MAJOR}+)`,
+  });
+
+  let gitOk = false;
+  let gitDetail = 'git not found on PATH';
+  try {
+    const r = spawnSync('git', ['--version'], { encoding: 'utf8', windowsHide: true });
+    gitOk = !r.error && r.status === 0;
+    if (gitOk) gitDetail = (r.stdout ?? '').trim();
+  } catch {
+    gitOk = false;
+  }
+  checks.push({ name: 'git', ok: gitOk, detail: gitDetail });
+
+  if (!pluginRoot) {
+    checks.push({ name: 'hook wiring', ok: false, detail: 'CLAUDE_PLUGIN_ROOT is unset; cannot locate hooks.json' });
+  } else {
+    const manifest = path.join(pluginRoot, 'hooks', 'hooks.json');
+    if (!existsSync(manifest)) {
+      checks.push({ name: 'hook wiring', ok: false, detail: `no hooks.json at ${manifest}; no gates are registered` });
+    } else {
+      let scripts = null;
+      let parseError = null;
+      try {
+        // The shape is Claude Code's to validate; we only need every string in it, so
+        // that both the shell form (`command`) and the exec form (`command` + `args`)
+        // are covered without this having to know which is which.
+        const strings = [];
+        collectStrings(JSON.parse(readFileSync(manifest, 'utf8')), strings);
+        scripts = strings.flatMap((s) =>
+          [...s.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}([^\s"']*\.mjs)/g)].map((m) => m[1]),
+        );
+      } catch (err) {
+        parseError = err.message;
+      }
+
+      if (parseError !== null) {
+        checks.push({ name: 'hook wiring', ok: false, detail: `hooks.json does not parse (${parseError})` });
+      } else if (scripts.length === 0) {
+        checks.push({ name: 'hook wiring', ok: false, detail: 'hooks.json registers no gate scripts' });
+      } else {
+        const missing = scripts.filter((rel) => !existsSync(path.join(pluginRoot, rel.replace(/^[/\\]/, ''))));
+        checks.push({
+          name: 'hook wiring',
+          ok: missing.length === 0,
+          detail:
+            missing.length === 0
+              ? `${scripts.length} gate script(s) present`
+              : `missing gate script(s): ${missing.join(', ')}`,
+        });
+      }
+    }
+  }
+
+  const ok = checks.every((c) => c.ok);
+  return { ok, checks, banner: ok ? null : formatBanner(checks.filter((c) => !c.ok)) };
+}
+
+function collectStrings(node, out) {
+  if (typeof node === 'string') out.push(node);
+  else if (Array.isArray(node)) for (const v of node) collectStrings(v, out);
+  else if (node && typeof node === 'object') for (const v of Object.values(node)) collectStrings(v, out);
+}
+
+function formatBanner(failures) {
+  const rule = '='.repeat(78);
+  const lines = [
+    rule,
+    '  AEO GATES ARE NOT ENFORCING',
+    '',
+    ...failures.map((f) => `  - ${f.name}: ${f.detail}`),
+    '',
+    '  A hook that cannot start exits non-zero but not 2, which Claude Code treats as a',
+    '  non-blocking error: the tool call proceeds. These gates are failing OPEN. Merge,',
+    '  commit and path enforcement are not running until this is fixed.',
+    rule,
+  ];
+  return lines.join('\n');
+}
