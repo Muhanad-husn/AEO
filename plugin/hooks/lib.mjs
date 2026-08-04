@@ -1,4 +1,4 @@
-// AEO hook runtime — the shared library every gate sits on.
+// AEO hook runtime: the shared library every gate sits on.
 //
 // Why this exists (V-13): the v2 PowerShell harness dropped its shared library and
 // its tests. Four standalone scripts each re-implemented stdin parsing and worktree
@@ -13,7 +13,11 @@
 //    hard block and stays the hard block (C-06); every other non-zero exit is a
 //    NON-blocking error, meaning the tool call proceeds and the gate has failed open.
 //    So runGate never exits with anything but 0 or 2, and an internal error becomes an
-//    explicit block rather than an accidental open door.
+//    explicit block rather than an accidental open door. That holds for the crash paths
+//    a try/catch cannot see as well, which is what the two handlers in runGate are for.
+//    Two cases sit outside it and are pinned by tests rather than claimed as covered:
+//    a gate file that crashes at module scope before runGate is entered, and a gate
+//    that breaks the contract above and calls process.exit itself.
 //
 // 2. IDENTITY IS WHOLE-TOKEN OR WHOLE-SEGMENT, NEVER SUBSTRING (V-12). An argv identity
 //    test goes through matchesGitSubcommand; a path containment test goes through
@@ -28,7 +32,7 @@
 // Node built-ins only, no dependencies, no install step.
 //
 // Encoding note (L-09): all output goes through fs.writeSync on the raw fd as UTF-8
-// bytes. None of the five PowerShell encoding incidents can recur here — there is no
+// bytes. None of the five PowerShell encoding incidents can recur here. There is no
 // console codepage, no *>> redirection and no ${var}: parsing hazard.
 
 import { spawnSync } from 'node:child_process';
@@ -68,8 +72,8 @@ class BlockDecision extends Error {
 }
 
 // Latched as well as thrown. A gate that wraps its own body in try/catch would
-// otherwise swallow the throw and fall through to allow — the exact accident this
-// library exists to make impossible. runGate checks the latch before allowing.
+// otherwise swallow the throw and fall through to allow. That is the exact accident
+// this library exists to make impossible. runGate checks the latch before allowing.
 let blockLatched = null;
 
 /**
@@ -93,6 +97,38 @@ function finish(code, message) {
   process.exit(code);
 }
 
+const CANNOT_DECIDE =
+  'A gate that cannot decide does not pass the call. Fix the gate, or ask the orchestrator.';
+
+/**
+ * A printable description of a thrown value, for a value that need not be an Error.
+ *
+ * Reading `err.message` directly is the obvious form and it is a fail-open defect. On
+ * `throw null` or a bare `Promise.reject()` it raises a TypeError INSIDE the catch
+ * handler, where nothing catches it. Node then exits 1, exit 1 is a non-blocking error
+ * (C-06), and the tool call proceeds. The gate fails open in the one function that owns
+ * every exit. `throw 'a string'` is the same mistake in a quieter register: it exits 2,
+ * but reports the reason as `undefined` and loses what went wrong.
+ *
+ * So every read here is defended, a hostile `message` getter included. This runs on the
+ * block path, and code on the block path is not allowed to throw.
+ */
+function describeError(err) {
+  try {
+    if (err instanceof Error) {
+      const message = err.message;
+      if (typeof message === 'string' && message !== '') return message;
+    }
+    if (typeof err === 'string' && err !== '') return err;
+    if (err === null) return 'null was thrown';
+    if (err === undefined) return 'nothing was thrown with the rejection';
+    const text = String(err);
+    return text === '' ? 'unprintable thrown value' : text;
+  } catch {
+    return 'unprintable thrown value';
+  }
+}
+
 async function readStdin() {
   // A hook always receives its payload on stdin. A TTY means it was run by hand;
   // reading would hang. Hang protection otherwise belongs to hooks.json `timeout`,
@@ -111,7 +147,7 @@ async function readStdin() {
  * this: Claude Code serializes the payload, and every model-controlled string sits
  * inside valid JSON. A parse failure is a platform fault, not a bypass, so blocking
  * would brick the session for no security gain. The PowerShell originals allowed too,
- * but silently — a payload-shape change would have disabled every gate with no signal
+ * but silently, so a payload-shape change would have disabled every gate with no signal
  * (L-08, "an unset threshold makes a gate silently skip"). The stderr line is the loud
  * skip.
  *
@@ -121,6 +157,15 @@ async function readStdin() {
  * @param {{name: string, run: (payload: object) => unknown}} spec
  */
 export async function runGate({ name, run }) {
+  // Any exit code other than 0 or 2 is a non-blocking error (C-06), so any crash Node
+  // would report as exit 1 is a gate failing open. try/catch around `run` covers the
+  // synchronous and awaited paths. These two handlers cover the rest: a floating
+  // promise rejection, and a throw from a timer or a callback the gate left running.
+  // Both become the same explicit block.
+  const crash = (err) => finish(2, `BLOCKED: the ${name} gate crashed (${describeError(err)}). ${CANNOT_DECIDE}`);
+  process.on('uncaughtException', crash);
+  process.on('unhandledRejection', crash);
+
   let payload;
   try {
     const raw = await readStdin();
@@ -132,7 +177,7 @@ export async function runGate({ name, run }) {
       throw new TypeError('payload is not a JSON object');
     }
   } catch (err) {
-    return finish(0, `${name}: unreadable hook payload (${err.message}); allowing.`);
+    return finish(0, `${name}: unreadable hook payload (${describeError(err)}); allowing.`);
   }
 
   try {
@@ -141,8 +186,7 @@ export async function runGate({ name, run }) {
     if (err instanceof BlockDecision) return finish(2, `BLOCKED: ${err.reason}`);
     return finish(
       2,
-      `BLOCKED: the ${name} gate could not evaluate this call (${err.message}). ` +
-        'A gate that cannot decide does not pass the call. Fix the gate, or ask the orchestrator.',
+      `BLOCKED: the ${name} gate could not evaluate this call (${describeError(err)}). ${CANNOT_DECIDE}`,
     );
   }
 
@@ -154,11 +198,26 @@ export async function runGate({ name, run }) {
  * Entry point for a hook that reports and never blocks (SessionStart, P1.7). Whatever
  * happens, the exit code is 0. `run` returns the text to place on stdout; a returned
  * empty value writes nothing. Making non-blocking structural rather than a promise is
- * the point — P1.7's stated must-not is "block anything".
+ * the point: P1.7's stated must-not is "block anything".
  *
  * @param {{name: string, run: (payload: object|null) => unknown}} spec
  */
 export async function runReporter({ name, run }) {
+  // The same asynchronous crash paths runGate defends against, resolved the other way.
+  // Without these, a floating rejection in a reporter exits 1 and the doc comment above
+  // is not true. Exit 1 does not block anything, so this costs a hook-error notice
+  // rather than a session, but the contract says 0 and the contract should hold.
+  const crash = (err) => {
+    try {
+      writeSync(2, `${name}: report crashed (${describeError(err)}); continuing.\n`);
+    } catch {
+      // Nowhere left to say it. Exit 0 regardless; a reporter never costs a session.
+    }
+    process.exit(0);
+  };
+  process.on('uncaughtException', crash);
+  process.on('unhandledRejection', crash);
+
   let out = '';
   try {
     let payload = null;
@@ -174,16 +233,24 @@ export async function runReporter({ name, run }) {
     // Never costs a session. The name is included so a silently empty report is
     // attributable when someone goes looking.
     try {
-      writeSync(2, `${name}: report failed (${err?.message ?? err}); continuing.\n`);
+      writeSync(2, `${name}: report failed (${describeError(err)}); continuing.\n`);
     } catch {
-      /* ignore */
+      // stderr is gone too, so there is nowhere left to say it. A reporter is never
+      // allowed to cost a session, so this is where the attempt stops.
     }
   }
   if (out) {
     try {
       writeSync(1, out.endsWith('\n') ? out : `${out}\n`);
-    } catch {
-      /* ignore */
+    } catch (err) {
+      // Loud skip, never a quiet pass (L-08). The report this drops is D8's only
+      // signal that the gates are not enforcing, so losing it has to be said somewhere
+      // rather than swallowed.
+      try {
+        writeSync(2, `${name}: report could not be written to stdout (${describeError(err)}).\n`);
+      } catch {
+        // Both streams are unwritable. Nothing left to report with, and still not fatal.
+      }
     }
   }
   process.exit(0);
@@ -193,7 +260,7 @@ export async function runReporter({ name, run }) {
 // Identity (C-02)
 // ---------------------------------------------------------------------------
 
-/** The raw `agent_type`, trimmed, or null. For messages — never for a policy test. */
+/** The raw `agent_type`, trimmed, or null. For messages, never for a policy test. */
 export function agentIdentity(payload) {
   const value = payload?.agent_type;
   if (typeof value !== 'string') return null;
@@ -290,13 +357,13 @@ export function normalizeHookPath(p, { platform = process.platform } = {}) {
  * The order is not arbitrary; each step was paid for by an incident.
  *
  * 1. An explicit leading `cd <dir> &&`. A PreToolUse hook inspects the call BEFORE the
- *    command body runs, so the in-command `cd` is not yet in effect — and for a
- *    subagent the reported cwd is unreliable, often pinned to the launch checkout on
+ *    command body runs, so the in-command `cd` is not yet in effect. For a subagent the
+ *    reported cwd is unreliable on top of that, often pinned to the launch checkout on
  *    the default branch. A feature-worktree commit was blocked as "on main" because of
  *    it, and the same bug then recurred in the push path (V-02).
- * 2. `payload.cwd` — the tool call's own declared directory.
- * 3. `CLAUDE_PROJECT_DIR` — session-fixed, so it is wrong for every worktree session.
- *    Third for that reason, not second.
+ * 2. `payload.cwd`, the tool call's own declared directory.
+ * 3. `CLAUDE_PROJECT_DIR`, which is session-fixed and so is wrong for every worktree
+ *    session. Third for that reason, not second.
  * 4. `process.cwd()`. The PowerShell fell back to the hook script's grandparent; in a
  *    plugin that is the ephemeral plugin cache (C-09, D12), which would resolve gates
  *    against the wrong repo entirely. Deliberately not ported.
@@ -358,12 +425,22 @@ export function gitToplevel(dir) {
   return git(dir, 'rev-parse', '--show-toplevel');
 }
 
-/** The checked-out branch name of `dir`, or null. */
+/**
+ * The checked-out branch name of `dir`, or null.
+ *
+ * On a detached HEAD this returns the literal string `HEAD`, which is what
+ * `rev-parse --abbrev-ref` reports and is passed through unchanged. No consumer needs
+ * a different answer yet, so nothing normalises it. A gate comparing this against the
+ * default branch is therefore correct on a detached HEAD (it is not on the default
+ * branch), while a gate that wants to refuse detached HEAD outright has to test for
+ * the literal itself. If a second consumer ever wants it normalised, the
+ * normalisation belongs here rather than in the gate.
+ */
 export function currentBranch(dir) {
   return git(dir, 'rev-parse', '--abbrev-ref', 'HEAD');
 }
 
-// Cached per process, which is per hook invocation — not per session (D14). Keyed by
+// Cached per process, which is per hook invocation, not per session (D14). Keyed by
 // directory so a hook that inspects two worktrees gets two answers.
 const defaultBranchCache = new Map();
 
@@ -404,7 +481,7 @@ export function defaultBranch(dir) {
  *
  * What it CANNOT cover: `node` not resolving at all. This function is Node. If the
  * runtime is missing, nothing here runs, and the hook exits non-zero-but-not-2, which
- * Claude Code treats as a non-blocking error — the tool call proceeds (C-06). The only
+ * Claude Code treats as a non-blocking error: the tool call proceeds (C-06). The only
  * mitigation is the non-Node shell fallback described on RUNTIME_MISSING_BANNER.
  *
  * @returns {{ok: boolean, checks: Array<{name: string, ok: boolean, detail: string}>, banner: string|null}}

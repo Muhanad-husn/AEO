@@ -13,7 +13,7 @@
 // paths, and every case that has cost production something has a named test.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
@@ -354,8 +354,19 @@ describe('defaultBranch', () => {
 // ---------------------------------------------------------------------------
 
 describe('agent identity (C-02)', () => {
-  test('the namespace is the plugin name', () => {
-    assert.equal(PLUGIN_NAMESPACE, 'aeo');
+  test('the namespace tracks the plugin manifest name, not a copy of it', () => {
+    // PLUGIN_NAMESPACE is hard-coded in the library, so a rename in plugin.json would
+    // otherwise leave every identity gate matching nothing and firing on no call: the
+    // silent no-op class D14 exists to close. Pinning it against the manifest here is
+    // what makes the rename fail loudly, and it costs no runtime file read in a hook.
+    const manifest = JSON.parse(
+      readFileSync(path.join(import.meta.dirname, '..', '..', 'plugin', '.claude-plugin', 'plugin.json'), 'utf8'),
+    );
+    assert.equal(
+      PLUGIN_NAMESPACE,
+      manifest.name,
+      'plugin.json name changed; update PLUGIN_NAMESPACE in plugin/hooks/lib.mjs to match',
+    );
   });
 
   test('agentIdentity is null when the field is absent', () => {
@@ -524,6 +535,25 @@ describe('isPathInside (V-12, path case)', () => {
 // runGate — the one block path (C-06)
 // ---------------------------------------------------------------------------
 
+// Every behaviour fixtures/gate.mjs can be put into, including an unhandled one. The
+// exit-code invariant is asserted across all of them; see the note on that test for
+// why the set, not the assertion, is the load-bearing part.
+const GATE_MODES = [
+  'allow',
+  'block',
+  'throw',
+  'swallow',
+  'echo',
+  'throw-null',
+  'reject-bare',
+  'throw-string',
+  'throw-symbol',
+  'throw-hostile',
+  'floating-rejection',
+  'timer-throw',
+  'unknown-mode',
+];
+
 describe('runGate (C-06)', () => {
   const payload = { tool_name: 'Bash', tool_input: { command: 'git merge feat/x' } };
 
@@ -550,6 +580,57 @@ describe('runGate (C-06)', () => {
     assert.equal(r.status, 2);
     assert.match(r.stderr, /BLOCKED: the fixture-gate gate could not evaluate this call/);
     assert.match(r.stderr, /fixture exploded/);
+  });
+
+  test('throw null blocks rather than failing open', () => {
+    // `err.message` on null raises a TypeError inside the catch handler. Nothing
+    // catches that, Node exits 1, and exit 1 is a NON-blocking error: the tool call
+    // proceeds. This is the case the invariant test used not to cover.
+    const r = runHook('gate.mjs', { payload, mode: 'throw-null' });
+    assert.equal(r.status, 2, 'a null throw must block, not fail open with exit 1');
+    assert.match(r.stderr, /BLOCKED: the fixture-gate gate could not evaluate this call/);
+    assert.match(r.stderr, /null was thrown/);
+  });
+
+  test('a bare Promise.reject() blocks rather than failing open', () => {
+    // The shape a spawn wrapper rejection takes. A commit gate awaiting one on a red
+    // suite would have exited 1 and let the commit land.
+    const r = runHook('gate.mjs', { payload, mode: 'reject-bare' });
+    assert.equal(r.status, 2, 'a bare rejection must block, not fail open with exit 1');
+    assert.match(r.stderr, /BLOCKED: the fixture-gate gate could not evaluate this call/);
+  });
+
+  test('a non-Error throw states what was thrown instead of "undefined"', () => {
+    const r = runHook('gate.mjs', { payload, mode: 'throw-string' });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /fixture threw a bare string/);
+    assert.doesNotMatch(r.stderr, /call \(undefined\)/);
+
+    const sym = runHook('gate.mjs', { payload, mode: 'throw-symbol' });
+    assert.equal(sym.status, 2);
+    assert.match(sym.stderr, /Symbol\(fixture symbol\)/);
+  });
+
+  test('a throw from inside the error description still blocks', () => {
+    // The catch handler itself is on the block path, so reading `.message` off a
+    // hostile value must not be able to throw out of it.
+    const r = runHook('gate.mjs', { payload, mode: 'throw-hostile' });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /BLOCKED: the fixture-gate gate/);
+  });
+
+  test('a floating promise rejection blocks; try/catch cannot see it', () => {
+    const r = runHook('gate.mjs', { payload, mode: 'floating-rejection' });
+    assert.equal(r.status, 2, 'an unhandled rejection must block, not exit 1');
+    assert.match(r.stderr, /BLOCKED: the fixture-gate gate crashed/);
+    assert.match(r.stderr, /fixture floating rejection/);
+  });
+
+  test('a throw from a timer callback blocks; try/catch cannot see it either', () => {
+    const r = runHook('gate.mjs', { payload, mode: 'timer-throw' });
+    assert.equal(r.status, 2, 'an uncaught exception must block, not exit 1');
+    assert.match(r.stderr, /BLOCKED: the fixture-gate gate crashed/);
+    assert.match(r.stderr, /fixture timer exploded/);
   });
 
   test('a gate that swallows its own block still blocks', () => {
@@ -588,9 +669,46 @@ describe('runGate (C-06)', () => {
   test('a gate never exits with a code other than 0 or 2', () => {
     // Any other non-zero exit is a NON-blocking error: the tool call proceeds and the
     // gate has failed open. This is the invariant the whole slice protects.
-    for (const mode of ['allow', 'block', 'throw', 'swallow', 'echo', 'unknown-mode']) {
+    //
+    // The first version of this test iterated only the modes that threw a real Error,
+    // so it asserted the invariant over an input set that excluded every value which
+    // broke it, and it passed while `throw null` and a bare reject both exited 1. An
+    // invariant test is only as good as its input set, the same way a count-based
+    // preflight is not a coverage check (L-08). Any new failure shape belongs in
+    // GATE_MODES. Every mode listed there other than the unknown-mode probe also has
+    // a named test above asserting its stderr, so a typo in a mode name here would
+    // weaken this loop but could not remove the coverage. `self-exit` is deliberately
+    // absent: it violates contract 1 on purpose and is pinned by its own test below.
+    for (const mode of GATE_MODES) {
       const r = runHook('gate.mjs', { payload, mode });
       assert.ok(r.status === 0 || r.status === 2, `${mode} exited ${r.status}`);
+    }
+  });
+
+  test('the two paths the library cannot close are known, not assumed away', () => {
+    // Stated as tests so the boundary is a fact on record rather than something a
+    // later slice has to rediscover. Both exit 1 or 7, which Claude Code treats as a
+    // non-blocking error: the tool call proceeds and the gate is open (C-06).
+    //
+    // 1. A gate file that crashes at module scope. runGate installs its crash
+    //    handlers when it is called, and a syntax error or bad import happens first.
+    //    preflight() catches a missing gate script, not a broken one.
+    const early = runHook('crash-before-gate.mjs', { payload });
+    assert.equal(early.status, 1, 'if this ever becomes 2, the library gained coverage it does not claim');
+    assert.match(early.stderr, /exploded at module scope/);
+
+    // 2. A gate that calls process.exit itself, against contract 1. Nothing in the
+    //    library can intercept it.
+    const selfExit = runHook('gate.mjs', { payload, mode: 'self-exit' });
+    assert.equal(selfExit.status, 7, 'a gate calling process.exit owns its own exit code');
+  });
+
+  test('every payload shape also exits only 0 or 2', () => {
+    // The other half of the invariant: the failure modes reachable before the gate
+    // body ever runs.
+    for (const raw of ['', '   \n ', '{ not json', '"a string"', '42', 'null', '[1,2]', '{}']) {
+      const r = runHook('gate.mjs', { raw, mode: 'block' });
+      assert.ok(r.status === 0 || r.status === 2, `${JSON.stringify(raw)} exited ${r.status}`);
     }
   });
 });
@@ -622,6 +740,13 @@ describe('runReporter', () => {
     const r = runHook('reporter.mjs', { payload: { cwd: '/repo' }, mode: 'silent' });
     assert.equal(r.status, 0);
     assert.equal(r.stdout, '');
+  });
+
+  test('a floating rejection still exits 0 and says so', () => {
+    const r = runHook('reporter.mjs', { payload: { cwd: '/repo' }, mode: 'floating-rejection' });
+    assert.equal(r.status, 0, '"always exits 0" has to hold for the async crash paths too');
+    assert.match(r.stderr, /report crashed/);
+    assert.match(r.stderr, /reporter floating rejection/);
   });
 });
 
