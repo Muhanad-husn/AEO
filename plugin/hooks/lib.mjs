@@ -441,30 +441,75 @@ export function currentBranch(dir) {
 }
 
 // Cached per process, which is per hook invocation, not per session (D14). Keyed by
-// directory so a hook that inspects two worktrees gets two answers.
+// directory so a hook that inspects two worktrees gets two answers. `null` is a real
+// answer here, not a miss, and is cached like any other.
 const defaultBranchCache = new Map();
 
+// The names a repository with no remote is allowed to be read as protecting. D14 names
+// all three as the cases it exists for. A list of names does rot, so it is only ever
+// consulted after the repository's own two authoritative statements have said nothing,
+// and only when exactly one of them exists.
+const CONVENTIONAL_DEFAULTS = ['main', 'master', 'trunk'];
+
+/** What a gate tells the user when defaultBranch returns null. */
+export const DEFAULT_BRANCH_UNRESOLVED =
+  'Point origin at it with `git remote set-head origin -a`, or, in a repository with no remote, state it with `git config init.defaultBranch <name>` inside this repository.';
+
 /**
- * The repository's default branch (D14). `main` is matched by no gate as a literal;
- * a repo on `master` or `trunk` must gate identically or the merge guard silently
- * no-ops for the first external user.
+ * The repository's default branch (D14), or null when the repository does not say.
  *
- * origin's HEAD, then the local `init.defaultBranch`, then `main`.
+ * `main` is matched by no gate as a literal: a repo on `master` or `trunk` must gate
+ * identically or the merge guard silently no-ops for the first external user.
+ *
+ * D14 specifies origin's HEAD, then the local default, then the literal `main`. Two of
+ * those three steps were wrong in a way that inverted the decision D14 exists to make,
+ * so both changed here.
+ *
+ * `git config --get init.defaultBranch`, unqualified, reads system and global scope.
+ * That setting is a creation-time preference about the repos this machine makes NEXT,
+ * not a statement about this one. On a machine whose system config says `master`, a
+ * real repo on `main` with no origin resolved to `master`, and a gate comparing `main`
+ * against `master` never fired: a direct commit of code on `main` was allowed. It also
+ * made the `main` last resort unreachable on any machine that sets the key at all. The
+ * read is now `--local`, so it answers only when this repository itself was configured.
+ *
+ * The `main` last resort is gone. Returning a guess makes a gate that cannot tell what
+ * it is protecting behave exactly like one that can, and the guess is wrong precisely
+ * in the repos D14 was written for. What replaces it is evidence the repository really
+ * does carry: its own branches. One branch is the default branch. Otherwise, exactly
+ * one conventional name among them is it. Two conventional names, or none with several
+ * branches, is genuinely ambiguous, and the honest answer is null.
+ *
+ * A null is not a pass. Every caller blocks on it and says so, which is D10's
+ * escape-hatch rule applied here (L-08: an unset threshold makes a gate silently skip).
+ *
+ * @returns {string|null}
  */
 export function defaultBranch(dir) {
   const key = dir ?? '';
   if (defaultBranchCache.has(key)) return defaultBranchCache.get(key);
-
-  let branch = git(dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD');
-  if (branch) {
-    const slash = branch.indexOf('/'); // `origin/main` -> `main`; `origin/feat/x` -> `feat/x`
-    if (slash !== -1) branch = branch.slice(slash + 1);
-  }
-  if (!branch) branch = git(dir, 'config', '--get', 'init.defaultBranch');
-  if (!branch) branch = 'main';
-
+  const branch = resolveDefaultBranch(dir);
   defaultBranchCache.set(key, branch);
   return branch;
+}
+
+function resolveDefaultBranch(dir) {
+  const fromOrigin = git(dir, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD');
+  if (fromOrigin) {
+    const slash = fromOrigin.indexOf('/'); // `origin/main` -> `main`; `origin/feat/x` -> `feat/x`
+    return slash === -1 ? fromOrigin : fromOrigin.slice(slash + 1);
+  }
+
+  const fromLocalConfig = git(dir, 'config', '--local', '--get', 'init.defaultBranch');
+  if (fromLocalConfig) return fromLocalConfig;
+
+  const listed = git(dir, 'for-each-ref', '--format=%(refname:short)', 'refs/heads/');
+  const names = listed ? listed.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) : [];
+  if (names.length === 1) return names[0];
+  const conventional = names.filter((name) => CONVENTIONAL_DEFAULTS.includes(name));
+  if (conventional.length === 1) return conventional[0];
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------

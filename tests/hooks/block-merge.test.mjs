@@ -233,6 +233,28 @@ describe('push resolution honours the detected default branch (D14)', () => {
     assert.equal(allowed.status, 0);
   });
 
+  test('a push to main in a repo with NO origin is blocked', () => {
+    // The integration defect, on this gate's side. defaultBranch used to read
+    // init.defaultBranch from system scope, which on this machine says `master`, so a
+    // repo whose real branch is main resolved to master and `git push origin main`
+    // was not the protected branch. No config is set here; the fixture is the bare
+    // failing case.
+    const repo = makeRepo({ branch: 'main' }); // no defaultBranch => no origin/HEAD, no remote
+    assert.equal(git(repo, 'remote'), '', 'fixture must have no remote at all');
+    const r = runHook(bash('git push origin main', { cwd: repo }));
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /subagents never push to main\./);
+  });
+
+  test('an unresolvable default branch blocks the push and names the remedy', () => {
+    const repo = makeRepo({ branch: 'main' });
+    git(repo, 'branch', 'master'); // both conventional names present, no remote to break the tie
+    const r = runHook(bash('git push origin feat/x', { cwd: repo }));
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /does not say what its default branch is/);
+    assert.match(r.stderr, /git remote set-head origin -a/);
+  });
+
   test('worktree resolution uses the leading cd, not the launch cwd', () => {
     const launch = makeRepo({ branch: 'main' });
     const worktree = makeRepo({ branch: 'feat/other', defaultBranch: 'main' });
@@ -397,6 +419,18 @@ describe('forge direct-write tools (D14)', () => {
   test('a missing branch field is not enforced: nothing to compare', () => {
     const r = runHook({ tool_name: 'mcp__plugin_github_github__create_or_update_file', tool_input: {} });
     assert.equal(r.status, 0);
+  });
+
+  test('an unresolvable default branch blocks the forge write rather than allowing it', () => {
+    const repo = makeRepo({ branch: 'main' });
+    git(repo, 'branch', 'master'); // no remote, two conventional names: genuinely ambiguous
+    const r = runHook({
+      tool_name: 'mcp__plugin_github_github__create_or_update_file',
+      tool_input: { branch: 'feat/x' },
+      cwd: repo,
+    });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /does not say what its default branch is/);
   });
 
   test('honours a repo default branch other than main', () => {
