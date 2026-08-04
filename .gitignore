@@ -3,6 +3,10 @@
 /.claude/sessions/
 /.claude/tasks/
 
+# Run-in-progress sentinels (D12). They live in the project repo so every session and
+# every worktree can see them, and they are machine state rather than work product.
+/.aeo/
+
 # Python
 __pycache__/
 *.py[cod]
