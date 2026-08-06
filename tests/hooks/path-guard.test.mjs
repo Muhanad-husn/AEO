@@ -71,13 +71,21 @@ function runHook(payload) {
 // `'aeo:builder'` default below instead of omitting the field.
 const NO_AGENT_TYPE = Symbol('no agent_type');
 
-/** A PreToolUse Edit/Write call from a role subagent. Defaults to aeo:builder. */
+/** The tool_input shape each fenced tool really carries. NotebookEdit is the odd one. */
+function toolInput(tool_name, file_path) {
+  if (tool_name === 'Edit') return { file_path, old_string: 'a', new_string: 'b' };
+  if (tool_name === 'MultiEdit') return { file_path, edits: [{ old_string: 'a', new_string: 'b' }] };
+  if (tool_name === 'NotebookEdit') return { notebook_path: file_path, new_source: 'x', edit_mode: 'replace' };
+  return { file_path, content: 'x' };
+}
+
+/** A PreToolUse file-writing call from a role subagent. Defaults to aeo:builder. */
 function roleCall(tool_name, file_path, { agent_type = 'aeo:builder', ...extra } = {}) {
   const payload = {
     session_id: 'test-session',
     hook_event_name: 'PreToolUse',
     tool_name,
-    tool_input: tool_name === 'Edit' ? { file_path, old_string: 'a', new_string: 'b' } : { file_path, content: 'x' },
+    tool_input: toolInput(tool_name, file_path),
     ...extra,
   };
   if (agent_type !== NO_AGENT_TYPE) payload.agent_type = agent_type;
@@ -125,6 +133,18 @@ describe('the verify line', () => {
     const r = runHook(roleCall('Edit', target));
     assertBlocked(r, HARNESS_FENCE);
   });
+
+  // hooks.json's matcher covers four writing tools. A matcher wider than the gate is
+  // worse than a narrow one: it fires the gate for a tool the gate ignores, which reads
+  // as covered and is not. NotebookEdit is the case that would have slipped, because it
+  // names its target `notebook_path`, not `file_path`.
+  for (const tool of ['MultiEdit', 'NotebookEdit']) {
+    test(`${tool} is fenced under .claude/ and free in product code`, () => {
+      const repo = makeRepo();
+      assertBlocked(runHook(roleCall(tool, path.join(repo, '.claude', 'x.ipynb'))), HARNESS_FENCE);
+      assertAllowed(runHook(roleCall(tool, path.join(repo, 'src', 'x.ipynb'))));
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -162,6 +182,35 @@ describe('V-11: the resolved toplevel is itself named .claude', () => {
     // the silent-stop-matching bug V-11 describes; the test above is the proof the
     // fix holds, and the mutation battery (see the slice log) proves it regresses
     // the instant the root-named check is removed.
+  });
+
+  // V-11's text is about the mechanism, not about one shape of it: a git repo must not
+  // be nested inside `.claude/`, because `rev-parse --show-toplevel` then resolves
+  // below the project root and defeats the fence. Vendoring a skill as its own clone is
+  // exactly that. The resolved toplevel is then named `rgr`, so the root-named check is
+  // false, and `<toplevel>/.claude` does not contain the target, so containment is
+  // false too: the write was allowed. Real temp git repos, because a mocked `rev-parse`
+  // cannot prove what git genuinely answers for a nested checkout.
+
+  test('a git repo nested UNDER .claude/ is fenced by the enclosing project root', () => {
+    const project = makeRepo();
+    const vendored = path.join(project, '.claude', 'skills', 'rgr');
+    mkdirSync(vendored, { recursive: true });
+    initRepoAt(vendored);
+
+    const r = runHook(roleCall('Write', path.join(vendored, 'SKILL.md')));
+    assertBlocked(r, HARNESS_FENCE);
+    // Reported relative to the root that actually fenced it, not the inner toplevel.
+    assert.match(r.stderr, /tried: \.claude\/skills\/rgr\/SKILL\.md/);
+  });
+
+  test('the same nesting under a .claude-evil/ segment is not fenced (V-12, one level up)', () => {
+    const project = makeRepo();
+    const vendored = path.join(project, '.claude-evil', 'vendored');
+    mkdirSync(vendored, { recursive: true });
+    initRepoAt(vendored);
+
+    assertAllowed(runHook(roleCall('Write', path.join(vendored, 'file.js'))));
   });
 });
 
@@ -219,6 +268,35 @@ describe('containment edges (V-12)', () => {
     const target = path.join(repo, '.claude', 'skills', 'safe-pr', 'SKILL.md');
     assertBlocked(runHook(roleCall('Write', target)), HARNESS_FENCE);
   });
+
+  // The substring mutation (`isPathInside(harnessDir, full)` replaced by
+  // `full.includes(harnessDir)`) was previously killed by one test, and that test was
+  // fail-CLOSED: `.claude-evil/` wrongly blocked. These two close the gap.
+
+  test('siblings that extend .claude as a name prefix are not fenced', () => {
+    // More fail-closed cases, so the mutation dies on every platform, not only win32.
+    const repo = makeRepo();
+    for (const parts of [['.claude-notes.md'], ['.claudex', 'notes.md'], ['.claude.bak', 'settings.json']]) {
+      assertAllowed(runHook(roleCall('Write', path.join(repo, ...parts))));
+    }
+  });
+
+  // The fail-OPEN direction, which is the one that matters and which nothing asserted.
+  // On Windows the filesystem is case-insensitive, so `<repo>\.CLAUDE\` IS the harness
+  // directory; `isPathInside` lowercases on win32 and fences it. The substring form
+  // does not, because `'...\.CLAUDE\...'.includes('...\.claude')` is false, so the same
+  // file on NTFS would be allowed. lib.mjs has a case test for the primitive, but the
+  // mutation REPLACES the primitive, so that test never fires.
+  //
+  // On a case-sensitive host `.CLAUDE/` is a genuinely different directory and must be
+  // allowed, so the assertion follows the platform, which is the contract the gate
+  // states. This case therefore kills the mutation on win32 only.
+  test('a case variant of .claude follows the filesystem: fenced on Windows, a different directory elsewhere', () => {
+    const repo = makeRepo();
+    const r = runHook(roleCall('Write', path.join(repo, '.CLAUDE', 'settings.json')));
+    if (process.platform === 'win32') assertBlocked(r, HARNESS_FENCE);
+    else assertAllowed(r);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -248,13 +326,32 @@ describe('a target that does not exist yet', () => {
 // ---------------------------------------------------------------------------
 // Outside any git worktree
 // ---------------------------------------------------------------------------
+//
+// The PowerShell original blocked on "not inside a git worktree", which contradicts
+// this gate's allow-by-default posture and, concretely, blocks a role's first write to
+// the scratchpad directory every agent in this environment is told to use. The fence
+// survives the divergence: with no root to be relative to, the same whole-segment
+// `.claude` test runs against the absolute path, so `~/.claude/settings.json` on a
+// machine where `$HOME` is not a repository is still fenced.
 
 describe('a target outside any git worktree', () => {
-  test('a plain directory with no git repo blocks with a stated reason, not a crash', () => {
+  test('a plain scratch directory with no git repo is allowed, not blocked', () => {
     const plain = tempDir('aeo-p14-noworktree-');
-    const target = path.join(plain, 'file.md');
-    const r = runHook(roleCall('Write', target));
-    assertBlocked(r, /target is not inside a git worktree/);
+    assertAllowed(runHook(roleCall('Write', path.join(plain, 'notes.md'))));
+  });
+
+  test('a .claude/ path outside any worktree is still fenced: the ~/.claude case', () => {
+    const home = tempDir('aeo-p14-nohome-'); // not a git repo, standing in for $HOME
+    const r = runHook(roleCall('Write', path.join(home, '.claude', 'settings.json')));
+    assertBlocked(r, HARNESS_FENCE);
+    assert.match(r.stderr, /outside any git worktree/);
+  });
+
+  test('the whole-segment rule holds in the no-worktree path as well (V-12)', () => {
+    const home = tempDir('aeo-p14-nohome-');
+    for (const parts of [['.claude-evil', 'file.js'], ['.claudex', 'file.js'], ['.claude-notes.md']]) {
+      assertAllowed(runHook(roleCall('Write', path.join(home, ...parts))));
+    }
   });
 });
 
@@ -310,7 +407,7 @@ describe('identity', () => {
     }
   });
 
-  test('a tool other than Edit or Write is never fenced, even under .claude/', () => {
+  test('a tool outside the fenced set is never fenced, even under .claude/', () => {
     const repo = makeRepo();
     const target = path.join(repo, '.claude', 'x.md');
     for (const tool_name of ['Read', 'Grep', 'Bash', 'Glob']) {
