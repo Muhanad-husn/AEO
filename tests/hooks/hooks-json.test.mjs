@@ -182,35 +182,46 @@ describe('gate entries use the exec form, never the shell fallback', () => {
 });
 
 // ---------------------------------------------------------------------------
-// The SessionStart reporter: the one place `||` is correct
+// SessionStart: the report and the banner are two entries, not one
 // ---------------------------------------------------------------------------
+//
+// A `shell` field wraps the WHOLE command, so a single shell-form entry put the report
+// behind bash as well as the banner. On a Windows session started outside Git Bash,
+// `bash` resolves to the WSL launcher and `sh` is not on PATH at all, so that entry
+// produced no branch, no HEAD, no issues, no PRs, no run log and no gate-health banner
+// -- the L-08 failure this hook exists to prevent -- while preflight() still reported
+// ok, because hooks.json parsed and every script was present.
+//
+// The split bounds that. The report runs in exec form, which no shell can defeat. The
+// banner keeps the shell it genuinely needs, and a broken shell now costs the banner
+// alone. `||` is still correct here and nowhere else, and the gate group above is the
+// regression test for the nowhere-else half.
 
-describe('SessionStart carries the || fallback, and only there', () => {
+describe('SessionStart splits the report from the banner', () => {
   const sessionStartHooks = allCommandHooks(parsed).filter(({ event }) => event === 'SessionStart');
+  const reportHook = sessionStartHooks.find(({ hook }) => scriptOf(hook) === 'hooks/session-status.mjs')?.hook;
+  const bannerHook = sessionStartHooks.find(({ hook }) => scriptOf(hook) === null)?.hook;
 
-  test('exactly one SessionStart command hook is wired', () => {
-    assert.equal(sessionStartHooks.length, 1);
+  test('two entries are wired: one report, one banner', () => {
+    assert.equal(sessionStartHooks.length, 2);
+    assert.ok(reportHook, 'no SessionStart hook names hooks/session-status.mjs');
+    assert.ok(bannerHook, 'no shell-form SessionStart banner entry');
   });
 
-  const { hook } = sessionStartHooks[0];
-
-  test('runs in shell form (bash), because the || fallback needs a shell', () => {
-    assert.equal(hook.shell, 'bash');
-    assert.equal(hook.args, undefined);
+  test('the report runs in exec form, so a missing shell cannot silence it', () => {
+    assert.equal(reportHook.command, 'node');
+    assert.match(reportHook.args.join(' '), /\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/session-status\.mjs/);
+    assert.equal(reportHook.shell, undefined, 'a shell field would gate the whole report on a shell that may not exist');
+    assert.doesNotMatch([reportHook.command, ...reportHook.args].join(' '), /\|\|/);
   });
 
-  test('names session-status.mjs with the brace form', () => {
-    assert.equal(scriptOf(hook), 'hooks/session-status.mjs');
-  });
-
-  test('falls back to the exact RUNTIME_MISSING_BANNER string on any non-zero exit', () => {
-    const m = /\|\|\s*echo\s+'([^']*)'\s*$/.exec(hook.command.trim());
-    assert.ok(m, 'expected a trailing `|| echo \'<banner>\'`');
+  test('the banner is shell form, echoes the exact banner, and does not rerun the report', () => {
+    assert.equal(bannerHook.shell, 'bash');
+    assert.equal(bannerHook.args, undefined, 'shell is ignored when args is set, so the banner must stay in shell form');
+    assert.doesNotMatch(bannerHook.command, /session-status/);
+    const m = /\|\|\s*echo\s+"([^"]*)"\s*$/.exec(bannerHook.command.trim());
+    assert.ok(m, 'expected a trailing `|| echo "<banner>"`, double-quoted: cmd.exe does not treat `\'` as quoting');
     assert.equal(m[1], RUNTIME_MISSING_BANNER, 'hooks.json and lib.mjs must share one banner string');
-  });
-
-  test('quotes ${CLAUDE_PLUGIN_ROOT} in the shell-form command (C-09: install paths contain spaces)', () => {
-    assert.match(hook.command, /"\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/session-status\.mjs"/);
   });
 });
 
@@ -218,7 +229,29 @@ describe('SessionStart carries the || fallback, and only there', () => {
 // Matchers -- spot checks against the specs each entry is derived from
 // ---------------------------------------------------------------------------
 
+// The documented matching rule. `"*"`, `""` and an omitted matcher all match every
+// tool; a matcher made only of letters, digits, `_`, `-`, spaces, `,` and `|` is an
+// exact string or list match; anything else is compiled and run as a JavaScript regex.
+const SIMPLE_MATCHER = /^[A-Za-z0-9_\- ,|]*$/;
+const matchesEveryTool = (m) => m === undefined || m === '' || m === '*';
+
+function toolMatches(matcher, tool) {
+  if (matchesEveryTool(matcher)) return true;
+  if (SIMPLE_MATCHER.test(matcher)) return matcher.split(/[,|]/).map((s) => s.trim()).includes(tool);
+  return new RegExp(matcher).test(tool); // throws on an invalid pattern, which is the finding
+}
+
 describe('matchers', () => {
+  test('every matcher in the manifest is one the platform can actually use', () => {
+    // The failure this catches, and the one a string pinned to itself could not: a
+    // matcher that is neither an all-tools form nor a compilable regex registers
+    // nothing, and the gate behind it silently stops running.
+    for (const { matcher } of Object.values(parsed.hooks).flat()) {
+      if (matchesEveryTool(matcher) || SIMPLE_MATCHER.test(matcher)) continue;
+      assert.doesNotThrow(() => new RegExp(matcher), `matcher ${JSON.stringify(matcher)} does not compile as a regular expression`);
+    }
+  });
+
   test('the Bash gates are anchored, not a bare substring (V-12: BashOutput is not Bash)', () => {
     const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('commit-gate.mjs')));
     assert.equal(group.matcher, '^Bash$');
@@ -236,9 +269,31 @@ describe('matchers', () => {
     assert.equal(group.matcher, 'mcp__.*github.*__.*');
   });
 
-  test('review-jail is wired against every tool, not a named subset', () => {
+  test('review-jail fires for every tool, asserted by matching rather than by spelling', () => {
+    // The matcher is omitted, not `"*"`. All three all-tools forms are documented, but
+    // every shipped official plugin that fires on all tools omits the field -- hookify,
+    // the reference PreToolUse plugin, is the clearest case -- and an omitted matcher
+    // leaves no string for anything to interpret. `"*"` is only correct as a special
+    // case: hand it to `new RegExp` and it raises "Nothing to repeat", and the jail
+    // stops running with every test still green, which is what the old assertion (the
+    // literal `"*"` compared against itself) could not see.
     const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('review-jail.mjs')));
-    assert.equal(group.matcher, '*');
+    assert.ok(group, 'review-jail is not registered on PreToolUse at all');
+    for (const tool of ['Bash', 'Edit', 'NotebookEdit', 'Read', 'Task', 'WebFetch', 'mcp__github__create_pull_request']) {
+      assert.equal(toolMatches(group.matcher, tool), true, `${tool} would reach the reviewer with no jail in front of it`);
+    }
+  });
+
+  test('the path guard fires for every write tool this environment has', () => {
+    // C-04: the matcher is a best-effort pre-filter and never the boundary, so a looser
+    // one costs an extra process and a tighter one costs the gate outright. NotebookEdit
+    // is a live write tool here and `^(Edit|Write)$` never saw it; the official
+    // security-guidance plugin names the same four.
+    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('path-guard.mjs')));
+    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      assert.equal(toolMatches(group.matcher, tool), true, `${tool} can write under .claude/ without the path guard firing`);
+    }
+    assert.equal(toolMatches(group.matcher, 'Read'), false, 'the guard has no business on a read tool');
   });
 
   test('block-merge is wired on both arms it decides: Bash and the forge', () => {

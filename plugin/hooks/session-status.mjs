@@ -38,6 +38,12 @@ const execFileAsync = promisify(execFile);
 // `gh` that also runs correctly on Windows, where a `.cmd` shim is not directly
 // executable without a shell.
 const GH_COMMAND = process.env.AEO_GH_COMMAND || 'gh';
+// KNOWN GAP, left open deliberately: this JSON.parse runs at module scope, before
+// runReporter is entered, so a malformed AEO_GH_PREFIX_ARGS throws where nothing catches
+// it and Node exits 1 -- narrowing this file's header claim that the reporter always
+// exits 0. Exit 1 is a non-blocking hook error, so it costs a report and never a
+// session, and lib.mjs already names module-scope crashes as a class its guarantees do
+// not reach. The variable is a test seam that production never sets.
 const GH_PREFIX_ARGS = process.env.AEO_GH_PREFIX_ARGS ? JSON.parse(process.env.AEO_GH_PREFIX_ARGS) : [];
 
 // Three gh calls run concurrently (Promise.all below), so this is the worst-case added
@@ -51,13 +57,31 @@ const GH_TIMEOUT_MS = Number(process.env.AEO_GH_TIMEOUT_MS) || 3000;
 const GH_MAX_BUFFER = 200_000;
 const RUN_LOG_HEAD_LINES = 8;
 
+// How many items each section asks gh for. The request sends one MORE than the number
+// rendered, which is the whole point: a list cut off at its cap is indistinguishable
+// from a list that happened to end there, and `Open issues (40)` in the one hook whose
+// job is to be believed over memory reads as "there are forty" (L-08 -- every cap that
+// drops input reports a count on both sides of the cut).
+// The merged-PR cap below stays a plain 10: that section is labelled "Last N merged",
+// which claims recency and never a total, so there is nothing there to misread.
+const ISSUE_LIMIT = 40;
+const OPEN_PR_LIMIT = 20;
+
 /**
  * One gh call, JSON out. Never throws.
  *
  * `ok: false` means "could not determine" -- missing binary, no auth, no remote, a
- * timeout, or unparseable output -- and every caller renders that as unknown, never as
- * a confident zero. `ok: true, data: []` means gh answered and the answer was empty;
- * that is the only path that is allowed to say "none".
+ * timeout, or output this cannot use -- and every caller renders that as unknown, never
+ * as a confident zero. `ok: true, data: []` means gh answered with a list and the list
+ * was empty; that is the only path that is allowed to say "none".
+ *
+ * Two shapes reach here as output rather than as an error, and both are "could not
+ * determine" rather than zero. `gh ... --json` always emits at least `[]`, so silence on
+ * a zero exit is not an empty answer, it is no answer. And a JSON object -- the shape
+ * `{"message":"Not Found"}` arrives in -- parses fine and is still not a list; any gh on
+ * PATH can produce it (a version change, an extension, a wrapper shim), and rendering it
+ * as an empty array would state there are no open issues on the strength of an error
+ * message.
  */
 async function ghJson(dir, args) {
   try {
@@ -69,13 +93,17 @@ async function ghJson(dir, args) {
       encoding: 'utf8',
     });
     const text = stdout ?? '';
-    if (!text.trim()) return { ok: true, data: [] };
+    if (!text.trim()) return { ok: false, reason: 'gh exited 0 but printed nothing, where --json always prints at least []' };
+    let data;
     try {
-      const data = JSON.parse(text);
-      return { ok: true, data: Array.isArray(data) ? data : [] };
+      data = JSON.parse(text);
     } catch (err) {
       return { ok: false, reason: `gh returned unparseable output (${err.message})` };
     }
+    if (!Array.isArray(data)) {
+      return { ok: false, reason: `gh returned a JSON ${data === null ? 'null' : typeof data} where a list was expected` };
+    }
+    return { ok: true, data };
   } catch (err) {
     if (err?.code === 'ENOENT') return { ok: false, reason: 'gh is not installed or not on PATH' };
     if (err?.killed || err?.signal) return { ok: false, reason: `gh did not answer within ${GH_TIMEOUT_MS}ms` };
@@ -86,11 +114,24 @@ async function ghJson(dir, args) {
   }
 }
 
-/** One gh-backed list section. Unknown, empty and populated are three distinct outputs; none collapses into another. */
-function renderSection(label, result, formatItem) {
+/**
+ * One gh-backed list section. Unknown, empty and populated are three distinct outputs;
+ * none collapses into another.
+ *
+ * `limit` is how many items get rendered, and the caller has already asked gh for
+ * `limit + 1`. Getting that extra one back is the proof the list was cut, and it is the
+ * only way this hook can tell a repo with exactly `limit` open issues from a repo with
+ * hundreds. When it is cut, the header says so instead of printing the cap as a total.
+ */
+function renderSection(label, result, limit, formatItem) {
   if (!result.ok) return [`**${label}:** unknown (${result.reason}).`, ''];
   if (result.data.length === 0) return [`**${label}:** none.`, ''];
-  return [`**${label} (${result.data.length}):**`, ...result.data.map(formatItem), ''];
+  const shown = result.data.slice(0, limit);
+  const truncated = result.data.length > limit;
+  const header = truncated
+    ? `**${label} (showing ${shown.length} of more than ${limit}):**`
+    : `**${label} (${shown.length}):**`;
+  return [header, ...shown.map(formatItem), ''];
 }
 
 // A run log directory is named `<YYYY-MM-DD>-<job>`. That date is the primary ordering
@@ -158,16 +199,22 @@ function findNewestRunLog(root) {
   if (candidates.length === 0) return null;
   const newest = candidates.sort(compareRunLogs)[0];
 
+  // `omitted` exists for the same reason the list sections report both sides of their
+  // cap: an excerpt with no marker reads as the whole summary, and the ninth line of a
+  // run log is exactly where "3 acceptance tests still failing" lives.
   let head = [];
+  let omitted = 0;
   try {
-    head = readFileSync(newest.summaryPath, 'utf8')
+    const lines = readFileSync(newest.summaryPath, 'utf8')
       .split(/\r?\n/)
-      .filter((line) => line.trim() !== '')
-      .slice(0, RUN_LOG_HEAD_LINES);
+      .filter((line) => line.trim() !== '');
+    head = lines.slice(0, RUN_LOG_HEAD_LINES);
+    omitted = lines.length - head.length;
   } catch {
     head = [];
+    omitted = 0;
   }
-  return { rel: path.relative(root, newest.summaryPath).replace(/\\/g, '/'), head };
+  return { rel: path.relative(root, newest.summaryPath).replace(/\\/g, '/'), head, omitted };
 }
 
 /**
@@ -248,20 +295,23 @@ async function run(payload) {
     '',
   );
 
+  // Unconditional. Skipping the line when git names no branch (an unborn HEAD) left the
+  // reader unable to tell "unborn" from "not reported", which is the unknown-read-as-
+  // zero the gh sections below take such care to avoid.
   const branch = currentBranch(root);
-  if (branch) {
-    const head = git(root, 'log', '-1', '--format=%h %s');
-    lines.push(`**Branch:** ${branch}  |  **HEAD:** ${head ?? 'unknown'}`, '');
-  }
+  const head = git(root, 'log', '-1', '--format=%h %s');
+  lines.push(`**Branch:** ${branch ?? 'unknown (unborn HEAD, or git did not answer)'}  |  **HEAD:** ${head ?? 'unknown'}`, '');
 
+  // One more than each cap is requested; renderSection renders the cap and uses the
+  // extra item only to know the list was cut.
   const [issues, openPrs, mergedPrs] = await Promise.all([
-    ghJson(root, ['issue', 'list', '--state', 'open', '--limit', '40', '--json', 'number,title,labels']),
-    ghJson(root, ['pr', 'list', '--state', 'open', '--limit', '20', '--json', 'number,title,isDraft']),
+    ghJson(root, ['issue', 'list', '--state', 'open', '--limit', String(ISSUE_LIMIT + 1), '--json', 'number,title,labels']),
+    ghJson(root, ['pr', 'list', '--state', 'open', '--limit', String(OPEN_PR_LIMIT + 1), '--json', 'number,title,isDraft']),
     ghJson(root, ['pr', 'list', '--state', 'merged', '--limit', '10', '--json', 'number,title,mergedAt']),
   ]);
 
   lines.push(
-    ...renderSection('Open issues', issues, (i) => {
+    ...renderSection('Open issues', issues, ISSUE_LIMIT, (i) => {
       const labels = (i.labels ?? []).map((l) => l.name).join(', ');
       return `- #${i.number} ${i.title}${labels ? `  [${labels}]` : ''}`;
     }),
@@ -271,6 +321,7 @@ async function run(payload) {
     ...renderSection(
       'Open PRs -- awaiting founder approval',
       openPrs,
+      OPEN_PR_LIMIT,
       (p) => `- #${p.number} ${p.title}${p.isDraft ? ' (draft)' : ''}`,
     ),
   );
@@ -294,6 +345,7 @@ async function run(payload) {
   if (newestLog) {
     lines.push(`**Newest run log:** \`${newestLog.rel}\``);
     for (const line of newestLog.head) lines.push(`> ${line}`);
+    if (newestLog.omitted > 0) lines.push(`> _(excerpt: ${newestLog.omitted} more line(s) in the summary)_`);
     lines.push('');
   }
 

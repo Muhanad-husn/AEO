@@ -268,6 +268,49 @@ describe('unknown versus zero', () => {
     assert.match(r.stdout, /\*\*Open issues:\*\* unknown \(/);
     assert.ok(r.stdout.length < 10_000, `stdout should stay small even when gh floods; was ${r.stdout.length} bytes`);
   });
+
+  test('a JSON object reads as unknown, never as none', () => {
+    // `{"message":"Not Found"}` is valid JSON and is not a list. Any gh on PATH can
+    // produce it -- a version change, an extension, a wrapper shim -- and it used to be
+    // coerced to an empty array, so the report stated there were no open issues and no
+    // open PRs on the strength of an error message.
+    const repo = makeRepo();
+    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'object', pluginRoot: makePassingPluginRoot() }) });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\*\*Open issues:\*\* unknown \(gh returned a JSON object where a list was expected\)/);
+    assert.match(r.stdout, /\*\*Open PRs -- awaiting founder approval:\*\* unknown \(/);
+    assert.match(r.stdout, /\*\*Recently merged PRs:\*\* unknown \(/);
+    assert.doesNotMatch(r.stdout, /:\*\* none\./);
+  });
+
+  test('silence on a zero exit reads as unknown, never as none', () => {
+    // `gh ... --json` always prints at least `[]`, so nothing at all is no answer rather
+    // than an empty answer.
+    const repo = makeRepo();
+    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'silent', pluginRoot: makePassingPluginRoot() }) });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\*\*Open issues:\*\* unknown \(gh exited 0 but printed nothing/);
+    assert.doesNotMatch(r.stdout, /:\*\* none\./);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Caps report both sides of the cut (L-08)
+// ---------------------------------------------------------------------------
+
+describe('a truncated list is never printed as a total', () => {
+  test('an over-cap list says how many are shown and that there are more', () => {
+    // The fake gh returns exactly as many items as were requested, which is the hook's
+    // cap plus one. `**Open issues (40):**` on a repo with 55 open issues is read as
+    // forty, in the one hook whose whole purpose is to be believed over memory.
+    const repo = makeRepo();
+    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'overflow', pluginRoot: makePassingPluginRoot() }) });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\*\*Open issues \(showing 40 of more than 40\):\*\*/);
+    assert.match(r.stdout, /\*\*Open PRs -- awaiting founder approval \(showing 20 of more than 20\):\*\*/);
+    const issueLines = r.stdout.split('\n').filter((l) => /^- #\d+ fixture issue /.test(l));
+    assert.equal(issueLines.length, 40, 'the 41st item exists only to prove the list was cut, and is not rendered');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -287,6 +330,17 @@ describe('ground-truth framing', () => {
     const repo = makeRepo();
     const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
     assert.match(r.stdout, /\*\*Branch:\*\* feat\/example {2}\| {2}\*\*HEAD:\*\* \w+ init commit/);
+  });
+
+  test('an unborn HEAD still emits the branch line, as unknown', () => {
+    // `rev-parse --abbrev-ref HEAD` exits 128 in a repo with no commits, and the line
+    // used to be skipped entirely on that, so a reader could not tell "unborn" from
+    // "not reported".
+    const repo = tempDir();
+    gitRun(repo, 'init', '-q', '-b', 'main');
+    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /\*\*Branch:\*\* unknown \(unborn HEAD, or git did not answer\)/);
   });
 });
 
@@ -454,7 +508,10 @@ describe('newest run log', () => {
     assert.match(r.stdout, /\*\*Newest run log:\*\* `logs\/2026-08-02-newer-job\/summary\.md`/);
     assert.doesNotMatch(r.stdout, /stale entry/);
     const quotedLines = r.stdout.split('\n').filter((l) => l.startsWith('> '));
-    assert.equal(quotedLines.length, 8);
+    assert.equal(quotedLines.length, 9, 'eight excerpt lines plus the truncation marker');
+    // 21 non-blank lines in the summary, eight shown. Without the marker an excerpt
+    // whose ninth line reads "3 acceptance tests still failing" looks complete.
+    assert.match(quotedLines[8], /excerpt: 13 more line\(s\) in the summary/);
   });
 
   test('the date in the name beats mtime, so a re-touched old log is not the current one', () => {
