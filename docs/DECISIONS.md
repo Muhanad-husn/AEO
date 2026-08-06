@@ -110,9 +110,22 @@ fails the plan's first efficiency rule, **fast signal before iteration**. A gate
 passes its budget and still costs five minutes of founder wall-clock per commit is a
 gate people work around.
 
-**Decision.** Split the suite. The in-process library layer is the fast tier the
-commit gate runs. The process-level gate suites move behind a separate script that
-CI runs as a required check.
+**Decision.** Split the suite. The fast tier is what the commit gate runs, via
+`npm test`, because detection resolves that script for a `package.json` project. The
+process-level suites move behind `npm run test:integration`, which CI runs as a
+required check alongside it.
+
+**The boundary was placed by measurement, not by name.** Per-file timings showed a
+3.4x step from 8.1 s to 27.5 s, and the split follows it. The original wording of this
+decision said "the in-process library layer is the fast tier" — that names a file which
+does not exist. `lib.test.mjs` measured 99.99% process spawn (`defaultBranch` alone is
+16.6 s of it), so it sits in the slow tier despite its name. The principle held; the
+example was wrong.
+
+A test enforces the split: it reads both npm scripts, lists the test directory off
+disk, and fails if the union is not exactly the directory or if any file appears in
+both. A test that lands in neither tier is deleted in effect, and nothing else would
+notice.
 
 **Impact.** The commit gate becomes a fast signal rather than a five-minute pause,
 which is what dogfooding from Phase 2 onward depends on. The cost is L-06's exactly,
@@ -167,15 +180,48 @@ So the risk is not that the mitigation is untested. It is that on Windows it may
 have no working shell to run in, in which case D8's only mitigation silently does
 nothing — a guard advertising safety it does not provide, which is the C-01 shape.
 
-**Decision.** The wiring stays as it is, and the question is settled by **live test
-against an installed plugin**, not by argument. Until that test runs, this is a
-recorded open risk rather than a closed one.
+**Decision.** SessionStart is **two entries**, and the remaining question is settled
+by **live test against an installed plugin**, not by argument. Until that test runs,
+this is a recorded open risk rather than a closed one.
 
-**Impact.** Bounded. Everything `preflight()` covers still works, since it runs
-inside Node and needs no shell: old Node, absent `git`, unset plugin root, missing
-or unparseable `hooks.json`, no gate scripts registered, a wired-but-missing script.
-Only the *totally missing interpreter* case depends on the shell, and that case also
-implies Claude Code's own npm installation is broken.
+**Impact.** Bounded now; it was not when this decision was first written. `shell`
+wraps the whole command, and SessionStart was a single shell-form entry, so the shell
+gated the ground-truth report as well as the banner. On a Windows session started
+outside Git Bash that entry produced no branch, no HEAD, no issues, no PRs, no run log
+and no gate-health banner, while `preflight()` still reported ok because `hooks.json`
+parsed and every script was present. The session then opened with memory files and
+plan checkboxes as its only status source, which is the L-08 failure the hook exists
+to prevent. This paragraph originally claimed the dependency touched only the missing
+interpreter case. That was wrong, and the review round caught it.
+
+The report now runs in exec form (`"command": "node"` with `args`, no `shell`), which
+no shell can defeat. The documentation confirms `shell` is **ignored when `args` is
+set**, so the two cannot be combined in one entry — the split is forced, not
+stylistic. The banner keeps `"shell": "bash"` and carries only
+`node --version > /dev/null 2>&1 || echo "<banner>"`, so a broken shell now costs the
+banner alone, which is the bounded risk this decision always described.
+
+Everything `preflight()` covers still works, since it runs inside Node and needs no
+shell: old Node, absent `git`, unset plugin root, missing or unparseable `hooks.json`,
+no gate scripts registered, a wired-but-missing script. Only the *totally missing
+interpreter* case depends on the shell, and that case also implies Claude Code's own
+npm installation is broken.
+
+**Also corrected: `matcher: "*"` was not the fail-open it was reported as.** The
+current docs list `"*"`, `""` and an omitted `matcher` as three documented ways to
+match every tool, and `"*"` is an explicit special case that never reaches a regex
+compiler. `new RegExp("*")` does throw, but the platform never calls it on that value.
+The field was removed anyway, on the stronger ground that omission is correct under
+every reading including one where the special case is dropped, and because every
+shipped first-party plugin matching all tools omits it. The registration test no longer
+pins a string; it asserts the entry **fires** for a spread of real tool names, and a
+second test asserts every matcher in the manifest is either an all-tools form or
+compiles as a regex.
+
+Still open, unchanged: whether `"shell": "bash"` registers and runs at all on a Windows
+machine outside Git Bash. The three shell-fallback tests still skip where there is no
+POSIX shell, but the skip reason now names D19, so a green run containing that skip
+cannot be misread as a green run containing the evidence.
 
 **Reversal path.** If `bash` proves unreliable on Windows, the fallback moves to the
 exec form and the missing-interpreter case becomes unreported by design, documented
