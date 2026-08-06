@@ -147,6 +147,7 @@ const SEAM_OVERLAPS = /One contains the other, so this run is pointed at product
 const SEAM_RELATIVE = /is not an absolute\s+path\./;
 const LIVE_RELATIVE = /AEO_LIVE_DATA_ROOT is set to .*which is not an absolute path/;
 const NAMES_LIVE_DATA = /which resolves to .*inside the\s+production data root/;
+const OPERATES_IN = /this command operates in .*inside the production data root/;
 const LIVE_RUN = /a long job is running and this would execute code alongside it/;
 const SENTINEL_UNREADABLE = /sentinel is present but unreadable/;
 const DETECTION_FAILED = /no test command could be resolved/;
@@ -326,6 +327,38 @@ describe('the seam', () => {
     );
   });
 
+  // An inline assignment sets the child's environment only in LEADING POSITION. Taking
+  // the value from any token that started with the name let the gate be defeated by the
+  // remediation the gate itself recommends: writing a settings file changes no running
+  // process, so the child still gets the production-pointing seam.
+  test('the seam is read only from an assignment in leading position', () => {
+    const { live, sandbox } = roots();
+    const repo = makeRepo();
+    const misconfigured = { [LIVE]: live, [DATA]: path.join(live, 'scratch') };
+    for (const command of [
+      `echo '${DATA}=${sandbox}' >> .claude/settings.json && npm test`,
+      `grep -r ${DATA}=${sandbox} .`,
+      `git commit -m "point ${DATA}=${sandbox} at a sandbox"`,
+      `echo ${DATA}=${sandbox}`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, repo), env: misconfigured }), SEAM_OVERLAPS, command);
+    }
+  });
+
+  test('an assignment that really is in leading position is still honoured', () => {
+    const { live, sandbox } = roots();
+    const repo = makeRepo();
+    const misconfigured = { [LIVE]: live, [DATA]: path.join(live, 'scratch') };
+    for (const command of [
+      `${DATA}=${sandbox} npm test`,
+      `cd sub && ${DATA}=${sandbox} npm test`,
+      `NODE_ENV=ci ${DATA}=${sandbox} npm test`,
+      `ls\n${DATA}=${sandbox} npm test`,
+    ]) {
+      assertAllowed(guard({ payload: bash(command, repo), env: misconfigured }), JSON.stringify(command));
+    }
+  });
+
   test('an inline assignment in the command is the seam the child will see', () => {
     const { live, sandbox } = roots();
     const repo = makeRepo();
@@ -396,6 +429,73 @@ describe('paths named in the command', () => {
       'echo production',
     ]) {
       assertAllowed(guard({ payload: bash(command, repo), env: { [LIVE]: live, [DATA]: sandbox } }), command);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The directory the command runs in
+// ---------------------------------------------------------------------------
+//
+// pathCandidates skips a token with no separator in it, which is right on its own and a
+// hole in combination with a `cd`: no token in `cd corpus && rm -rf index` carries a
+// separator, so the candidate list is empty and the rule above never runs. The guard
+// caught the spelled-out forms and missed the ordinary one, and the Bash tool persists
+// its working directory between calls, so one `cd corpus` reaches the same place.
+
+describe('the operation directory', () => {
+  test('a relative cd into production data blocks', () => {
+    const { base, live, sandbox } = roots();
+    mkdirSync(path.join(live, 'index'), { recursive: true });
+    assertBlockedBecause(
+      guard({ payload: bash(`cd ${path.basename(live)} && rm -rf index`, base), env: { [LIVE]: live, [DATA]: sandbox } }),
+      OPERATES_IN,
+      'relative cd into production data; no token carries a separator',
+    );
+  });
+
+  // The Bash tool persists its working directory between calls, so the two-step form
+  // reaches the same place, and so does a session that never types `cd` at all.
+  test('a session already sitting in production data blocks with no cd at all', () => {
+    const { live, sandbox } = roots();
+    mkdirSync(path.join(live, 'index'), { recursive: true });
+    // No token here carries a separator, so the rule that names a path sees nothing.
+    for (const command of ['rm -rf index', 'ls', 'cat entries.jsonl']) {
+      assertBlockedBecause(
+        guard({ payload: bash(command, live), env: { [LIVE]: live, [DATA]: sandbox } }),
+        OPERATES_IN,
+        `${command} with the session cwd inside production data`,
+      );
+    }
+  });
+
+  // The two controls from the probe. Both blocked before the rule above existed and must
+  // still block, by the more specific rule: they name the path outright.
+  test('the spelled-out forms still block by the rule that names the path', () => {
+    const { base, live, sandbox } = roots();
+    const env = { [LIVE]: live, [DATA]: sandbox };
+    mkdirSync(path.join(live, 'index'), { recursive: true });
+    assertBlockedBecause(guard({ payload: bash(`cd ${live} && rm -rf index`, base), env }), NAMES_LIVE_DATA, 'absolute cd');
+    assertBlockedBecause(
+      guard({ payload: bash(`rm -rf ${path.join(live, 'index')}`, base), env }),
+      NAMES_LIVE_DATA,
+      'absolute target named outright',
+    );
+  });
+
+  test('a command that operates outside production data does not block', () => {
+    const { base, live, sandbox } = roots();
+    const env = { [LIVE]: live, [DATA]: sandbox };
+    mkdirSync(path.join(sandbox, 'index'), { recursive: true });
+    for (const [command, cwd] of [
+      ['rm -rf index', sandbox],
+      [`cd ${path.basename(sandbox)} && rm -rf index`, base],
+      ['ls', base],
+      // An ancestor of production data is not inside it. This rule is one-directional
+      // on purpose: refusing an ancestor is refusing `cd ..`.
+      ['ls', path.dirname(live)],
+    ]) {
+      assertAllowed(guard({ payload: bash(command, cwd), env }), `${command} in ${cwd}`);
     }
   });
 });
@@ -487,6 +587,27 @@ describe('the sentinel', () => {
     const repo = makeRepo({ base: { 'pyproject.toml': '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n' } });
     raise(repo);
     for (const command of ['pytest', 'pytest -k thing', 'python -m pytest tests/']) {
+      assertBlockedBecause(guard({ payload: bash(command, repo) }), LIVE_RUN, command);
+    }
+  });
+
+  // Flags and globs are dropped from the declared command, so its final significant
+  // token is the literal `test` for Node, Go, Rust and Maven. Matching that token
+  // anywhere in the command refused ordinary work during a live run, and named a command
+  // the operator did not type. A guard people cannot work around is a guard people
+  // delete.
+  test('a live sentinel does not block a command that merely contains the word test', () => {
+    const repo = makeRepo();
+    raise(repo);
+    for (const command of ['grep -r test .', 'mkdir test', 'git add test', 'ls test', 'cat test/fixtures.json']) {
+      assertAllowed(guard({ payload: bash(command, repo) }), command);
+    }
+  });
+
+  test('a live sentinel blocks the declared suite\'s program wherever a command runs it', () => {
+    const repo = makeRepo({ base: { 'pyproject.toml': '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n' } });
+    raise(repo);
+    for (const command of ['pytest', 'pytest -k thing', 'cd sub && pytest', 'AEO_DATA_ROOT=/tmp/s pytest']) {
       assertBlockedBecause(guard({ payload: bash(command, repo) }), LIVE_RUN, command);
     }
   });
@@ -774,12 +895,42 @@ describe('tokenising and matching', () => {
     assert.equal(invokesDeclaredSuite(shellTokens('cargo build'), [['cargo', 'test']]), null);
   });
 
+  test('the declared command\'s final program token matches in program position only', () => {
+    const node = [['npm', 'test']];
+    assert.equal(invokesDeclaredSuite(shellTokens('npm test'), node), 'npm test');
+    assert.equal(invokesDeclaredSuite(shellTokens('grep -r test .'), node), null);
+    assert.equal(invokesDeclaredSuite(shellTokens('mkdir test'), node), null);
+    assert.equal(invokesDeclaredSuite(shellTokens('git add test'), node), null);
+
+    const py = [['uv', 'run', 'pytest']];
+    assert.equal(invokesDeclaredSuite(shellTokens('cd sub && pytest'), py), 'uv run pytest');
+    assert.equal(invokesDeclaredSuite(shellTokens('AEO_DATA_ROOT=/tmp/s pytest'), py), 'uv run pytest');
+    assert.equal(invokesDeclaredSuite(shellTokens('ls pytest'), py), null);
+  });
+
   test('the seam is read from the command before the environment', () => {
     const env = { [LIVE]: 'D:/production', [DATA]: 'D:/sandbox' };
     assert.equal(resolveRoots({ command: 'npm test', env, platform: 'win32' }).data.root, 'D:/sandbox');
     assert.equal(resolveRoots({ command: `${DATA}=D:/other npm test`, env, platform: 'win32' }).data.root, 'D:/other');
     assert.equal(resolveRoots({ command: 'npm test', env, platform: 'win32' }).dataSource, 'session environment');
     assert.equal(resolveRoots({ command: `${DATA}=D:/other x`, env, platform: 'win32' }).dataSource, 'the command');
+  });
+
+  test('an inline seam is read only in leading position', () => {
+    const env = { [LIVE]: 'D:/production', [DATA]: 'D:/sandbox' };
+    const seam = (command) => resolveRoots({ command, env, platform: 'win32' }).data.root;
+
+    // Not an assignment: an argument that happens to spell one.
+    assert.equal(seam(`echo '${DATA}=D:/other' >> settings.json && npm test`), 'D:/sandbox');
+    assert.equal(seam(`grep -r ${DATA}=D:/other .`), 'D:/sandbox');
+    assert.equal(seam(`git commit -m "set ${DATA}=D:/other here"`), 'D:/sandbox');
+
+    // Leading position: start of the command, after a separator, after another
+    // assignment, and after a newline.
+    assert.equal(seam(`${DATA}=D:/other npm test`), 'D:/other');
+    assert.equal(seam(`cd x && ${DATA}=D:/other npm test`), 'D:/other');
+    assert.equal(seam(`FOO=1 ${DATA}=D:/other npm test`), 'D:/other');
+    assert.equal(seam(`ls\n${DATA}=D:/other npm test`), 'D:/other');
   });
 
   test('an MSYS path is normalised on Windows before it is compared', () => {
