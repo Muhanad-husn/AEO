@@ -43,67 +43,67 @@ const onWindows = process.platform === 'win32';
 describe('the detection table', () => {
   test('node resolves the declared scripts.test through npm', () => {
     const root = tree({ 'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }) });
-    assert.deepEqual(projectAt(root).command, ['npm', 'test']);
-    assert.equal(projectAt(root).stack, 'node');
+    assert.deepEqual(projectAt(root)[0].command, ['npm', 'test']);
+    assert.equal(projectAt(root)[0].stack, 'node');
   });
 
   test('python resolves pytest from a pyproject section', () => {
     const root = tree({ 'pyproject.toml': '[tool.pytest.ini_options]\naddopts = "-q"\n' });
-    assert.deepEqual(projectAt(root).command, ['pytest']);
-    assert.equal(projectAt(root).stack, 'python');
+    assert.deepEqual(projectAt(root)[0].command, ['pytest']);
+    assert.equal(projectAt(root)[0].stack, 'python');
   });
 
   test('go resolves the toolchain command', () => {
     const root = tree({ 'go.mod': 'module example.com/x\n' });
-    assert.deepEqual(projectAt(root).command, ['go', 'test', './...']);
+    assert.deepEqual(projectAt(root)[0].command, ['go', 'test', './...']);
   });
 
   test('rust resolves the toolchain command', () => {
     const root = tree({ 'Cargo.toml': '[package]\nname = "x"\n' });
-    assert.deepEqual(projectAt(root).command, ['cargo', 'test']);
+    assert.deepEqual(projectAt(root)[0].command, ['cargo', 'test']);
   });
 
   test('maven resolves the toolchain command', () => {
     const root = tree({ 'pom.xml': '<project/>' });
-    assert.deepEqual(projectAt(root).command, ['mvn', '-q', 'test']);
+    assert.deepEqual(projectAt(root)[0].command, ['mvn', '-q', 'test']);
   });
 
   test('gradle without a wrapper falls to the installed gradle', () => {
     const root = tree({ 'build.gradle': 'plugins { id "java" }\n' });
-    assert.deepEqual(projectAt(root).command, ['gradle', 'test']);
+    assert.deepEqual(projectAt(root)[0].command, ['gradle', 'test']);
   });
 
   test('gradle prefers the checked-in wrapper', () => {
     const root = tree({ 'build.gradle.kts': '', [onWindows ? 'gradlew.bat' : 'gradlew']: '' });
-    assert.deepEqual(projectAt(root).command, [onWindows ? 'gradlew.bat' : './gradlew', 'test']);
+    assert.deepEqual(projectAt(root)[0].command, [onWindows ? 'gradlew.bat' : './gradlew', 'test']);
   });
 
   test('ruby resolves rspec when the Gemfile names it', () => {
     const root = tree({ Gemfile: "source 'https://rubygems.org'\ngem 'rspec'\n" });
-    assert.deepEqual(projectAt(root).command, ['bundle', 'exec', 'rspec']);
-  });
-
-  test('dotnet is matched by project extension, not a fixed filename', () => {
-    const root = tree({ 'App.csproj': '<Project/>' });
-    assert.deepEqual(projectAt(root).command, ['dotnet', 'test']);
-    assert.equal(projectAt(root).stack, 'dotnet');
-  });
-
-  test('php resolves composer scripts.test', () => {
-    const root = tree({ 'composer.json': JSON.stringify({ scripts: { test: 'phpunit' } }) });
-    assert.deepEqual(projectAt(root).command, ['composer', 'test']);
-  });
-
-  test('php falls back to a vendored phpunit', () => {
-    const root = tree({
-      'composer.json': JSON.stringify({ require: {} }),
-      [path.join('vendor', 'bin', onWindows ? 'phpunit.bat' : 'phpunit')]: '',
-    });
-    assert.deepEqual(projectAt(root).command, [path.join('vendor', 'bin', onWindows ? 'phpunit.bat' : 'phpunit')]);
+    assert.deepEqual(projectAt(root)[0].command, ['bundle', 'exec', 'rspec']);
   });
 
   test('a directory with no manifest is not a project', () => {
     assert.equal(projectAt(tree({ 'README.md': '# x' })), null);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// PHP and .NET were cut, and stay cut
+// ---------------------------------------------------------------------------
+
+describe('the two rows that were design rather than transcription are gone', () => {
+  test('a .csproj is not a project: dotnet test pointed at a library that has no test SDK', () => {
+    assert.equal(projectAt(tree({ 'App.csproj': '<Project/>' })), null);
+    assert.equal(projectAt(tree({ 'App.sln': '' })), null);
+  });
+
+  test('composer.json is not a project', () => {
+    assert.equal(projectAt(tree({ 'composer.json': JSON.stringify({ scripts: { test: 'phpunit' } }) })), null);
+  });
+
+  test('neither is advertised in LOOKED_FOR, so the block message cannot promise them', () => {
+    assert.ok(!LOOKED_FOR.some((n) => /composer|csproj|sln|fsproj|vbproj/i.test(n)), LOOKED_FOR.join(', '));
   });
 });
 
@@ -116,27 +116,27 @@ describe('runner resolution from lockfiles', () => {
 
   test('pnpm', () => {
     const root = tree({ 'package.json': pkg, 'pnpm-lock.yaml': '' });
-    assert.deepEqual(projectAt(root).command, ['pnpm', 'test']);
+    assert.deepEqual(projectAt(root)[0].command, ['pnpm', 'test']);
   });
 
   test('yarn', () => {
     const root = tree({ 'package.json': pkg, 'yarn.lock': '' });
-    assert.deepEqual(projectAt(root).command, ['yarn', 'test']);
+    assert.deepEqual(projectAt(root)[0].command, ['yarn', 'test']);
   });
 
   test('bun', () => {
     const root = tree({ 'package.json': pkg, 'bun.lock': '' });
-    assert.deepEqual(projectAt(root).command, ['bun', 'run', 'test']);
+    assert.deepEqual(projectAt(root)[0].command, ['bun', 'run', 'test']);
   });
 
   test('uv', () => {
     const root = tree({ 'pyproject.toml': '[tool.pytest.ini_options]\n', 'uv.lock': '' });
-    assert.deepEqual(projectAt(root).command, ['uv', 'run', 'pytest']);
+    assert.deepEqual(projectAt(root)[0].command, ['uv', 'run', 'pytest']);
   });
 
   test('poetry', () => {
     const root = tree({ 'pyproject.toml': 'dependencies = ["pytest"]\n', 'poetry.lock': '' });
-    assert.deepEqual(projectAt(root).command, ['poetry', 'run', 'pytest']);
+    assert.deepEqual(projectAt(root)[0].command, ['poetry', 'run', 'pytest']);
   });
 });
 
@@ -146,46 +146,67 @@ describe('runner resolution from lockfiles', () => {
 
 describe('unresolved projects carry a reason', () => {
   test('package.json with no scripts.test', () => {
-    const unit = projectAt(tree({ 'package.json': JSON.stringify({ name: 'x' }) }));
+    const [unit] = projectAt(tree({ 'package.json': JSON.stringify({ name: 'x' }) }));
     assert.equal(unit.command, null);
     assert.match(unit.reason, /scripts\.test/);
   });
 
   test('package.json with an empty scripts.test', () => {
-    const unit = projectAt(tree({ 'package.json': JSON.stringify({ scripts: { test: '  ' } }) }));
+    const [unit] = projectAt(tree({ 'package.json': JSON.stringify({ scripts: { test: '  ' } }) }));
     assert.equal(unit.command, null);
   });
 
   test('package.json that does not parse', () => {
-    const unit = projectAt(tree({ 'package.json': '{ not json' }));
+    const [unit] = projectAt(tree({ 'package.json': '{ not json' }));
     assert.equal(unit.command, null);
     assert.match(unit.reason, /does not parse/);
   });
 
   test('a python project that names no runner', () => {
-    const unit = projectAt(tree({ 'pyproject.toml': '[project]\nname = "x"\n' }));
+    const [unit] = projectAt(tree({ 'pyproject.toml': '[project]\nname = "x"\n' }));
     assert.equal(unit.command, null);
     assert.match(unit.reason, /pytest/);
   });
 
   test('a Gemfile that names no runner', () => {
-    const unit = projectAt(tree({ Gemfile: "gem 'rails'\n" }));
+    const [unit] = projectAt(tree({ Gemfile: "gem 'rails'\n" }));
     assert.equal(unit.command, null);
     assert.match(unit.reason, /rspec/);
   });
 
-  test('composer.json with neither a script nor a vendored phpunit', () => {
-    const unit = projectAt(tree({ 'composer.json': '{}' }));
-    assert.equal(unit.command, null);
-  });
-
   test('one resolvable manifest wins over an unresolvable sibling', () => {
     const root = tree({ 'package.json': JSON.stringify({ name: 'x' }), 'go.mod': 'module x\n' });
-    assert.deepEqual(projectAt(root).command, ['go', 'test', './...']);
+    assert.deepEqual(projectAt(root)[0].command, ['go', 'test', './...']);
+  });
+
+  test('two resolvable manifests at one level resolve to two suites, not to the first', () => {
+    // A Django-plus-React root. Returning jest alone and reporting green is the quiet
+    // pass L-08 forbids: pytest would never run.
+    const root = tree({
+      'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+      'pyproject.toml': '[tool.pytest.ini_options]\n',
+    });
+    const units = projectAt(root);
+    assert.equal(units.length, 2);
+    assert.deepEqual(units.map((u) => u.stack).sort(), ['node', 'python']);
+    assert.deepEqual(units.map((u) => u.command).sort(), [['npm', 'test'], ['pytest']]);
+  });
+
+  test('a resolvable manifest beside an unresolvable one still returns only the resolvable', () => {
+    const root = tree({
+      'package.json': JSON.stringify({ name: 'x' }),
+      'pyproject.toml': '[tool.pytest.ini_options]\n',
+    });
+    assert.deepEqual(projectAt(root).map((u) => u.command), [['pytest']]);
+  });
+
+  test('two config files naming the same runner resolve that runner once', () => {
+    const root = tree({ 'pyproject.toml': '[tool.pytest.ini_options]\n', 'tox.ini': '[testenv]\ndeps = pytest\n' });
+    assert.deepEqual(projectAt(root).map((u) => u.command), [['pytest']]);
   });
 
   test('when nothing at the level resolves, every reason is reported', () => {
-    const unit = projectAt(tree({ 'package.json': JSON.stringify({ name: 'x' }), Gemfile: "gem 'rails'\n" }));
+    const [unit] = projectAt(tree({ 'package.json': JSON.stringify({ name: 'x' }), Gemfile: "gem 'rails'\n" }));
     assert.equal(unit.command, null);
     assert.match(unit.reason, /scripts\.test/);
     assert.match(unit.reason, /rspec/);
@@ -226,6 +247,15 @@ describe('resolveTestPlan', () => {
     assert.deepEqual(plan.units[0].command, ['go', 'test', './...']);
   });
 
+  test('a change under a two-stack root plans both of that root\'s suites', () => {
+    const root = tree({
+      'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
+      'pyproject.toml': '[tool.pytest.ini_options]\n',
+    });
+    const plan = resolveTestPlan({ toplevel: root, files: ['app/views.py'] });
+    assert.deepEqual(plan.units.map((u) => u.command).sort(), [['npm', 'test'], ['pytest']]);
+  });
+
   test('a file with no manifest above it lands in missing, not in a guess', () => {
     const root = tree({ 'README.md': '# x' });
     const plan = resolveTestPlan({ toplevel: root, files: ['src/a.js'] });
@@ -263,8 +293,7 @@ describe('resolveTestPlan', () => {
 });
 
 test('LOOKED_FOR names every manifest the table can match', () => {
-  for (const name of ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', 'Gemfile', 'composer.json']) {
+  for (const name of ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', 'Gemfile']) {
     assert.ok(LOOKED_FOR.includes(name), `${name} is missing from LOOKED_FOR`);
   }
-  assert.ok(LOOKED_FOR.some((n) => n.includes('csproj')));
 });

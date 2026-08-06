@@ -465,7 +465,7 @@ describe('the documentation fast path', () => {
   test('a documentation-only commit skips detection entirely', () => {
     // No manifest anywhere. Without the fast path this would block on detection, so
     // this also pins that the skip happens before detection rather than after.
-    const dir = makeRepo({ change: { 'README.md': '# x', 'notes/design.txt': 'x' } });
+    const dir = makeRepo({ change: { 'README.md': '# x', 'notes/design.rst': 'x' } });
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stderr, /documentation only \(2 file\(s\)\)/);
@@ -524,6 +524,150 @@ describe('the documentation fast path', () => {
       modify: { 'src/a.js': 'const a = 2;\n' },
     });
     assert.equal(runGate(commitPayload(dir, 'git commit --all -m x')).status, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What the documentation fast path must never classify as prose
+// ---------------------------------------------------------------------------
+
+describe('executable configuration that happens to be documentation', () => {
+  // Every case below commits into a repo whose declared suite always fails, so anything
+  // that reaches the suite blocks and anything classified as prose exits 0. That is the
+  // probe the review ran, and it is the only way these two outcomes are told apart.
+  const red = () => shimDir({ npm: { exit: 1 } });
+  const redRepo = (change) => makeRepo({ base: { 'package.json': npmPackage('always red') }, change });
+
+  test('an agent definition is configuration, not documentation', () => {
+    // The dogfooding case: a commit rewriting the builder's charter ran nothing, because
+    // a plugin keeps its roles under no dot-directory.
+    const dir = redRepo({ 'plugin/agents/builder.md': '---\nname: builder\n---\n\n# Builder\n' });
+    const result = runGate(commitPayload(dir), { bin: red() });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /test suite is red/);
+  });
+
+  test('a SKILL.md is configuration, not documentation', () => {
+    const dir = redRepo({ 'plugin/skills/triage/SKILL.md': '---\nname: triage\ndescription: x\n---\n\n# Triage\n' });
+    const result = runGate(commitPayload(dir), { bin: red() });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /test suite is red/);
+  });
+
+  test('requirements.txt is configuration, not documentation', () => {
+    // A dependency bump is the change most likely to turn a suite red without touching
+    // a line of source, and `.txt` used to be a documentation extension.
+    const dir = redRepo({ 'requirements.txt': 'requests==2.32.0\n' });
+    const result = runGate(commitPayload(dir), { bin: red() });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /test suite is red/);
+  });
+
+  test('a README is still prose, and still does not pay for a suite run', () => {
+    // The point of the path, in the same always-red repo. Without this the classifier
+    // could be closed by deleting it.
+    const dir = redRepo({ 'README.md': '# x\n\nprose.\n' });
+    const result = runGate(commitPayload(dir), { bin: red() });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /documentation only/);
+  });
+
+  test('reStructuredText is still prose', () => {
+    const dir = redRepo({ 'docs/guide.rst': 'Guide\n=====\n' });
+    assert.equal(runGate(commitPayload(dir), { bin: red() }).status, 0);
+  });
+
+  test('a repo with no manifest can still commit its README rather than hitting detection', () => {
+    // The second thing the fast path buys, and the reason it is not simply deleted.
+    const dir = makeRepo({ change: { 'README.md': '# new project\n' } });
+    assert.equal(runGate(commitPayload(dir)).status, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two suites in one commit, and the budget they share
+// ---------------------------------------------------------------------------
+
+describe('the budget is the whole commit\'s, never one per suite', () => {
+  // Each shim suite takes about two seconds. Per suite, a 3.4s budget clears both of
+  // them and the commit lands after roughly twice the budget the hook timeout allows.
+  const slow = () => shimDir({ npm: { exit: 0, sleepSeconds: 2 }, pytest: { exit: 0, sleepSeconds: 2 } });
+  const budget = { AEO_TEST_SUITE_BUDGET_MS: '3400' };
+
+  test('two suites cannot each spend the full budget', () => {
+    const dir = makeRepo({
+      base: {
+        'services/api/package.json': npmPackage('slow'),
+        'libs/calc/pyproject.toml': '[tool.pytest.ini_options]\n',
+      },
+      change: { 'services/api/a.js': '1\n', 'libs/calc/b.py': 'x = 1\n' },
+    });
+    const result = runGate(commitPayload(dir), { bin: slow(), env: budget });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /did not finish within/);
+  });
+
+  test('one suite of the same length inside the same budget still passes', () => {
+    // The control. Without it the case above is also green for a budget that is simply
+    // too short for one suite, which is what it looks like with the deadline reverted.
+    const dir = makeRepo({
+      base: { 'services/api/package.json': npmPackage('slow') },
+      change: { 'services/api/a.js': '1\n' },
+    });
+    const result = runGate(commitPayload(dir), { bin: slow(), env: budget });
+    assert.equal(result.status, 0, result.stderr);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two declared suites at one root
+// ---------------------------------------------------------------------------
+
+test('a root declaring two suites runs both, and a red second one blocks', () => {
+  // Django plus React. Node is examined first, so before the fix jest ran, reported
+  // green, and pytest never ran at all.
+  const dir = makeRepo({
+    base: { 'package.json': npmPackage('jest'), 'pyproject.toml': '[tool.pytest.ini_options]\n' },
+    change: { 'app/views.py': 'x = 1\n' },
+  });
+  const result = runGate(commitPayload(dir), { bin: shimDir({ npm: { exit: 0 }, pytest: { exit: 1 } }) });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /pytest/);
+  assert.match(result.stderr, /test suite is red/);
+});
+
+// ---------------------------------------------------------------------------
+// L-02: the reviewer runs nothing, because hooks in a group run concurrently
+// ---------------------------------------------------------------------------
+
+describe('the reviewer exemption', () => {
+  const asRole = (dir, role) => ({ ...commitPayload(dir), agent_type: role });
+  const repo = () => makeRepo({ base: { 'package.json': npmPackage('always red') }, change: { 'index.js': '1\n' } });
+
+  test('a jailed reviewer\'s commit starts no suite', () => {
+    // review-jail seals the commit in the same concurrent group. The seal holds either
+    // way; what must not happen is this gate running tests beside it.
+    const result = runGate(asRole(repo(), 'aeo:reviewer'), { bin: shimDir({ npm: { exit: 1 } }) });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /reviewer role does not commit/);
+  });
+
+  test('every other role still pays for its suite', () => {
+    const result = runGate(asRole(repo(), 'aeo:builder'), { bin: shimDir({ npm: { exit: 1 } }) });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /test suite is red/);
+  });
+
+  test('a bare reviewer from --agent is not this plugin\'s reviewer (C-02)', () => {
+    const result = runGate(asRole(repo(), 'reviewer'), { bin: shimDir({ npm: { exit: 1 } }) });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /test suite is red/);
+  });
+
+  test('no agent_type at all is not the reviewer', () => {
+    const result = runGate(commitPayload(repo()), { bin: shimDir({ npm: { exit: 1 } }) });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /test suite is red/);
   });
 });
 
