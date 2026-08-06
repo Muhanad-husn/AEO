@@ -11,15 +11,22 @@
 //
 // Two kinds of declaration count, and nothing else does.
 //
-//   1. The project names its own command. `scripts.test` in package.json,
-//      `scripts.test` in composer.json, a pytest section or a pytest dependency.
+//   1. The project names its own command. `scripts.test` in package.json, a pytest
+//      section or a pytest dependency.
 //   2. The toolchain defines the command and there is nothing for the project to
-//      name. `go test ./...`, `cargo test`, `dotnet test`, `mvn test`. Reading the
-//      manifest that pins the toolchain IS reading the declaration.
+//      name. `go test ./...`, `cargo test`, `mvn test`. Reading the manifest that
+//      pins the toolchain IS reading the declaration.
 //
 // When neither holds, this module resolves nothing and says what it looked for. It
 // never falls back to a guess. D10 is explicit about that, and L-08 is why: a gate
 // that runs nothing and reports OK is worse than no gate.
+//
+// PHP and .NET are deliberately absent, and are not to be added back without evidence.
+// They were the two rows that stopped transcribing the vendored table and started
+// designing. .NET was broken: nearest-manifest resolution points `dotnet test` at a
+// library `.csproj` with no test SDK, which exits non-zero, so every commit under `src/`
+// blocked permanently with a message that misdescribed the cause. PHP synthesised a
+// `vendor/bin/phpunit` path, with a `.bat` variant no other row needs.
 //
 // There is no config file, by decision (D10). Resolution is per change rather than per
 // repo, which is what makes a polyglot repo and a mono-repo work with no configuration:
@@ -29,7 +36,7 @@
 // shared code rather than gate-local code, and widening lib.mjs would edit a file two
 // other in-flight slices import.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { isPathInside } from './lib.mjs';
@@ -51,12 +58,9 @@ export const LOOKED_FOR = [
   'build.gradle',
   'build.gradle.kts',
   'Gemfile',
-  'composer.json',
-  '*.sln / *.csproj / *.fsproj / *.vbproj',
 ];
 
 const PYTHON_CONFIGS = ['pyproject.toml', 'pytest.ini', 'setup.cfg', 'tox.ini'];
-const DOTNET_PROJECT = /\.(sln|csproj|fsproj|vbproj)$/i;
 
 const isWindows = () => process.platform === 'win32';
 
@@ -132,16 +136,6 @@ function rubyCommand(dir, file) {
   return { reason: 'Gemfile names no test runner (looked for rspec)' };
 }
 
-function phpCommand(dir, file) {
-  const { value, error } = readJson(file);
-  if (error) return { reason: `composer.json ${error}` };
-  const script = value?.scripts?.test;
-  if (script !== undefined && script !== null) return { command: ['composer', 'test'] };
-  const phpunit = path.join('vendor', 'bin', isWindows() ? 'phpunit.bat' : 'phpunit');
-  if (existsSync(path.join(dir, phpunit))) return { command: [phpunit] };
-  return { reason: 'composer.json declares no "scripts.test" and vendor/bin/phpunit is absent' };
-}
-
 const fixed = (...command) => () => ({ command });
 
 // Mined from test-strategy.md's detection table (V-08), one row per row. Nothing is
@@ -158,18 +152,7 @@ const STACKS = [
   { stack: 'java', manifest: 'build.gradle', resolve: gradleCommand },
   { stack: 'java', manifest: 'build.gradle.kts', resolve: gradleCommand },
   { stack: 'ruby', manifest: 'Gemfile', resolve: rubyCommand },
-  { stack: 'php', manifest: 'composer.json', resolve: phpCommand },
 ];
-
-function dotnetProject(dir) {
-  try {
-    // Sorted, because readdir order is the filesystem's business: with two project
-    // files in one directory an unsorted pick is a different test command per platform.
-    return readdirSync(dir).sort().find((name) => DOTNET_PROJECT.test(name)) ?? null;
-  } catch {
-    return null;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // The walk
@@ -182,24 +165,26 @@ function dotnetProject(dir) {
  */
 
 /**
- * The project rooted at exactly `dir`, or null when `dir` holds no manifest.
+ * The projects rooted at exactly `dir`, or null when `dir` holds no manifest.
  *
- * The nearest manifest defines the project. A manifest that is present but declares no
- * command returns a Unit with `command: null` and a reason; the walk does not continue
- * past it, because a project that cannot say how it is tested is a block, not a reason
- * to adopt its parent's suite.
+ * The nearest manifest defines the project, and every manifest at that level that
+ * declares a command is returned, not just the first. A Django-plus-React root carries
+ * both package.json and pyproject.toml; running jest, reporting green and never running
+ * pytest is the quiet pass L-08 forbids, and blocking instead would be a permanent block
+ * on a repository that has declared everything it can. Identical commands collapse, so a
+ * project holding both a pyproject.toml and a tox.ini that name pytest runs pytest once.
  *
- * @returns {Unit|null}
+ * A manifest that is present but declares no command yields one Unit with `command: null`
+ * and a reason; the walk does not continue past it, because a project that cannot say how
+ * it is tested is a block, not a reason to adopt its parent's suite.
+ *
+ * @returns {Unit[]|null}
  */
 export function projectAt(dir) {
   const candidates = [];
   for (const entry of STACKS) {
     const file = path.join(dir, entry.manifest);
     if (existsSync(file)) candidates.push({ ...entry, file });
-  }
-  const dotnet = dotnetProject(dir);
-  if (dotnet) {
-    candidates.push({ stack: 'dotnet', manifest: dotnet, file: path.join(dir, dotnet), resolve: fixed('dotnet', 'test') });
   }
   if (candidates.length === 0) return null;
 
@@ -214,16 +199,21 @@ export function projectAt(dir) {
     };
   });
 
-  const resolved = attempts.find((a) => a.command !== null);
-  if (resolved) return resolved;
+  const byCommand = new Map();
+  for (const attempt of attempts) {
+    if (attempt.command === null) continue;
+    const key = attempt.command.join(' ');
+    if (!byCommand.has(key)) byCommand.set(key, attempt);
+  }
+  if (byCommand.size > 0) return [...byCommand.values()];
 
-  return {
+  return [{
     root: dir,
     stack: null,
     manifest: attempts.map((a) => a.manifest).join(', '),
     command: null,
     reason: attempts.map((a) => a.reason).filter(Boolean).join('; '),
-  };
+  }];
 }
 
 function* walkUp(startDir, toplevel) {
@@ -244,8 +234,8 @@ function* walkUp(startDir, toplevel) {
  *
  * `files` are repo-relative paths, as git reports them. Each one resolves against the
  * nearest manifest at or above its own directory, stopping at `toplevel`. Distinct
- * project roots are returned once each, so a change touching twenty files in one
- * package runs that package's suite once.
+ * suites are returned once each, so a change touching twenty files in one package runs
+ * that package's suite once.
  *
  * An empty `files` set resolves from `toplevel` instead of resolving nothing. That is
  * the fail-safe direction: `git commit --amend`, `--allow-empty`, and a commit issued
@@ -274,14 +264,17 @@ export function resolveTestPlan({ toplevel, files }) {
     let found = null;
     for (const dir of walkUp(start, toplevel)) {
       searched.add(dir);
-      const unit = at(dir);
-      if (unit) {
-        found = unit;
+      const here = at(dir);
+      if (here) {
+        found = here;
         break;
       }
     }
     if (found) {
-      if (!units.has(found.root)) units.set(found.root, found);
+      for (const unit of found) {
+        const key = `${unit.root}\0${unit.manifest}`;
+        if (!units.has(key)) units.set(key, unit);
+      }
     } else {
       missing.push(start);
     }
