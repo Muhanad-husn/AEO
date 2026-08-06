@@ -137,6 +137,46 @@ export function shellTokens(command) {
 
 const URL_LIKE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 
+/** A `NAME=value` assignment, which in leading position sets the child's environment. */
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/** The tokens that end one command and re-anchor the shell to the start of the next. */
+const SEPARATORS = new Set(['&&', '||', ';', '|', '&']);
+
+/**
+ * Each command in a token list, reduced to what sits in leading position: the
+ * `NAME=value` assignments that set the child's environment, and the program they run.
+ *
+ * Position is the whole rule. `AEO_DATA_ROOT=x` is an assignment only at the start of a
+ * command; anywhere else it is an argument, and a quoted string, a grep pattern and a
+ * commit message all carry one without setting anything. The same position decides what
+ * a command RUNS, which is what keeps `grep -r test .` from reading as a project whose
+ * declared command is `npm test`.
+ *
+ * A separator counts when it stands as its own token, which is how a Bash tool call
+ * writes one. `a&&b` stays one token and reads as one command. Both misses that causes
+ * block rather than allow: an inline seam read from the session instead of the command,
+ * and a program not recognised as a suite.
+ */
+function leadingPositions(tokens) {
+  const out = [];
+  let current = null;
+  for (const token of tokens) {
+    if (SEPARATORS.has(token)) {
+      current = null;
+      continue;
+    }
+    if (current === null) {
+      current = { assignments: [], program: null };
+      out.push(current);
+    }
+    if (current.program !== null) continue;
+    if (ASSIGNMENT.test(token)) current.assignments.push(token);
+    else if (!token.startsWith('-')) current.program = token;
+  }
+  return out;
+}
+
 /**
  * The tokens that could name a filesystem location.
  *
@@ -183,20 +223,29 @@ function isOrderedSubsequence(tokens, wanted) {
  * The declared test command this Bash command invokes, or null.
  *
  * Two forms match, both whole-token (V-12). The full declared sequence in order, which
- * catches `npm test` and `uv run pytest`. Or its final program token alone, which
- * catches a bare `pytest -k x` in a project whose declared command wraps it.
+ * catches `npm test` and `uv run pytest`. Or its final program token IN PROGRAM
+ * POSITION, which catches a bare `pytest -k x` in a project whose declared command wraps
+ * it, and `cd sub && pytest` with it.
  *
- * The second form is deliberately generous. Where a project's declared command ends in a
- * script name rather than a program name, `npm test` being the case, this also matches a
- * command that merely contains the word `test`. During a live long job that costs a
- * clear message on a rare command; the alternative is a miss on the case the rule exists
- * for. Over-blocking is the direction to be wrong in here.
+ * The second form used to accept that token anywhere in the command. Because flags and
+ * globs are dropped, the final declared token is the literal `test` for Node, Go, Rust
+ * and Maven, so during a live run `grep -r test .`, `mkdir test` and `git add test` were
+ * each refused with "`npm test` will not run", naming a command nobody typed. A guard
+ * people cannot work around is a guard people delete, which is the failure this whole
+ * gate is trying not to cause.
+ *
+ * A KNOWN MISS, in the other direction: `node --test` is not recognised, and it is how
+ * this project's own suite runs. The declared command is `npm test`, and what
+ * `scripts.test` expands to is stack.mjs's to read, not this function's to guess. During
+ * a live run a hand-typed `node --test` is not held; a commit that would run it is,
+ * because the commit gate refuses to cross a live sentinel with no recognition involved.
  */
 export function invokesDeclaredSuite(tokens, declared) {
+  const programs = leadingPositions(tokens).map((c) => c.program);
   for (const command of declared) {
     const wanted = significantTokens(command);
     if (wanted.length === 0) continue;
-    if (isOrderedSubsequence(tokens, wanted) || tokens.includes(wanted[wanted.length - 1])) {
+    if (isOrderedSubsequence(tokens, wanted) || programs.includes(wanted[wanted.length - 1])) {
       return command.join(' ');
     }
   }
@@ -218,16 +267,31 @@ function readRoot(value, platform) {
  * Where production data is, and where this command's data will resolve.
  *
  * An inline `AEO_DATA_ROOT=...` in the command wins over the inherited value, because
- * that is what the child will see. The last assignment wins, which is the shell's own
- * rule. This is the sanctioned way to redirect one command inside a session: it is
- * visible in the command string and the guard validates it like any other value.
+ * that is what the child will see. This is the sanctioned way to redirect one command
+ * inside a session: it is visible in the command string and the guard validates it like
+ * any other value.
+ *
+ * ONLY IN LEADING POSITION, and the last one there wins. Taking the value from any token
+ * that started with the name was not the shell's rule and it defeated the gate with the
+ * gate's own advice: told to set the variable, a model runs
+ * `echo 'AEO_DATA_ROOT=<safe>' >> .claude/settings.json && npm test`, the guard reads the
+ * safe value out of the echoed string and allows, and the child still runs with the
+ * production-pointing seam, because writing a settings file changes no running process.
+ * A grep pattern and a commit message named the variable just as cheaply, and the commit
+ * gate then ran the suite. Assignments before this one are allowed, so
+ * `NODE_ENV=test AEO_DATA_ROOT=<sandbox> npm test` is read the way the shell reads it.
  */
 export function resolveRoots({ command = '', env = process.env, platform = process.platform } = {}) {
   const live = readRoot(env?.[LIVE_DATA_ROOT_ENV], platform);
 
   let inline = null;
-  for (const token of shellTokens(command)) {
-    if (token.startsWith(`${DATA_ROOT_ENV}=`)) inline = token.slice(DATA_ROOT_ENV.length + 1);
+  // A newline separates two commands the way `&&` does, and shellTokens drops it, so the
+  // split happens before tokenising rather than inside leadingPositions.
+  for (const line of String(command ?? '').split('\n')) {
+    for (const { assignments } of leadingPositions(shellTokens(line))) {
+      const seam = assignments.filter((a) => a.startsWith(`${DATA_ROOT_ENV}=`)).pop();
+      if (seam !== undefined) inline = seam.slice(DATA_ROOT_ENV.length + 1);
+    }
   }
   const data = readRoot(inline ?? env?.[DATA_ROOT_ENV], platform);
   return { live, data, dataSource: inline === null ? 'session environment' : 'the command' };
@@ -241,22 +305,15 @@ export function resolveRoots({ command = '', env = process.env, platform = proce
  * Every directory this call could operate in, absolute, nearest first.
  *
  * resolveOperationDir prefers a leading `cd <dir> &&` because a PreToolUse hook sees the
- * command before it runs (V-02). That target is frequently relative, and isPathInside
- * would resolve a relative path against the HOOK's working directory, which is not
- * anywhere the command will be. So it is resolved against the session's own cwd, and
- * both are returned: `cd elsewhere && npm test` still burns this machine while a job is
- * live here, so a sentinel in either project is a sentinel worth honouring.
+ * command before it runs (V-02), and it resolves a relative target against the session's
+ * own cwd, so what comes back is absolute or null. Both that and the session cwd are
+ * returned: `cd elsewhere && npm test` still burns this machine while a job is live
+ * here, so a sentinel in either project is a sentinel worth honouring.
  */
 function operationDirs(payload) {
   const base = typeof payload?.cwd === 'string' ? normalizeHookPath(payload.cwd.trim()) : '';
   const { dir } = resolveOperationDir(payload);
-  const out = [];
-  for (const candidate of [dir, base]) {
-    if (typeof candidate !== 'string' || candidate === '') continue;
-    if (path.isAbsolute(candidate)) out.push(candidate);
-    else if (path.isAbsolute(base)) out.push(path.resolve(base, candidate));
-  }
-  return [...new Set(out)];
+  return [...new Set([dir, base].filter((c) => typeof c === 'string' && path.isAbsolute(c)))];
 }
 
 /** @param {object} payload */
@@ -323,6 +380,14 @@ export function sandboxGuard(payload) {
   }
 
   // 3. A command that names production data outright, whatever the environment says.
+  //
+  // ONE DIRECTION ONLY: a named path INSIDE the production root blocks; one that
+  // CONTAINS it does not. `rm -rf D:/` names an ancestor of production data and is
+  // allowed here. The seam rule twenty lines above tests both directions and this rule
+  // deliberately does not, because the other direction is `ls /` and `cd ..`, and a
+  // guard that refuses those is a guard that gets deleted. The limit is real: the
+  // 19,000-document incident was a sweeper run from the wrong root. What covers it is
+  // the seam, which the sweeper reads to decide where to sweep.
   const operationDir = dirs[0] ?? null;
   const liveReal = realise(live.root);
   for (const candidate of pathCandidates(tokens)) {
@@ -336,6 +401,23 @@ export function sandboxGuard(payload) {
       block(
         `this command names ${JSON.stringify(candidate)}, which resolves to ${realise(resolved)}, inside the ` +
           `production data root ${live.root}. A run pointed at production data is refused. ${NO_OVERRIDE}`,
+      );
+    }
+  }
+
+  // 4. The directory the command runs IN. pathCandidates skips a token with no separator
+  //    in it, which is right on its own and a hole in combination with a `cd`: nothing in
+  //    `cd corpus && rm -rf index` carries a separator, so the rule above sees no
+  //    candidates at all while the command deletes production data. The same is true of a
+  //    session whose cwd already sits inside it and types no `cd`, and the Bash tool
+  //    persists its working directory between calls, so one `cd corpus` reaches both. The
+  //    directory is the claim, and the guard already resolved it.
+  for (const dir of dirs) {
+    if (isPathInside(liveReal, realise(dir))) {
+      block(
+        `this command operates in ${realise(dir)}, inside the production data root ${live.root}. Every ` +
+          `relative path it names resolves there, so a run from inside production data is refused. Run it ` +
+          `from outside ${live.root}. ${NO_OVERRIDE}`,
       );
     }
   }
