@@ -18,6 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
 
 import {
   PLUGIN_NAMESPACE,
@@ -57,14 +58,23 @@ function run(cwd, ...args) {
   return (r.stdout ?? '').trim();
 }
 
-/** A throwaway repo with one real commit, so rev-parse --abbrev-ref names the branch. */
-function makeRepo({ branch = 'main' } = {}) {
-  const dir = tempDir();
+/**
+ * A repo with one real commit at an exact path, so rev-parse --abbrev-ref names the
+ * branch. Taking the path lets a test build siblings, which is what a relative `cd`
+ * target between worktrees needs.
+ */
+function initRepoAt(dir, branch) {
+  mkdirSync(dir, { recursive: true });
   run(dir, 'init', '-q', '-b', branch);
   run(dir, 'config', 'user.name', 'aeo-test');
   run(dir, 'config', 'user.email', 'aeo-test@example.invalid');
   run(dir, 'commit', '-q', '--allow-empty', '-m', 'init');
   return dir;
+}
+
+/** A throwaway repo with one real commit, in its own scratch directory. */
+function makeRepo({ branch = 'main' } = {}) {
+  return initRepoAt(tempDir(), branch);
 }
 
 /** `D:\a\b` -> `/d/a/b`, the MSYS form a subagent Bash call can deliver. */
@@ -231,6 +241,119 @@ describe('resolveOperationDir', () => {
 });
 
 // ---------------------------------------------------------------------------
+// resolveOperationDir — a relative `cd` target, the V-13 recurrence
+// ---------------------------------------------------------------------------
+//
+// The returned dir was handed to `git -C` unresolved, so a relative target resolved
+// against the HOOK process's cwd rather than the shell's. `cd ../wt-2 && git commit`
+// then inspected whichever repository sat beside the hook, which is a real repository
+// and so does not look like a failure. P1.5 found this and fixed it inside
+// sandbox-guard only, leaving block-merge, commit-gate and session-status with it: the
+// same fix discovered once and landed in one of four places, which is V-13 itself.
+//
+// The battery had 462 passing tests while this sat in the most-used function in the
+// library, because every case fed it an absolute path. These are the cases that would
+// have caught it.
+
+describe('resolveOperationDir resolves a relative cd target', () => {
+  const posix = { env: {}, cwd: () => '/from/process', platform: 'linux' };
+  const win = { env: {}, cwd: () => 'C:/from/process', platform: 'win32' };
+  const at = (cwd, command) => ({ cwd, tool_input: { command } });
+
+  test('`cd ..` resolves against payload.cwd, not the hook cwd', () => {
+    const r = resolveOperationDir(at('/repo/wt-1', 'cd ../wt-2 && git commit -m x'), posix);
+    assert.deepEqual(r, { dir: '/repo/wt-2', source: 'cd' });
+  });
+
+  test('a bare relative name resolves under payload.cwd', () => {
+    assert.equal(resolveOperationDir(at('/repo', 'cd sub && git commit -m x'), posix).dir, '/repo/sub');
+  });
+
+  test('a dot-slash target resolves under payload.cwd', () => {
+    assert.equal(resolveOperationDir(at('/repo', 'cd ./sub && git commit -m x'), posix).dir, '/repo/sub');
+  });
+
+  test('`cd .` is payload.cwd itself', () => {
+    assert.equal(resolveOperationDir(at('/repo/wt-1', 'cd . && git commit -m x'), posix).dir, '/repo/wt-1');
+  });
+
+  test('a quoted relative target with a space resolves', () => {
+    assert.equal(resolveOperationDir(at('/repo/a', 'cd "../my wt" && git commit -m x'), posix).dir, '/repo/my wt');
+    assert.equal(resolveOperationDir(at('/repo/a', "cd '../my wt' && git commit -m x"), posix).dir, '/repo/my wt');
+  });
+
+  // Order of operations: MSYS normalisation has to happen before the absoluteness test.
+  // `/d/proj/wt-1` is not absolute to path.win32 until it is `D:/proj/wt-1`, so testing
+  // first would discard a real cwd and leave the relative target with no base.
+  test('a relative target resolves against an MSYS payload.cwd on windows', () => {
+    const r = resolveOperationDir(at('/d/proj/wt-1', 'cd ../wt-2 && git commit -m x'), win);
+    assert.deepEqual(r, { dir: 'D:/proj/wt-2', source: 'cd' });
+  });
+
+  test('a relative target resolves against a backslash payload.cwd on windows', () => {
+    const r = resolveOperationDir(at('D:\\proj\\wt-1', 'cd ../wt-2 && git commit -m x'), win);
+    assert.deepEqual(r, { dir: 'D:/proj/wt-2', source: 'cd' });
+  });
+
+  test('an MSYS cd target still wins over an MSYS payload.cwd', () => {
+    const r = resolveOperationDir(at('/d/proj/wt-1', 'cd /d/other/wt && git commit -m x'), win);
+    assert.deepEqual(r, { dir: 'D:/other/wt', source: 'cd' });
+  });
+
+  // Absolute targets are the path every existing test took. They must not move.
+  test('a posix-absolute target is unchanged by the presence of a cwd', () => {
+    const r = resolveOperationDir(at('/repo/wt-1', 'cd /other/wt && git commit -m x'), posix);
+    assert.deepEqual(r, { dir: '/other/wt', source: 'cd' });
+  });
+
+  test('a windows drive-absolute target passes through byte-identical', () => {
+    const r = resolveOperationDir(at('C:/proj', 'cd D:\\other\\wt && git commit -m x'), win);
+    assert.deepEqual(r, { dir: 'D:\\other\\wt', source: 'cd' });
+  });
+
+  test('a UNC target passes through byte-identical', () => {
+    const unc = '\\\\srv\\share\\wt';
+    const r = resolveOperationDir(at('C:/proj', `cd "${unc}" && git commit -m x`), win);
+    assert.deepEqual(r, { dir: unc, source: 'cd' });
+  });
+
+  test('on posix a backslash is a filename character, not a separator', () => {
+    const r = resolveOperationDir(at('/repo', 'cd a\\b && git commit -m x'), posix);
+    assert.deepEqual(r, { dir: '/repo/a\\b', source: 'cd' });
+  });
+});
+
+describe('resolveOperationDir when a relative cd target cannot be resolved', () => {
+  const at = (cwd, command) => ({ cwd, tool_input: { command } });
+
+  // Not a fall-through. The remaining steps are session-fixed directories; handing one
+  // back would give a gate a real repository that is not the one the command names,
+  // and it would enforce confidently against the wrong tree. A null makes every
+  // consumer stop and say so.
+  test('no payload.cwd is a resolution failure, never CLAUDE_PROJECT_DIR', () => {
+    const opts = { env: { CLAUDE_PROJECT_DIR: '/launch-checkout' }, cwd: () => '/from/process', platform: 'linux' };
+    const r = resolveOperationDir({ tool_input: { command: 'cd ../wt-2 && git commit -m x' } }, opts);
+    assert.deepEqual(r, { dir: null, source: 'cd' });
+  });
+
+  test('a relative payload.cwd is no base either', () => {
+    const opts = { env: { CLAUDE_PROJECT_DIR: '/launch-checkout' }, cwd: () => '/from/process', platform: 'linux' };
+    assert.deepEqual(resolveOperationDir(at('sub/dir', 'cd ../wt-2 && git commit -m x'), opts), {
+      dir: null,
+      source: 'cd',
+    });
+  });
+
+  // `source: 'cd'` rather than `'none'`, so the failure is attributable to the command
+  // instead of reading as "nothing was found anywhere".
+  test('the failure is distinguishable from nothing being found at all', () => {
+    const opts = { env: {}, cwd: () => '', platform: 'linux' };
+    assert.equal(resolveOperationDir({ tool_input: { command: 'cd ../x && git commit' } }, opts).source, 'cd');
+    assert.equal(resolveOperationDir({}, opts).source, 'none');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // resolveWorktree — resolution normalised to the git toplevel
 // ---------------------------------------------------------------------------
 
@@ -264,6 +387,47 @@ describe('resolveWorktree', () => {
     const r = resolveWorktree({ cwd: plain });
     assert.equal(r.toplevel, null);
     assert.ok(r.dir);
+  });
+
+  // The whole defect in one test. The hook runs somewhere the command is not, and
+  // beside that somewhere sits a real repository with the same relative name. An
+  // unresolved dir reaches `git -C ../wt-2`, which resolves against the hook and finds
+  // the decoy: a real toplevel, a real branch, and the wrong project. So the commit
+  // gate reads a different tree's run-in-progress sentinel (L-02) and enforces against
+  // a repository nobody is committing to.
+  test('a relative cd lands on the named sibling, whatever the hook cwd is', () => {
+    const root = tempDir('aeo-p11-siblings-');
+    const here = initRepoAt(path.join(root, 'wt-1'), 'feat/here');
+    const sibling = initRepoAt(path.join(root, 'wt-2'), 'feat/sibling');
+
+    // The decoy needs to be a repository, not a repository with history: an unresolved
+    // `../wt-2` reaches it through `git -C` and reports its toplevel either way.
+    const decoy = tempDir('aeo-p11-decoy-');
+    const hookCwd = path.join(decoy, 'wt-1');
+    mkdirSync(hookCwd, { recursive: true });
+    mkdirSync(path.join(decoy, 'wt-2'), { recursive: true });
+    run(path.join(decoy, 'wt-2'), 'init', '-q', '-b', 'decoy');
+
+    const lib = pathToFileURL(path.join(import.meta.dirname, '..', '..', 'plugin', 'hooks', 'lib.mjs')).href;
+    const source = `
+      import { resolveWorktree, currentBranch } from ${JSON.stringify(lib)};
+      const r = resolveWorktree({
+        cwd: ${JSON.stringify(here)},
+        tool_input: { command: 'cd ../wt-2 && git commit -m x' },
+      });
+      process.stdout.write(JSON.stringify({ ...r, branch: r.toplevel ? currentBranch(r.toplevel) : null }));
+    `;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', source], {
+      cwd: hookCwd,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    assert.equal(child.status, 0, child.stderr);
+
+    const out = JSON.parse(child.stdout);
+    assert.equal(out.source, 'cd');
+    assert.equal(out.branch, 'feat/sibling', 'the decoy beside the hook was inspected instead of the real target');
+    assert.equal(out.toplevel, gitToplevel(sibling));
   });
 });
 

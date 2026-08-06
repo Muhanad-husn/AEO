@@ -368,14 +368,45 @@ export function normalizeHookPath(p, { platform = process.platform } = {}) {
  *    plugin that is the ephemeral plugin cache (C-09, D12), which would resolve gates
  *    against the wrong repo entirely. Deliberately not ported.
  *
+ * A `cd` TARGET IS RESOLVED AGAINST `payload.cwd`, so `dir` from that step is absolute
+ * or null, never relative. Consumers hand `dir` to `git -C`, which resolves a relative
+ * path against the HOOK process's working directory, and the hook is not running where
+ * the command will. `cd ../wt-2 && git commit` therefore inspected whichever repository
+ * sat beside the hook: the commit gate read a different project's run-in-progress
+ * sentinel, so L-02's protection evaluated a tree nobody was committing to. P1.5 found
+ * this and fixed it inside sandbox-guard only, leaving the other three consumers with
+ * it, which is V-13 recurring inside the library built to stop it.
+ *
+ * A relative target with no absolute `payload.cwd` is a RESOLUTION FAILURE, not a
+ * fall-through: `{dir: null, source: 'cd'}`. Steps 3 and 4 are session-fixed, so
+ * substituting one would hand a gate a real repository that is not the one the command
+ * names, and it would enforce confidently against the wrong tree. A null makes every
+ * consumer stop and say so. `source` stays `cd` so the failure is attributable to the
+ * command rather than reading as "nothing was found anywhere".
+ *
  * @returns {{dir: string|null, source: 'cd'|'payload.cwd'|'CLAUDE_PROJECT_DIR'|'process.cwd'|'none'}}
  */
 export function resolveOperationDir(payload, { env = process.env, cwd = process.cwd, platform = process.platform } = {}) {
+  // The target platform's path rules, not the host's, so a target is judged the way
+  // `git -C` would judge it and the tests are not host-dependent.
+  const p = platform === 'win32' ? path.win32 : path.posix;
+
   const command = payload?.tool_input?.command;
   if (typeof command === 'string') {
     const m = LEADING_CD.exec(command);
-    const target = m ? (m[1] ?? m[2] ?? m[3]) : null;
-    if (target) return { dir: normalizeHookPath(target, { platform }), source: 'cd' };
+    const raw = m ? (m[1] ?? m[2] ?? m[3]) : null;
+    if (raw) {
+      const target = normalizeHookPath(raw, { platform });
+      if (p.isAbsolute(target)) return { dir: target, source: 'cd' };
+      // MSYS form before absoluteness: `/d/proj` is not a drive to path.win32 until it
+      // is `D:/proj`, so testing first would discard a usable base.
+      const base = normalizeHookPath(typeof payload?.cwd === 'string' ? payload.cwd.trim() : '', { platform });
+      if (!p.isAbsolute(base)) return { dir: null, source: 'cd' };
+      const resolved = p.resolve(base, target);
+      // Separators unify only on win32, where both are separators. On POSIX a backslash
+      // is an ordinary character in a directory name.
+      return { dir: platform === 'win32' ? resolved.replace(/\\/g, '/') : resolved, source: 'cd' };
+    }
   }
 
   const fromPayload = typeof payload?.cwd === 'string' ? payload.cwd.trim() : '';
