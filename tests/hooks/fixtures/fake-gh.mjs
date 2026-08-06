@@ -21,6 +21,20 @@ if (mode === 'error') {
   process.stdout.write('['.padEnd(1_000_000, 'x'));
 } else if (mode === 'garbage') {
   process.stdout.write('not json');
+} else if (mode === 'silent') {
+  // Exit 0, print nothing. The real `gh --json` always prints at least `[]`, so this is
+  // what a wrapper shim or a version that answered differently looks like.
+} else if (mode === 'object') {
+  // Valid JSON, wrong shape. `{"message":"Not Found"}` is what a gh that resolved no
+  // repository prints, and it parses cleanly.
+  process.stdout.write(JSON.stringify({ message: 'Not Found', documentation_url: 'https://example.invalid' }));
+} else if (mode === 'overflow') {
+  // Exactly as many items as were asked for, so the hook's `limit + 1` request comes
+  // back full and the renderer can see the list was cut.
+  const limit = Number(args[args.indexOf('--limit') + 1]);
+  const kind = args[0] === 'issue' ? 'issue' : 'pr';
+  const items = Array.from({ length: limit }, (_, i) => ({ number: i + 1, title: `fixture ${kind} ${i + 1}` }));
+  process.stdout.write(JSON.stringify(items));
 } else if (mode === 'items') {
   if (args[0] === 'issue') {
     process.stdout.write(JSON.stringify([{ number: 1, title: 'fixture issue', labels: [{ name: 'bug' }] }]));

@@ -6,9 +6,15 @@
         "hooks": [
           {
             "type": "command",
-            "shell": "bash",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-status.mjs\" || echo '[AEO] GATES NOT ENFORCING: node did not resolve, so every AEO hook fails open. Install Node 18+ on PATH and restart Claude Code.'",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/session-status.mjs"],
             "timeout": 20
+          },
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "node --version > /dev/null 2>&1 || echo \"[AEO] GATES NOT ENFORCING: node did not resolve, so every AEO hook fails open. Install Node 18+ on PATH and restart Claude Code.\"",
+            "timeout": 10
           }
         ]
       }
@@ -37,7 +43,7 @@
         ]
       },
       {
-        "matcher": "^(Edit|Write)$",
+        "matcher": "^(Edit|Write|MultiEdit|NotebookEdit)$",
         "hooks": [
           {
             "type": "command",
@@ -58,7 +64,6 @@
         ]
       },
       {
-        "matcher": "*",
         "hooks": [
           {
             "type": "command",
