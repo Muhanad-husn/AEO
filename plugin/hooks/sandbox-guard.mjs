@@ -60,7 +60,7 @@ import { realpathSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { block, isPathInside, normalizeHookPath, resolveOperationDir, runGate } from './lib.mjs';
+import { block, commandSegments, isPathInside, normalizeHookPath, operationDirs, runGate } from './lib.mjs';
 import { projectAnchor, runInProgress } from './sentinel.mjs';
 import { resolveTestPlan } from './stack.mjs';
 
@@ -137,46 +137,6 @@ export function shellTokens(command) {
 
 const URL_LIKE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 
-/** A `NAME=value` assignment, which in leading position sets the child's environment. */
-const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-
-/** The tokens that end one command and re-anchor the shell to the start of the next. */
-const SEPARATORS = new Set(['&&', '||', ';', '|', '&']);
-
-/**
- * Each command in a token list, reduced to what sits in leading position: the
- * `NAME=value` assignments that set the child's environment, and the program they run.
- *
- * Position is the whole rule. `AEO_DATA_ROOT=x` is an assignment only at the start of a
- * command; anywhere else it is an argument, and a quoted string, a grep pattern and a
- * commit message all carry one without setting anything. The same position decides what
- * a command RUNS, which is what keeps `grep -r test .` from reading as a project whose
- * declared command is `npm test`.
- *
- * A separator counts when it stands as its own token, which is how a Bash tool call
- * writes one. `a&&b` stays one token and reads as one command. Both misses that causes
- * block rather than allow: an inline seam read from the session instead of the command,
- * and a program not recognised as a suite.
- */
-function leadingPositions(tokens) {
-  const out = [];
-  let current = null;
-  for (const token of tokens) {
-    if (SEPARATORS.has(token)) {
-      current = null;
-      continue;
-    }
-    if (current === null) {
-      current = { assignments: [], program: null };
-      out.push(current);
-    }
-    if (current.program !== null) continue;
-    if (ASSIGNMENT.test(token)) current.assignments.push(token);
-    else if (!token.startsWith('-')) current.program = token;
-  }
-  return out;
-}
-
 /**
  * The tokens that could name a filesystem location.
  *
@@ -240,13 +200,14 @@ function isOrderedSubsequence(tokens, wanted) {
  * a live run a hand-typed `node --test` is not held; a commit that would run it is,
  * because the commit gate refuses to cross a live sentinel with no recognition involved.
  */
-export function invokesDeclaredSuite(tokens, declared) {
-  const programs = leadingPositions(tokens).map((c) => c.program);
-  for (const command of declared) {
-    const wanted = significantTokens(command);
+export function invokesDeclaredSuite(command, declared) {
+  const tokens = shellTokens(command);
+  const programs = commandSegments(command).segments.map((s) => s.program);
+  for (const candidate of declared) {
+    const wanted = significantTokens(candidate);
     if (wanted.length === 0) continue;
     if (isOrderedSubsequence(tokens, wanted) || programs.includes(wanted[wanted.length - 1])) {
-      return command.join(' ');
+      return candidate.join(' ');
     }
   }
   return null;
@@ -264,92 +225,66 @@ function readRoot(value, platform) {
 }
 
 /**
- * Where production data is, and where this command's data will resolve.
+ * Where production data is, and where the data of EACH command on this line will resolve.
  *
- * An inline `AEO_DATA_ROOT=...` in the command wins over the inherited value, because
- * that is what the child will see. This is the sanctioned way to redirect one command
- * inside a session: it is visible in the command string and the guard validates it like
- * any other value.
+ * An inline `AEO_DATA_ROOT=...` wins over the inherited value, because that is what the
+ * child will see. This is the sanctioned way to redirect one command inside a session: it
+ * is visible in the command string and the guard validates it like any other value.
  *
- * ONLY IN LEADING POSITION, and the last one there wins. Taking the value from any token
- * that started with the name was not the shell's rule and it defeated the gate with the
- * gate's own advice: told to set the variable, a model runs
- * `echo 'AEO_DATA_ROOT=<safe>' >> .claude/settings.json && npm test`, the guard reads the
- * safe value out of the echoed string and allows, and the child still runs with the
- * production-pointing seam, because writing a settings file changes no running process.
- * A grep pattern and a commit message named the variable just as cheaply, and the commit
- * gate then ran the suite. Assignments before this one are allowed, so
+ * ONE SEAM PER COMMAND, NOT ONE PER LINE. A prefix assignment binds to the single command
+ * it prefixes and the shell carries it no further, so every command on the line gets its
+ * own answer and the guard judges them all. Reading one seam for the whole line let
+ * `AEO_DATA_ROOT=<sandbox> npm run build && npm test` run the suite against production —
+ * `npm test` never saw that assignment — and it leaked backwards just as freely, so
+ * `npm test && AEO_DATA_ROOT=<sandbox> echo ok` did the same. Both exited 0.
+ *
+ * ONLY IN LEADING POSITION, and within one command the last one wins. Taking the value
+ * from any token that started with the name was not the shell's rule either, and it
+ * defeated the gate with the gate's own advice: told to set the variable, a model runs
+ * `echo 'AEO_DATA_ROOT=<safe>' >> .claude/settings.json && npm test`, the guard read the
+ * safe value out of the echoed string and allowed, and the child still ran with the
+ * production-pointing seam, because writing a settings file changes no running process. A
+ * grep pattern, a commit message and a heredoc body named the variable just as cheaply.
+ * Assignments before this one are allowed, so
  * `NODE_ENV=test AEO_DATA_ROOT=<sandbox> npm test` is read the way the shell reads it.
+ *
+ * A segment that runs no program sets nothing a child can inherit — a bare assignment
+ * makes a shell variable, not an exported one — so it contributes no seam and is not
+ * judged. A command with no segments at all still gets the session's own seam, because
+ * the environment rule fires whether or not there is a command to read.
+ *
+ * @returns {{live: object, seams: Array<{data: object, dataSource: string}>}}
  */
 export function resolveRoots({ command = '', env = process.env, platform = process.platform } = {}) {
   const live = readRoot(env?.[LIVE_DATA_ROOT_ENV], platform);
+  const inherited = env?.[DATA_ROOT_ENV];
 
-  let inline = null;
-  // A newline separates two commands the way `&&` does, and shellTokens drops it, so the
-  // split happens before tokenising rather than inside leadingPositions.
-  for (const line of String(command ?? '').split('\n')) {
-    for (const { assignments } of leadingPositions(shellTokens(line))) {
-      const seam = assignments.filter((a) => a.startsWith(`${DATA_ROOT_ENV}=`)).pop();
-      if (seam !== undefined) inline = seam.slice(DATA_ROOT_ENV.length + 1);
-    }
+  const seams = [];
+  const seen = new Set();
+  const record = (value, source) => {
+    const key = `${source} ${value ?? ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    seams.push({ data: readRoot(value, platform), dataSource: source });
+  };
+
+  for (const segment of commandSegments(command).segments) {
+    if (segment.program === null) continue;
+    const assigned = segment.assignments.filter((a) => a.startsWith(`${DATA_ROOT_ENV}=`)).pop();
+    if (assigned === undefined) record(inherited, 'session environment');
+    else record(assigned.slice(DATA_ROOT_ENV.length + 1), 'the command');
   }
-  const data = readRoot(inline ?? env?.[DATA_ROOT_ENV], platform);
-  return { live, data, dataSource: inline === null ? 'session environment' : 'the command' };
+  if (seams.length === 0) record(inherited, 'session environment');
+
+  return { live, seams };
 }
 
 // ---------------------------------------------------------------------------
 // The gate
 // ---------------------------------------------------------------------------
 
-/**
- * Every directory this call could operate in, absolute, nearest first.
- *
- * resolveOperationDir prefers a leading `cd <dir> &&` because a PreToolUse hook sees the
- * command before it runs (V-02), and it resolves a relative target against the session's
- * own cwd, so what comes back is absolute or null. Both that and the session cwd are
- * returned: `cd elsewhere && npm test` still burns this machine while a job is live
- * here, so a sentinel in either project is a sentinel worth honouring.
- */
-function operationDirs(payload) {
-  const base = typeof payload?.cwd === 'string' ? normalizeHookPath(payload.cwd.trim()) : '';
-  const { dir } = resolveOperationDir(payload);
-  return [...new Set([dir, base].filter((c) => typeof c === 'string' && path.isAbsolute(c)))];
-}
-
-/** @param {object} payload */
-export function sandboxGuard(payload) {
-  const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
-  const tokens = shellTokens(command);
-
-  // 1. A live long job (L-02). Read first and read cheaply: no git process, one readdir,
-  //    and nothing else happens until a sentinel is actually present.
-  const dirs = operationDirs(payload);
-  const anchors = [...new Set(dirs.map(projectAnchor).filter((a) => a !== null))];
-  for (const anchor of anchors) {
-    const { reason, notes } = runInProgress(anchor);
-    for (const line of notes) note(`sandbox-guard: ${line}`);
-    if (reason === null) continue;
-    const declared = resolveTestPlan({ toplevel: anchor, files: [] })
-      .units.map((u) => u.command)
-      .filter((c) => Array.isArray(c));
-    const invoked = invokesDeclaredSuite(tokens, declared);
-    if (invoked !== null) block(`\`${invoked}\` will not run: ${reason}\n${NO_OVERRIDE}`);
-  }
-
-  // 2. The seam (L-03). Everything below needs a declared production data root; without
-  //    one the project has told the guard nothing to protect, and there is nothing here
-  //    to be ambiguous about.
-  const { live, data, dataSource } = resolveRoots({ command, env: process.env });
-  if (!live.set) return;
-
-  if (live.root === null) {
-    block(
-      `${LIVE_DATA_ROOT_ENV} is set to ${JSON.stringify(live.raw)}, which is not an absolute path, so the ` +
-        `sandbox guard cannot tell production data from a sandbox and refuses every command. Set it to the ` +
-        `absolute path of the production data directory, or unset it. ${NO_OVERRIDE}`,
-    );
-  }
-
+/** The three ways one command's seam can be wrong. Blocks; returns only when it is fine. */
+function checkSeam(live, data, dataSource) {
   if (!data.set) {
     block(
       `this session declares production data at ${live.root} (${LIVE_DATA_ROOT_ENV}) and sets no ` +
@@ -378,8 +313,75 @@ export function sandboxGuard(payload) {
         `Point ${DATA_ROOT_ENV} at a directory that neither contains nor sits inside ${live.root}. ${NO_OVERRIDE}`,
     );
   }
+}
 
-  // 3. A command that names production data outright, whatever the environment says.
+/** @param {object} payload */
+export function sandboxGuard(payload) {
+  const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
+
+  // 1. A live long job (L-02). Read first and read cheaply: no git process, one readdir,
+  //    and nothing else happens until a sentinel is actually present.
+  //
+  //    Every directory any command on this line runs in, not just the first: `cd
+  //    elsewhere && npm test` still burns this machine while a job is live here, so a
+  //    sentinel in either project is a sentinel worth honouring.
+  const walk = operationDirs(payload);
+  const dirs = walk.dirs.filter((d) => path.isAbsolute(d));
+  const anchors = [...new Set(dirs.map(projectAnchor).filter((a) => a !== null))];
+  for (const anchor of anchors) {
+    const { reason, notes } = runInProgress(anchor);
+    for (const line of notes) note(`sandbox-guard: ${line}`);
+    if (reason === null) continue;
+    const declared = resolveTestPlan({ toplevel: anchor, files: [] })
+      .units.map((u) => u.command)
+      .filter((c) => Array.isArray(c));
+    const invoked = invokesDeclaredSuite(command, declared);
+    if (invoked !== null) block(`\`${invoked}\` will not run: ${reason}\n${NO_OVERRIDE}`);
+  }
+
+  // 2. The seam (L-03). Everything below needs a declared production data root; without
+  //    one the project has told the guard nothing to protect, and there is nothing here
+  //    to be ambiguous about.
+  const { live, seams } = resolveRoots({ command, env: process.env });
+  if (!live.set) return;
+
+  if (live.root === null) {
+    block(
+      `${LIVE_DATA_ROOT_ENV} is set to ${JSON.stringify(live.raw)}, which is not an absolute path, so the ` +
+        `sandbox guard cannot tell production data from a sandbox and refuses every command. Set it to the ` +
+        `absolute path of the production data directory, or unset it. ${NO_OVERRIDE}`,
+    );
+  }
+
+  // 3. A command the guard could not read all the way through. Everything below decides
+  //    from the directories a command runs in and the paths it names, so a construct that
+  //    hides either one hides the decision itself. This project's production data cannot
+  //    be un-deleted, so an unreadable command is refused rather than guessed at. It is
+  //    confined to sessions that declared production data, above, because a guard that
+  //    refused every backtick in a project with nothing to protect is a guard people
+  //    delete (L-05).
+  if (walk.parseError !== null) {
+    block(
+      `this command was not run because ${walk.parseError}, and this session declares production data at ` +
+        `${live.root}. A command the guard cannot read is a command it cannot clear. Rewrite it, or split ` +
+        `it into commands that can be read one at a time. ${NO_OVERRIDE}`,
+    );
+  }
+  if (walk.unresolved) {
+    block(
+      `this command changes directory to somewhere the guard cannot name — an expansion, a glob, a bare ` +
+        `\`cd\`, or \`cd -\` — and this session declares production data at ${live.root}. The guard cannot ` +
+        `tell whether what follows runs inside it, so it refuses. Give the directory literally. ${NO_OVERRIDE}`,
+    );
+  }
+
+  // 4. Every command on the line gets its own seam, because a prefix assignment binds to
+  //    the one command it prefixes.
+  for (const { data, dataSource } of seams) {
+    checkSeam(live, data, dataSource);
+  }
+
+  // 5. A command that names production data outright, whatever the environment says.
   //
   // ONE DIRECTION ONLY: a named path INSIDE the production root blocks; one that
   // CONTAINS it does not. `rm -rf D:/` names an ancestor of production data and is
@@ -390,7 +392,7 @@ export function sandboxGuard(payload) {
   // the seam, which the sweeper reads to decide where to sweep.
   const operationDir = dirs[0] ?? null;
   const liveReal = realise(live.root);
-  for (const candidate of pathCandidates(tokens)) {
+  for (const candidate of pathCandidates(shellTokens(command))) {
     const named = normalizeHookPath(candidate);
     // A relative token with no directory to resolve against names no location, so there
     // is nothing to test. The environment rule above already governs where the child
@@ -405,7 +407,7 @@ export function sandboxGuard(payload) {
     }
   }
 
-  // 4. The directory the command runs IN. pathCandidates skips a token with no separator
+  // 6. The directory the command runs IN. pathCandidates skips a token with no separator
   //    in it, which is right on its own and a hole in combination with a `cd`: nothing in
   //    `cd corpus && rm -rf index` carries a separator, so the rule above sees no
   //    candidates at all while the command deletes production data. The same is true of a

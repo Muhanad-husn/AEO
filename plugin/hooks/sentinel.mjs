@@ -162,9 +162,15 @@ export function inspectRuns(toplevel, { hostname = os.hostname, alive = processA
   try {
     entries = readdirSync(dir);
   } catch (err) {
-    // ENOENT and ENOTDIR both mean "no sentinel directory here", which is the ordinary
-    // state of a repository with no long jobs. Everything else is a real failure.
-    if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') return result;
+    // ENOENT is the only "no sentinel directory here", and it is the ordinary state of a
+    // repository with no long jobs. Everything else means something IS at that path and
+    // the guard could not read it: EACCES, EIO, and ENOTDIR, which is what a `.aeo/runs`
+    // that someone created as a FILE reports. ENOTDIR used to be forgiven alongside
+    // ENOENT, which made this branch unreachable by any test that could run on this
+    // machine — a mutation that deleted it left all 107 tests green — and it turned the
+    // one shape a live job most needs held into a silent allow. Unreadable for any reason
+    // blocks (L-08: a skip is loud or it is a quiet pass).
+    if (err?.code === 'ENOENT') return result;
     result.dirError = `${dir} could not be read (${err?.message ?? err})`;
     return result;
   }

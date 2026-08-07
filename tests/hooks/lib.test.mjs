@@ -189,9 +189,19 @@ describe('resolveOperationDir', () => {
     assert.equal(r.source, 'cd');
   });
 
-  test('cd without && is not honoured', () => {
+  // `;` ends a command exactly as `&&` does, and the shell carries the cd across it. This
+  // read the other way for two rounds, which is how `cd prod ; rm -rf corpus` deleted
+  // production data and exited 0.
+  test('cd before a semicolon is honoured, as the shell honours it', () => {
     const r = resolveOperationDir({ ...cmd('cd /elsewhere; git commit -m x'), cwd: '/launch' }, opts);
-    assert.deepEqual(r, { dir: '/launch', source: 'payload.cwd' });
+    assert.deepEqual(r, { dir: '/elsewhere', source: 'cd' });
+  });
+
+  // A subshell's cd dies with the subshell, so what follows the `)` runs where the command
+  // started. Without this the whole rest of the line is attributed to the wrong tree.
+  test('a cd inside a subshell does not escape it', () => {
+    const r = resolveOperationDir({ ...cmd('( cd /elsewhere ) ; git commit -m x'), cwd: '/launch' }, opts);
+    assert.equal(r.dir, '/launch');
   });
 
   test('cd behind || is not honoured', () => {

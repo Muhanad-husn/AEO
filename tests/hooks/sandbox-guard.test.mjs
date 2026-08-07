@@ -14,7 +14,7 @@
 // for an unrelated reason; the fix is the same one applied throughout below.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
@@ -159,6 +159,9 @@ const NAMES_LIVE_DATA = /which resolves to .*inside the\s+production data root/;
 const OPERATES_IN = /this command operates in .*inside the production data root/;
 const LIVE_RUN = /a long job is running and this would execute code alongside it/;
 const SENTINEL_UNREADABLE = /sentinel is present but unreadable/;
+const SENTINEL_DIR_UNREADABLE = /could not be read \(.*\), so the gate cannot tell whether a long job is running/;
+const CD_UNNAMEABLE = /changes directory to somewhere the guard cannot name/;
+const UNREADABLE_COMMAND = /could not be read as a sequence of shell commands/;
 const DETECTION_FAILED = /no test command could be resolved/;
 
 // A sandbox and a production root that are real directories and are not related.
@@ -358,12 +361,7 @@ describe('the seam', () => {
     const { live, sandbox } = roots();
     const repo = makeRepo();
     const misconfigured = { [LIVE]: live, [DATA]: path.join(live, 'scratch') };
-    for (const command of [
-      `${DATA}=${sandbox} npm test`,
-      `cd sub && ${DATA}=${sandbox} npm test`,
-      `NODE_ENV=ci ${DATA}=${sandbox} npm test`,
-      `ls\n${DATA}=${sandbox} npm test`,
-    ]) {
+    for (const command of [`${DATA}=${sandbox} npm test`, `NODE_ENV=ci ${DATA}=${sandbox} npm test`]) {
       assertAllowed(guard({ payload: bash(command, repo), env: misconfigured }), JSON.stringify(command));
     }
   });
@@ -506,6 +504,127 @@ describe('the operation directory', () => {
     ]) {
       assertAllowed(guard({ payload: bash(command, cwd), env }), `${command} in ${cwd}`);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The shell's other separators
+// ---------------------------------------------------------------------------
+//
+// The operation-directory rule matched `cd X &&` and nothing else. Every shape below
+// deletes production data and exited 0, while the one syntax that was patched exited 2.
+// Two rounds of fixes each closed the reported shape and left its neighbours open, which
+// is why these are pinned one by one: the absence of exactly these cases is what shipped
+// the bug twice.
+
+describe('a cd the shell honours, in every syntax that reaches it', () => {
+  const setup = () => {
+    const { base, live, sandbox } = roots();
+    mkdirSync(path.join(live, 'index'), { recursive: true });
+    return { base, live, sandbox, prod: path.basename(live), env: { [LIVE]: live, [DATA]: sandbox } };
+  };
+
+  test('every separator the shell carries a cd across blocks', () => {
+    const { base, prod, env } = setup();
+    for (const command of [
+      `cd ${prod} && rm -rf corpus`, // the control: this one always blocked
+      `cd ${prod} ; rm -rf corpus`,
+      `cd ${prod}\nrm -rf corpus`,
+      `pushd ${prod} && rm -rf corpus`,
+      `cd -- ${prod} && rm -rf corpus`,
+      `( cd ${prod} && rm -rf corpus )`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, base), env }), OPERATES_IN, JSON.stringify(command));
+    }
+  });
+
+  // The separators after which the shell does NOT carry the cd. `||` runs its right side
+  // only when the cd failed, and `|` and `&` put each side in its own subshell, so in all
+  // three `rm` runs where the command started. Blocking these would be a false positive,
+  // and a guard that blocks everything is not a working gate.
+  test('the separators that end a cd do not block', () => {
+    const { base, prod, env } = setup();
+    for (const command of [`cd ${prod} || rm -rf corpus`, `cd ${prod} | cat`, `cd ${prod} & rm -rf corpus`]) {
+      assertAllowed(guard({ payload: bash(command, base), env }), JSON.stringify(command));
+    }
+  });
+
+  // Fail closed: a directory the guard cannot name is not a directory it can clear.
+  test('a cd to somewhere the guard cannot name blocks', () => {
+    const { base, env } = setup();
+    for (const command of ['cd $PROD && rm -rf corpus', 'cd && rm -rf corpus', 'cd - && rm -rf corpus']) {
+      assertBlockedBecause(guard({ payload: bash(command, base), env }), CD_UNNAMEABLE, JSON.stringify(command));
+    }
+  });
+
+  test('a command that cannot be read at all blocks', () => {
+    const { base, env } = setup();
+    for (const command of ['rm -rf `cat target.txt`', "rm -rf 'corpus", 'cd "prod && rm -rf corpus']) {
+      assertBlockedBecause(guard({ payload: bash(command, base), env }), UNREADABLE_COMMAND, JSON.stringify(command));
+    }
+  });
+
+  // The other direction, and it is the reason heredoc bodies are skipped rather than
+  // segmented: a script being WRITTEN is data. Reading its lines as commands refuses an
+  // ordinary `cat > run.sh` for a `cd` that this call never performs.
+  test('a heredoc body is data, not a command that moves the shell', () => {
+    const { base, prod, env } = setup();
+    const command = `cat > run.sh <<EOF\ncd ${prod}\nrm -rf corpus\nEOF`;
+    assertAllowed(guard({ payload: bash(command, base), env }), 'a cd inside a heredoc body');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A prefix assignment binds to one command, not to the line
+// ---------------------------------------------------------------------------
+//
+// The seam was read once per line and applied to every command on it, so a safe
+// assignment anywhere on the line — before, after, inside a quoted string, inside a
+// heredoc body — cleared the whole line. Every shape below ran against production and
+// exited 0.
+
+describe('the seam is per command, not per line', () => {
+  const setup = () => {
+    const { live, sandbox } = roots();
+    const repo = makeRepo();
+    // The session is misconfigured: its seam points inside production data.
+    return { repo, sandbox, env: { [LIVE]: live, [DATA]: path.join(live, 'scratch') } };
+  };
+
+  test('an assignment does not reach the commands beside it', () => {
+    const { repo, sandbox, env } = setup();
+    for (const command of [
+      'npm test', // the control: a bare suite run always blocked
+      `${DATA}=${sandbox} npm run build && npm test`,
+      `npm test && ${DATA}=${sandbox} echo ok`,
+      `npm test || ${DATA}=${sandbox} true`,
+      `echo '\n${DATA}=${sandbox}\n' > f && npm test`,
+      `cd sub && ${DATA}=${sandbox} npm test`, // backwards, to the cd
+      `ls\n${DATA}=${sandbox} npm test`, // backwards, across a newline
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, repo), env }), SEAM_OVERLAPS, JSON.stringify(command));
+    }
+  });
+
+  // A heredoc body is data. Splitting the raw command on newlines walked it straight into
+  // leading position, where a line spelling the variable read as an assignment.
+  test('a heredoc body is not an assignment', () => {
+    const { repo, sandbox, env } = setup();
+    const command = `cat <<EOF > notes.txt\n${DATA}=${sandbox}\nEOF\nnpm test`;
+    assertBlockedBecause(guard({ payload: bash(command, repo), env }), SEAM_OVERLAPS, 'heredoc body');
+  });
+
+  // The control in the other direction. A genuinely leading assignment is still the seam
+  // the child will see, and it still allows.
+  test('a genuinely leading assignment still allows', () => {
+    const { live, sandbox } = roots();
+    const repo = makeRepo();
+    const env = { [LIVE]: live, [DATA]: path.join(live, 'scratch') };
+    assertAllowed(guard({ payload: bash(`${DATA}=${sandbox} npm test`, repo), env }), 'leading assignment');
+    assertAllowed(
+      guard({ payload: bash(`${DATA}=${sandbox} npm run build && ${DATA}=${sandbox} npm test`, repo), env }),
+      'one assignment per command',
+    );
   });
 });
 
@@ -682,6 +801,40 @@ describe('the sentinel', () => {
       raise(repo, 'broken', body);
       assertBlockedBecause(guard({ payload: bash('npm test', repo) }), SENTINEL_UNREADABLE, `body ${JSON.stringify(body)}`);
       assertBlockedBecause(commitGate({ payload: bash('git commit -m x', repo) }), SENTINEL_UNREADABLE, `commit, body ${JSON.stringify(body)}`);
+    }
+  });
+
+  // A guard that cannot read its own marker cannot say the machine is free. That branch
+  // existed and was unreachable: ENOTDIR was forgiven alongside ENOENT, so `.aeo/runs`
+  // sitting there as a FILE read as "no sentinel directory" and allowed. Deleting the
+  // branch entirely left all 107 tests green.
+  test('a sentinel directory that is really a file blocks', () => {
+    const repo = makeRepo();
+    mkdirSync(path.join(repo, '.aeo'), { recursive: true });
+    writeFileSync(path.join(repo, '.aeo', 'runs'), 'not a directory\n');
+    assertBlockedBecause(guard({ payload: bash('npm test', repo) }), SENTINEL_DIR_UNREADABLE, 'runs is a file');
+    assertBlockedBecause(
+      commitGate({ payload: bash('git commit -m x', repo) }),
+      SENTINEL_DIR_UNREADABLE,
+      'commit, runs is a file',
+    );
+  });
+
+  test('a sentinel directory the process may not read blocks', (t) => {
+    const repo = makeRepo();
+    const dir = path.join(repo, '.aeo', 'runs');
+    mkdirSync(dir, { recursive: true });
+    try {
+      chmodSync(dir, 0o000);
+      readdirSync(dir); // root, or a platform that ignores the mode: nothing was made unreadable
+      return t.skip('this platform would not make a directory unreadable');
+    } catch (err) {
+      if (err?.code !== 'EACCES' && err?.code !== 'EPERM') return t.skip(`unreadable in an untested way: ${err?.code}`);
+    }
+    try {
+      assertBlockedBecause(guard({ payload: bash('npm test', repo) }), SENTINEL_DIR_UNREADABLE, 'unreadable runs dir');
+    } finally {
+      chmodSync(dir, 0o700); // so the scratch cleanup can remove it
     }
   });
 
@@ -896,56 +1049,56 @@ describe('tokenising and matching', () => {
 
   test('a declared command is recognised as a whole token, never a substring', () => {
     const declared = [['uv', 'run', 'pytest']];
-    assert.equal(invokesDeclaredSuite(shellTokens('uv run pytest'), declared), 'uv run pytest');
-    assert.equal(invokesDeclaredSuite(shellTokens('pytest -k x'), declared), 'uv run pytest');
-    assert.equal(invokesDeclaredSuite(shellTokens('echo pytestsuite'), declared), null);
-    assert.equal(invokesDeclaredSuite(shellTokens('ls'), declared), null);
-    assert.equal(invokesDeclaredSuite(shellTokens('go test ./pkg'), [['go', 'test', './...']]), 'go test ./...');
-    assert.equal(invokesDeclaredSuite(shellTokens('cargo build'), [['cargo', 'test']]), null);
+    assert.equal(invokesDeclaredSuite('uv run pytest', declared), 'uv run pytest');
+    assert.equal(invokesDeclaredSuite('pytest -k x', declared), 'uv run pytest');
+    assert.equal(invokesDeclaredSuite('echo pytestsuite', declared), null);
+    assert.equal(invokesDeclaredSuite('ls', declared), null);
+    assert.equal(invokesDeclaredSuite('go test ./pkg', [['go', 'test', './...']]), 'go test ./...');
+    assert.equal(invokesDeclaredSuite('cargo build', [['cargo', 'test']]), null);
   });
 
   test('the declared command\'s final program token matches in program position only', () => {
     const node = [['npm', 'test']];
-    assert.equal(invokesDeclaredSuite(shellTokens('npm test'), node), 'npm test');
-    assert.equal(invokesDeclaredSuite(shellTokens('grep -r test .'), node), null);
-    assert.equal(invokesDeclaredSuite(shellTokens('mkdir test'), node), null);
-    assert.equal(invokesDeclaredSuite(shellTokens('git add test'), node), null);
+    assert.equal(invokesDeclaredSuite('npm test', node), 'npm test');
+    assert.equal(invokesDeclaredSuite('grep -r test .', node), null);
+    assert.equal(invokesDeclaredSuite('mkdir test', node), null);
+    assert.equal(invokesDeclaredSuite('git add test', node), null);
 
     const py = [['uv', 'run', 'pytest']];
-    assert.equal(invokesDeclaredSuite(shellTokens('cd sub && pytest'), py), 'uv run pytest');
-    assert.equal(invokesDeclaredSuite(shellTokens('AEO_DATA_ROOT=/tmp/s pytest'), py), 'uv run pytest');
-    assert.equal(invokesDeclaredSuite(shellTokens('ls pytest'), py), null);
+    assert.equal(invokesDeclaredSuite('cd sub && pytest', py), 'uv run pytest');
+    assert.equal(invokesDeclaredSuite('AEO_DATA_ROOT=/tmp/s pytest', py), 'uv run pytest');
+    assert.equal(invokesDeclaredSuite('ls pytest', py), null);
   });
+
+  // One seam per command on the line, in the order the shell runs them.
+  const seams = (command, env) =>
+    resolveRoots({ command, env, platform: 'win32' }).seams.map((s) => s.data.root);
 
   test('the seam is read from the command before the environment', () => {
     const env = { [LIVE]: 'D:/production', [DATA]: 'D:/sandbox' };
-    assert.equal(resolveRoots({ command: 'npm test', env, platform: 'win32' }).data.root, 'D:/sandbox');
-    assert.equal(resolveRoots({ command: `${DATA}=D:/other npm test`, env, platform: 'win32' }).data.root, 'D:/other');
-    assert.equal(resolveRoots({ command: 'npm test', env, platform: 'win32' }).dataSource, 'session environment');
-    assert.equal(resolveRoots({ command: `${DATA}=D:/other x`, env, platform: 'win32' }).dataSource, 'the command');
+    assert.deepEqual(seams('npm test', env), ['D:/sandbox']);
+    assert.deepEqual(seams(`${DATA}=D:/other npm test`, env), ['D:/other']);
+    assert.equal(resolveRoots({ command: 'npm test', env, platform: 'win32' }).seams[0].dataSource, 'session environment');
+    assert.equal(resolveRoots({ command: `${DATA}=D:/other x`, env, platform: 'win32' }).seams[0].dataSource, 'the command');
   });
 
   test('an inline seam is read only in leading position', () => {
     const env = { [LIVE]: 'D:/production', [DATA]: 'D:/sandbox' };
-    const seam = (command) => resolveRoots({ command, env, platform: 'win32' }).data.root;
 
     // Not an assignment: an argument that happens to spell one.
-    assert.equal(seam(`echo '${DATA}=D:/other' >> settings.json && npm test`), 'D:/sandbox');
-    assert.equal(seam(`grep -r ${DATA}=D:/other .`), 'D:/sandbox');
-    assert.equal(seam(`git commit -m "set ${DATA}=D:/other here"`), 'D:/sandbox');
+    assert.deepEqual(seams(`echo '${DATA}=D:/other' >> settings.json && npm test`, env), ['D:/sandbox']);
+    assert.deepEqual(seams(`grep -r ${DATA}=D:/other .`, env), ['D:/sandbox']);
+    assert.deepEqual(seams(`git commit -m "set ${DATA}=D:/other here"`, env), ['D:/sandbox']);
 
-    // Leading position: start of the command, after a separator, after another
-    // assignment, and after a newline.
-    assert.equal(seam(`${DATA}=D:/other npm test`), 'D:/other');
-    assert.equal(seam(`cd x && ${DATA}=D:/other npm test`), 'D:/other');
-    assert.equal(seam(`FOO=1 ${DATA}=D:/other npm test`), 'D:/other');
-    assert.equal(seam(`ls\n${DATA}=D:/other npm test`), 'D:/other');
+    // Leading position: start of the command, and after another assignment.
+    assert.deepEqual(seams(`${DATA}=D:/other npm test`, env), ['D:/other']);
+    assert.deepEqual(seams(`FOO=1 ${DATA}=D:/other npm test`, env), ['D:/other']);
   });
 
   test('an MSYS path is normalised on Windows before it is compared', () => {
     const roots = resolveRoots({ command: '', env: { [LIVE]: '/d/production', [DATA]: '/d/sandbox' }, platform: 'win32' });
     assert.equal(roots.live.root, 'D:/production');
-    assert.equal(roots.data.root, 'D:/sandbox');
+    assert.equal(roots.seams[0].data.root, 'D:/sandbox');
   });
 });
 

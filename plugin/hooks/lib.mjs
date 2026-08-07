@@ -329,12 +329,244 @@ function escapeRegExp(s) {
 }
 
 // ---------------------------------------------------------------------------
+// Shell segmentation
+// ---------------------------------------------------------------------------
+//
+// WHY THIS EXISTS. Two gate rules used to reason about a Bash command as one string while
+// the shell runs it as a SEQUENCE of commands, and both leaked in the same way. The
+// operation-directory rule matched `cd X &&` and nothing else, so `cd prod ; rm -rf
+// corpus`, a newline, `pushd`, `cd -- prod` and `( cd prod && … )` each deleted production
+// data and exited 0. The sandbox guard's seam rule took the last leading `NAME=value`
+// anywhere on the line and applied it to every command on that line, so
+// `AEO_DATA_ROOT=<sandbox> npm run build && npm test` ran the suite against production —
+// a prefix assignment binds to the single command it prefixes and the shell carries it no
+// further. Two rounds of patching added a pattern per reported shape and left the
+// neighbouring shapes open. One segmenter, shared by both rules, is what stops a sixth
+// separator from becoming a sixth patch.
+//
+// WHAT IT IS NOT. Not a shell. It reads quoting, operators, redirections and heredocs,
+// which is exactly what "where does one command end" needs, and nothing more. What it
+// cannot read confidently — an unterminated quote, a backtick, an unterminated heredoc —
+// it reports as an error rather than guessing at, and a gate that fails closed blocks on
+// that. An unparseable command is not a safe command.
+
+/** A `NAME=value` assignment, which in leading position sets one child's environment. */
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/** The commands that move the shell. `popd` is not one: it needs a stack we cannot see. */
+const DIR_CHANGERS = new Set(['cd', 'pushd']);
+
+// The operators after which a `cd` in the preceding command is still in effect. `||` runs
+// its right side only when the cd FAILED; `|` and `&` put each side in its own subshell.
+// In all three the next command runs where the previous one started. The empty string is
+// end-of-command, which survives because the Bash tool persists its working directory
+// between calls, and `)` survives only until the subshell scope is popped below.
+const CD_SURVIVES = new Set(['&&', ';', '\n', ')', '']);
+
+/** Words that are grammar rather than a program. `{ cd x; }` must still read as a cd. */
+const NOT_A_PROGRAM = new Set(['{', '}', '!', 'time', 'do', 'then', 'else']);
+
+/** The characters a backslash may escape. A backslash before anything else is a byte. */
+const ESCAPABLE = new Set(['"', "'", '`', '$', ' ', '\t', '&', '|', ';', '(', ')', '<', '>']);
+
+/**
+ * Skip a heredoc body, which is data and must never reach leading position: without this
+ * a `<<EOF` body line spelling `AEO_DATA_ROOT=<sandbox>` reads as a prefix assignment.
+ * Returns the offset after the terminator line, or null when there is no terminator.
+ */
+function skipHeredoc(text, from, { delimiter, strip }) {
+  let i = from;
+  for (;;) {
+    let eol = text.indexOf('\n', i);
+    const last = eol === -1;
+    if (last) eol = text.length;
+    let line = text.slice(i, eol).replace(/\r$/, '');
+    if (strip) line = line.replace(/^\t+/, '');
+    if (line === delimiter) return last ? text.length : eol + 1;
+    if (last) return null;
+    i = eol + 1;
+  }
+}
+
+/**
+ * The words and command-separating operators the shell would see, or null when the text
+ * cannot be read confidently. A word carries `target: true` when it is a redirection
+ * destination rather than an argument, so `> out.txt` cannot be mistaken for a program.
+ */
+function scanShell(command) {
+  const items = [];
+  let word = null;
+  let nextIsTarget = false;
+  const heredocs = [];
+
+  const add = (s) => { word = (word ?? '') + s; };
+  const flush = () => {
+    if (word === null) return;
+    items.push({ word, target: nextIsTarget });
+    nextIsTarget = false;
+    word = null;
+  };
+  const op = (value) => { flush(); items.push({ op: value }); };
+
+  let i = 0;
+  const n = command.length;
+  while (i < n) {
+    const c = command[i];
+
+    // A backslash escapes only what the shell would otherwise read as syntax. Everything
+    // else keeps it, because on this platform a backslash is a path separator far more
+    // often than an escape: consuming it turns `cd D:\other\wt` into `D:otherwt` and a
+    // UNC target into nonsense, and both are ordinary here (L-09).
+    if (c === '\\') {
+      if (i + 1 >= n) { add('\\'); i += 1; continue; }
+      if (command[i + 1] === '\n') { i += 2; continue; } // line continuation
+      if (ESCAPABLE.has(command[i + 1])) { add(command[i + 1]); i += 2; continue; }
+      add(c);
+      i += 1;
+      continue;
+    }
+
+    if (c === "'") {
+      const end = command.indexOf("'", i + 1);
+      if (end === -1) return null;
+      add(command.slice(i + 1, end));
+      i = end + 1;
+      continue;
+    }
+
+    if (c === '"') {
+      let j = i + 1;
+      let buf = '';
+      for (;;) {
+        if (j >= n) return null;
+        if (command[j] === '\\' && command[j + 1] === '"') { buf += '"'; j += 2; continue; }
+        if (command[j] === '"') break;
+        buf += command[j];
+        j += 1;
+      }
+      add(buf);
+      i = j + 1;
+      continue;
+    }
+
+    // A backtick substitution is a command we would have to read recursively. We do not,
+    // so we say so rather than guess.
+    if (c === '`') return null;
+
+    if (c === '\n') {
+      op('\n');
+      i += 1;
+      let skipped = false;
+      while (heredocs.length > 0) {
+        const next = skipHeredoc(command, i, heredocs.shift());
+        if (next === null) return null;
+        i = next;
+        skipped = true;
+      }
+      // The terminator line's own newline was consumed above; put the boundary back.
+      if (skipped) items.push({ op: '\n' });
+      continue;
+    }
+
+    if (c === ' ' || c === '\t' || c === '\r') { flush(); i += 1; continue; }
+
+    if (c === '<' || c === '>' || (c === '&' && command[i + 1] === '>')) {
+      const rest = command.slice(i);
+      if (rest.startsWith('<<') && !rest.startsWith('<<<')) {
+        const m = /^<<(-?)\s*(['"]?)([A-Za-z_][A-Za-z0-9_.-]*)\2/.exec(rest);
+        if (!m) return null;
+        flush();
+        heredocs.push({ delimiter: m[3], strip: m[1] === '-' });
+        i += m[0].length;
+        continue;
+      }
+      const m = /^(?:&>>|&>|<<<|>>|>\||<>|[<>]&\s*[0-9-]+|[<>]&|>|<)/.exec(rest);
+      if (m) {
+        if (word !== null && /^\d+$/.test(word)) word = null; // the fd in `2>&1`, not a word
+        flush();
+        nextIsTarget = !/^[<>]&\s*[0-9-]+$/.test(m[0]);
+        i += m[0].length;
+        continue;
+      }
+    }
+
+    if (c === '&' && command[i + 1] === '&') { op('&&'); i += 2; continue; }
+    if (c === '|' && command[i + 1] === '|') { op('||'); i += 2; continue; }
+    if (c === '|') { op('|'); i += command[i + 1] === '&' ? 2 : 1; continue; }
+    if (c === '&') { op('&'); i += 1; continue; }
+    if (c === ';') { let j = i; while (command[j] === ';') j += 1; op(';'); i = j; continue; }
+    if (c === '(' || c === ')') { op(c); i += 1; continue; }
+
+    add(c);
+    i += 1;
+  }
+  flush();
+  return items;
+}
+
+/**
+ * The command split into the segments the shell will execute as separate commands.
+ *
+ * Each segment carries every word it contains, the `NAME=value` assignments in its leading
+ * position, the program it runs, that program's arguments, and the operator that follows
+ * it. `error` is non-null when the command could not be read; `segments` is then empty and
+ * the caller decides, which for a fail-closed gate means blocking.
+ *
+ * @returns {{segments: Array<{tokens: string[], assignments: string[], program: string|null, args: string[], followedBy: string}>, error: string|null}}
+ */
+export function commandSegments(command) {
+  if (typeof command !== 'string' || command.trim() === '') return { segments: [], error: null };
+  const items = scanShell(command);
+  if (items === null) {
+    return {
+      segments: [],
+      error:
+        'it could not be read as a sequence of shell commands (an unterminated quote, a backtick substitution, ' +
+        'or an unterminated heredoc)',
+    };
+  }
+
+  const segments = [];
+  let current = { tokens: [], assignments: [], program: null, args: [], followedBy: '' };
+  for (const item of items) {
+    if (item.op !== undefined) {
+      current.followedBy = item.op;
+      segments.push(current);
+      current = { tokens: [], assignments: [], program: null, args: [], followedBy: '' };
+      continue;
+    }
+    current.tokens.push(item.word);
+    if (item.target) continue; // a redirection destination runs nothing and assigns nothing
+    if (NOT_A_PROGRAM.has(item.word)) continue;
+    if (current.program !== null) current.args.push(item.word);
+    else if (ASSIGNMENT.test(item.word)) current.assignments.push(item.word);
+    else if (!item.word.startsWith('-')) current.program = item.word;
+  }
+  segments.push(current);
+  return { segments, error: null };
+}
+
+/**
+ * The directory a segment moves the shell to: a string, `null` when it is a `cd` whose
+ * target cannot be known, or `undefined` when it is not a `cd` at all.
+ *
+ * `null` covers a bare `cd`, `cd -`, and a target carrying an expansion or a glob. Each is
+ * a directory this gate cannot name, and naming it is the whole job.
+ */
+function segmentCdTarget(segment) {
+  if (segment.program === null || !DIR_CHANGERS.has(segment.program)) return undefined;
+  const args = [...segment.args];
+  while (args.length > 0 && args[0].startsWith('-')) {
+    if (args.shift() === '--') break;
+  }
+  const target = args[0];
+  if (target === undefined || target === '') return null;
+  return /[$*?]/.test(target) ? null : target;
+}
+
+// ---------------------------------------------------------------------------
 // Worktree resolution
 // ---------------------------------------------------------------------------
-
-// A worktree commit is issued as `cd <worktree> && git commit ...`. Single quotes are
-// accepted alongside double because the shell behind Bash tool calls is POSIX.
-const LEADING_CD = /^\s*cd\s+(?:"([^"]+)"|'([^']+)'|([^\s&|;]+))\s*&&/;
 
 /**
  * `/d/proj` -> `D:/proj`. Windows only: on POSIX, `/d/proj` is a real path.
@@ -356,7 +588,11 @@ export function normalizeHookPath(p, { platform = process.platform } = {}) {
  *
  * The order is not arbitrary; each step was paid for by an incident.
  *
- * 1. An explicit leading `cd <dir> &&`. A PreToolUse hook inspects the call BEFORE the
+ * 1. A `cd` or `pushd` that the shell would still have in effect when the command runs.
+ *    Taken from commandSegments, so every separator the shell honours is honoured here:
+ *    `&&`, `;`, a newline and a subshell, and NOT `||`, `|` or `&`, after which the next
+ *    command runs where the previous one started. Matching only `cd X &&` is what let
+ *    `cd prod ; rm -rf corpus` through. A PreToolUse hook inspects the call BEFORE the
  *    command body runs, so the in-command `cd` is not yet in effect. For a subagent the
  *    reported cwd is unreliable on top of that, often pinned to the launch checkout on
  *    the default branch. A feature-worktree commit was blocked as "on main" because of
@@ -386,39 +622,106 @@ export function normalizeHookPath(p, { platform = process.platform } = {}) {
  *
  * @returns {{dir: string|null, source: 'cd'|'payload.cwd'|'CLAUDE_PROJECT_DIR'|'process.cwd'|'none'}}
  */
-export function resolveOperationDir(payload, { env = process.env, cwd = process.cwd, platform = process.platform } = {}) {
+export function resolveOperationDir(payload, options) {
+  const { dir, source } = walkOperation(payload, options);
+  return { dir, source };
+}
+
+/**
+ * Every directory this call could operate in, plus whether the walk was able to name them
+ * all.
+ *
+ * The sandbox guard needs the whole set rather than one answer: `cd elsewhere && npm test`
+ * still burns this machine while a job is live here. `unresolved` is true when a `cd`
+ * target could not be named or the command could not be parsed, and a fail-closed gate
+ * blocks on it rather than enforcing against the directories it did manage to see.
+ *
+ * @returns {{dirs: string[], unresolved: boolean, parseError: string|null}}
+ */
+export function operationDirs(payload, options) {
+  const w = walkOperation(payload, options);
+  const dirs = [...w.dirs, w.dir].filter((d) => typeof d === 'string' && d !== '');
+  return { dirs: [...new Set(dirs)], unresolved: w.unresolved, parseError: w.parseError };
+}
+
+function resolveCdTarget(target, current, p, platform) {
+  // MSYS form before absoluteness: `/d/proj` is not a drive to path.win32 until it is
+  // `D:/proj`, so testing first would discard a usable base.
+  const t = normalizeHookPath(target, { platform });
+  if (p.isAbsolute(t)) return t;
+  if (current === null || !p.isAbsolute(current)) return null;
+  const resolved = p.resolve(current, t);
+  // Separators unify only on win32, where both are separators. On POSIX a backslash is an
+  // ordinary character in a directory name.
+  return platform === 'win32' ? resolved.replace(/\\/g, '/') : resolved;
+}
+
+function walkOperation(payload, { env = process.env, cwd = process.cwd, platform = process.platform } = {}) {
   // The target platform's path rules, not the host's, so a target is judged the way
   // `git -C` would judge it and the tests are not host-dependent.
   const p = platform === 'win32' ? path.win32 : path.posix;
+  const base = normalizeHookPath(typeof payload?.cwd === 'string' ? payload.cwd.trim() : '', { platform });
+  const rawCommand = payload?.tool_input?.command;
+  const { segments, error } = commandSegments(typeof rawCommand === 'string' ? rawCommand : '');
 
-  const command = payload?.tool_input?.command;
-  if (typeof command === 'string') {
-    const m = LEADING_CD.exec(command);
-    const raw = m ? (m[1] ?? m[2] ?? m[3]) : null;
-    if (raw) {
-      const target = normalizeHookPath(raw, { platform });
-      if (p.isAbsolute(target)) return { dir: target, source: 'cd' };
-      // MSYS form before absoluteness: `/d/proj` is not a drive to path.win32 until it
-      // is `D:/proj`, so testing first would discard a usable base.
-      const base = normalizeHookPath(typeof payload?.cwd === 'string' ? payload.cwd.trim() : '', { platform });
-      if (!p.isAbsolute(base)) return { dir: null, source: 'cd' };
-      const resolved = p.resolve(base, target);
-      // Separators unify only on win32, where both are separators. On POSIX a backslash
-      // is an ordinary character in a directory name.
-      return { dir: platform === 'win32' ? resolved.replace(/\\/g, '/') : resolved, source: 'cd' };
+  const dirs = [];
+  let current = base === '' ? null : base;
+  let operationDir;
+  let fromCd = false;
+  let cdApplied = false;
+  let unresolved = error !== null;
+  const scopes = [];
+
+  for (const segment of segments) {
+    if (segment.tokens.length > 0) dirs.push(current);
+    const target = segmentCdTarget(segment);
+    if (target !== undefined) {
+      if (CD_SURVIVES.has(segment.followedBy)) {
+        const moved = target === null ? null : resolveCdTarget(target, current, p, platform);
+        if (moved === null) unresolved = true;
+        current = moved;
+        cdApplied = true;
+        dirs.push(current);
+      }
+    } else if (segment.tokens.length > 0 && operationDir === undefined) {
+      operationDir = current;
+      fromCd = cdApplied;
     }
+    // A subshell's `cd` dies with the subshell, so `(` banks the outer directory and `)`
+    // restores it. Without this, `( cd prod && rm -rf x ) && ls` would report `ls` as
+    // running in prod.
+    if (segment.followedBy === '(') scopes.push(current);
+    else if (segment.followedBy === ')' && scopes.length > 0) current = scopes.pop();
+  }
+  if (operationDir === undefined && segments.length > 0) {
+    operationDir = current;
+    fromCd = cdApplied;
   }
 
+  const keep = [...new Set(dirs.filter((d) => typeof d === 'string' && d !== ''))];
+  // A `cd` that took effect is the answer, null included: the remaining steps are
+  // session-fixed directories, so substituting one would hand a gate a real repository
+  // that is not the one the command names, and it would enforce confidently against the
+  // wrong tree. `source` stays `cd` so the failure is attributable to the command rather
+  // than reading as "nothing was found anywhere".
+  if (fromCd) return { dir: operationDir ?? null, source: 'cd', dirs: keep, unresolved, parseError: error };
+
   const fromPayload = typeof payload?.cwd === 'string' ? payload.cwd.trim() : '';
-  if (fromPayload) return { dir: normalizeHookPath(fromPayload, { platform }), source: 'payload.cwd' };
+  if (fromPayload) {
+    return { dir: normalizeHookPath(fromPayload, { platform }), source: 'payload.cwd', dirs: keep, unresolved, parseError: error };
+  }
 
   const fromEnv = typeof env?.CLAUDE_PROJECT_DIR === 'string' ? env.CLAUDE_PROJECT_DIR.trim() : '';
-  if (fromEnv) return { dir: normalizeHookPath(fromEnv, { platform }), source: 'CLAUDE_PROJECT_DIR' };
+  if (fromEnv) {
+    return { dir: normalizeHookPath(fromEnv, { platform }), source: 'CLAUDE_PROJECT_DIR', dirs: keep, unresolved, parseError: error };
+  }
 
   const fromProcess = typeof cwd === 'function' ? cwd() : '';
-  if (fromProcess) return { dir: normalizeHookPath(fromProcess, { platform }), source: 'process.cwd' };
+  if (fromProcess) {
+    return { dir: normalizeHookPath(fromProcess, { platform }), source: 'process.cwd', dirs: keep, unresolved, parseError: error };
+  }
 
-  return { dir: null, source: 'none' };
+  return { dir: null, source: 'none', dirs: keep, unresolved, parseError: error };
 }
 
 /**
