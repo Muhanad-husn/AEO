@@ -63,15 +63,23 @@ function stagePacket(name = 'packet.md') {
  * whose value is undefined is removed, which is how "the packet path is unset" is tested
  * on a machine that happens to have it set.
  */
+/**
+ * Where every hook child runs. L-03: resolveOperationDir falls back to
+ * CLAUDE_PROJECT_DIR and then to the hook process's own cwd, so a child that pins
+ * neither resolves a directory-less payload to THIS repository. Both point at a
+ * directory the test created and owns.
+ */
+const NEUTRAL_CWD = tempDir('aeo-p16-nowhere-');
+
 function runJail({ payload, raw, env = {} } = {}) {
   const input = raw !== undefined ? raw : payload === undefined ? '' : JSON.stringify(payload);
-  const childEnv = { ...process.env };
+  const childEnv = { ...process.env, CLAUDE_PROJECT_DIR: '' };
   delete childEnv[PACKET_DIR_ENV]; // never inherited; every test states its own
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined) delete childEnv[key];
     else childEnv[key] = value;
   }
-  const r = spawnSync(process.execPath, [GATE], { input, encoding: 'utf8', env: childEnv });
+  const r = spawnSync(process.execPath, [GATE], { input, encoding: 'utf8', cwd: NEUTRAL_CWD, env: childEnv });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 

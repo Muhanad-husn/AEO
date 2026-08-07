@@ -125,12 +125,25 @@ function commitPayload(dir, command = 'git commit -m "wip"') {
   return { cwd: dir, tool_name: 'Bash', tool_input: { command } };
 }
 
+/**
+ * Where every gate child runs. L-03, and this gate is the one it costs the most.
+ *
+ * CLAUDE_PROJECT_DIR is already blanked below, which leaves the hook process's own cwd
+ * as resolveOperationDir's last resort. A child inheriting the runner's cwd resolves a
+ * payload that names no directory to THIS repository, and this gate does not merely
+ * read: it detects the project's test command and runs it. That is the suite running
+ * itself inside its own checkout, with whatever that suite writes landing in the
+ * founder's tree. Pinned to a directory the test created and owns.
+ */
+const NEUTRAL_CWD = tempDir('aeo-p13-nowhere-');
+
 function runGate(payload, { bin = null, env = {} } = {}) {
   const childEnv = { ...process.env, CLAUDE_PROJECT_DIR: '', ...env };
   if (bin) childEnv.PATH = `${bin}${path.delimiter}${process.env.PATH ?? ''}`;
   const r = spawnSync(process.execPath, [GATE], {
     input: JSON.stringify(payload),
     encoding: 'utf8',
+    cwd: NEUTRAL_CWD,
     env: childEnv,
     windowsHide: true,
   });
@@ -239,6 +252,25 @@ describe('the protected branch is resolved, never assumed', () => {
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 2);
     assert.match(result.stderr, /did not resolve to a git repository/);
+  });
+
+  test('a commit payload naming no directory reaches no repository at all', () => {
+    // THE DATA-LOSS DEFECT, in the suite. A payload with no `cwd` falls through
+    // resolveOperationDir to CLAUDE_PROJECT_DIR and then to the gate process's own
+    // working directory. Both are session-fixed, and a gate child that pins neither
+    // inherits the test runner's cwd -- which is THIS repository. The gate then
+    // resolved a real toplevel, detected this project's own `npm test`, and ran the
+    // suite inside the founder's checkout while it was being edited.
+    //
+    // This is not a restatement of the pinning. It asserts the only outcome that is
+    // correct here on its own terms: a commit that names no directory is a commit the
+    // gate cannot place, so it must block and say so rather than pick a repository for
+    // itself. Unpin the cwd and this goes red on the exit code, because the gate finds
+    // a repository, finds a branch that is not the protected one, and runs the suite.
+    const result = runGate({ tool_name: 'Bash', tool_input: { command: 'git commit -m "wip"' } });
+    assert.equal(result.status, 2, `the gate resolved a repository from nothing:\n${result.stderr}`);
+    assert.match(result.stderr, /did not resolve to a git repository/);
+    assert.doesNotMatch(result.stderr, /test suite is red|no direct commits on/);
   });
 
   test('a code commit on main in a repo with NO origin is blocked', () => {

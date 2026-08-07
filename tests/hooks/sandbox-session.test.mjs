@@ -240,11 +240,17 @@ describe('the fixture satisfies the guard', () => {
     const env = { [LIVE]: live };
     const sandbox = enterSandbox({ env });
     try {
-      const payload = { tool_name: 'Bash', tool_input: { command: 'npm test' }, cwd: repoRoot };
+      // A directory this test owns, never repoRoot. The guard resolves a project anchor
+      // from this path and reads the run-in-progress sentinels under it, so naming the
+      // real checkout made the assertion below depend on whether the founder happened
+      // to have a live job running (L-03).
+      const operationDir = tempDir('aeo-p15s-op-');
+      const payload = { tool_name: 'Bash', tool_input: { command: 'npm test' }, cwd: operationDir };
       const childEnv = { ...process.env, CLAUDE_PROJECT_DIR: '', [LIVE]: live, [DATA]: sandbox.root };
       const r = spawnSync(process.execPath, [GUARD], {
         input: JSON.stringify(payload),
         encoding: 'utf8',
+        cwd: operationDir,
         env: childEnv,
         windowsHide: true,
       });
@@ -257,6 +263,7 @@ describe('the fixture satisfies the guard', () => {
       const r2 = spawnSync(process.execPath, [GUARD], {
         input: JSON.stringify(payload),
         encoding: 'utf8',
+        cwd: operationDir,
         env: without,
         windowsHide: true,
       });

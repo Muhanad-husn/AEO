@@ -55,11 +55,22 @@ function makeRepo() {
   return initRepoAt(tempDir());
 }
 
+/**
+ * Where every hook child runs, and what it may see of this machine's session. L-03:
+ * resolveOperationDir falls back to CLAUDE_PROJECT_DIR and then to the hook process's
+ * own cwd, so a child that pins neither resolves a directory-less payload to THIS
+ * repository. Both point at a directory the test created and owns.
+ */
+const NEUTRAL_CWD = tempDir('aeo-p14-nowhere-');
+const neutralEnv = () => ({ ...process.env, CLAUDE_PROJECT_DIR: '' });
+
 /** Run the real gate in its own process and report exactly what a hook would see. */
 function runHook(payload) {
   const r = spawnSync(process.execPath, [GATE], {
     input: payload === undefined ? '' : JSON.stringify(payload),
     encoding: 'utf8',
+    cwd: NEUTRAL_CWD,
+    env: neutralEnv(),
   });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
@@ -428,7 +439,7 @@ describe('identity', () => {
 describe('malformed payloads', () => {
   test('an unreadable payload allows and says so, which is the gate not firing', () => {
     for (const raw of ['', '   ', 'not json at all', '[1,2,3]', 'null', '"a string"']) {
-      const r = spawnSync(process.execPath, [GATE], { input: raw, encoding: 'utf8' });
+      const r = spawnSync(process.execPath, [GATE], { input: raw, encoding: 'utf8', cwd: NEUTRAL_CWD, env: neutralEnv() });
       assert.equal(r.status, 0, `raw ${JSON.stringify(raw)}: expected exit 0`);
       assert.match(r.stderr ?? '', /path-guard: (empty|unreadable) hook payload/, `raw ${JSON.stringify(raw)}: silent skip`);
     }

@@ -52,6 +52,14 @@ after(() => {
   for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
 });
 
+/**
+ * Where every spawned child runs, and what it may see of this machine's session. L-03:
+ * resolveOperationDir falls back to CLAUDE_PROJECT_DIR and then to the hook process's
+ * own cwd, so a child that pins neither resolves a directory-less payload to THIS
+ * repository. Both point at a directory the test created and owns.
+ */
+const NEUTRAL_CWD = tempDir('aeo-p11-nowhere-');
+
 function run(cwd, ...args) {
   const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', windowsHide: true });
   if (r.error || r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr ?? r.error}`);
@@ -92,7 +100,9 @@ function runHook(script, { payload, mode, raw } = {}) {
   const r = spawnSync(process.execPath, [fixture(script)], {
     input,
     encoding: 'utf8',
-    env: { ...process.env, AEO_FIXTURE_MODE: mode ?? '' },
+    // L-03: never the runner's cwd, which is this repository. See NEUTRAL_CWD.
+    cwd: NEUTRAL_CWD,
+    env: { ...process.env, AEO_FIXTURE_MODE: mode ?? '', CLAUDE_PROJECT_DIR: '' },
   });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }

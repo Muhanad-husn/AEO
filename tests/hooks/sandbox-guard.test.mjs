@@ -52,6 +52,15 @@ function tempDir(prefix = 'aeo-p15-') {
   return dir;
 }
 
+/**
+ * Where every hook child runs. L-03, and this battery is where it bit: the case below
+ * that hands the guard a payload with no usable cwd relies on the guard finding no
+ * directory, and CLAUDE_PROJECT_DIR being blanked leaves the hook process's own cwd as
+ * the last resort. Inherited, that is THIS repository, so the guard read the founder's
+ * live sentinel state and those assertions were decided by it. Pinned to scratch.
+ */
+const NEUTRAL_CWD = tempDir('aeo-p15-nowhere-');
+
 function git(cwd, ...args) {
   const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', windowsHide: true });
   if (r.error || r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr ?? r.error}`);
@@ -113,7 +122,7 @@ function runHook(script, { payload, raw, env = {} } = {}) {
     if (v === undefined) delete childEnv[k];
     else childEnv[k] = v;
   }
-  const r = spawnSync(process.execPath, [script], { input, encoding: 'utf8', env: childEnv, windowsHide: true });
+  const r = spawnSync(process.execPath, [script], { input, encoding: 'utf8', cwd: NEUTRAL_CWD, env: childEnv, windowsHide: true });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 

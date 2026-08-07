@@ -49,11 +49,25 @@ function makeRepo({ branch = 'main', defaultBranch = null } = {}) {
   return dir;
 }
 
+/**
+ * Where every hook child runs, and what it may see of this machine's session.
+ *
+ * L-03. resolveOperationDir falls back to CLAUDE_PROJECT_DIR and then to the hook
+ * process's own cwd. A child spawned with neither pinned inherits the runner's cwd,
+ * which is THIS repository, so a payload that names no directory silently points the
+ * gate at the tree the suite is running in. Both are pinned to a directory the test
+ * created and owns, so the fallback can only ever resolve to scratch.
+ */
+const NEUTRAL_CWD = tempDir('aeo-p12-nowhere-');
+const neutralEnv = () => ({ ...process.env, CLAUDE_PROJECT_DIR: '' });
+
 /** Run the real gate in its own process and report exactly what a hook would see. */
 function runHook(payload) {
   const r = spawnSync(process.execPath, [gatePath], {
     input: payload === undefined ? '' : JSON.stringify(payload),
     encoding: 'utf8',
+    cwd: NEUTRAL_CWD,
+    env: neutralEnv(),
   });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }

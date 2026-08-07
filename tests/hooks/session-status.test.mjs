@@ -40,6 +40,9 @@ after(() => {
   for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
 });
 
+/** Where a hook child runs when a case does not name a directory of its own. */
+const NEUTRAL_CWD = tempDir('aeo-p17-nowhere-');
+
 function gitRun(cwd, ...args) {
   const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', windowsHide: true });
   if (r.error || r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr ?? r.error}`);
@@ -83,6 +86,12 @@ function buildEnv(overrides = {}) {
   // AEO_LIVE_DATA_ROOT and AEO_DATA_ROOT are cleared for the same reason as the gh
   // seams: the D18 report reads them, and a test whose expected output depends on
   // whether the founder's shell happens to export one is not a test.
+  // CLAUDE_PROJECT_DIR is blanked rather than deleted, for the reason L-03 names. It
+  // OUTRANKS the child's own cwd in resolveOperationDir, so on a machine where a
+  // session exports it -- every Claude Code session does -- the two payload-less cases
+  // below resolved to the founder's checkout instead of the temp repo they set up, and
+  // this hook then read that checkout's real logs/<job>/summary.md.
+  env.CLAUDE_PROJECT_DIR = '';
   for (const key of [
     'CLAUDE_PLUGIN_ROOT',
     'AEO_GH_COMMAND',
@@ -131,7 +140,9 @@ function runHook({ cwd, payload, raw, env } = {}) {
   const r = spawnSync(process.execPath, [scriptPath], {
     input,
     encoding: 'utf8',
-    cwd,
+    // Never the runner's cwd, which is this repository: an unset `cwd` here is what
+    // makes the hook's last-resort resolver reach the tree the suite is running in.
+    cwd: cwd ?? NEUTRAL_CWD,
     env: env ?? buildEnv(),
   });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
