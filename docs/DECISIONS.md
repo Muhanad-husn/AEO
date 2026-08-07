@@ -10,6 +10,55 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-07 — Two decisions closing Phase 1
+
+Both taken by the founder at the Phase 1 close, in response to costs the phase
+actually incurred rather than to costs it might have.
+
+### D20 — Skills are prose, and prose does not get unit tests
+
+**Problem.** Phase 1 ended at 551 tests covering six gates. Phase 2 adds eleven
+skills and three agents. At Phase 1's rate that is roughly three times the suite,
+and the founder's stated fear at the start of this work was shipping a vast test
+estate around a small product. Growth of that shape would realise it.
+
+**Decision.** Only code that executes gets tests. A skill is instructions written
+for an agent to read; asserting on its text pins the wording, not the behaviour,
+and the wording is the part expected to change. Skills are verified by use.
+
+**Impact.** Phase 2 should leave the test count near where Phase 1 left it. If it
+does not, the reason is a real one and worth surfacing rather than absorbing.
+
+**What this does not license.** The gates stay tested. Anything under
+`plugin/hooks/` or `plugin/scripts/` is executable and keeps its coverage. A skill
+that grows a script grows tests with it.
+
+### D21 — The plugin is never installed into the repository that builds it
+
+**Problem.** An earlier install caused exactly one failure, and it was not a
+technical one. Every skill and agent under `plugin/` is a stub whose text states
+what still needs building. Loaded into a session, that text reads as a work order.
+An agent then continues building the plugin from instructions authored by a
+half-built copy of the plugin, and the founder's account of what followed is
+"a disaster".
+
+The hazard is inherent to stubs and disappears when Phase 2 fills them. Until
+then it is live.
+
+**Decision.** Install only into a throwaway repository, exercise the gates from a
+session opened in that folder, then uninstall and delete it. No session working on
+`D:\AEO` has the plugin loaded, and no session with the plugin loaded can see
+`D:\AEO`.
+
+**Impact.** The wiring gets its first real-world test, which nothing so far has
+given it, at no risk to the work. Cost is about ten minutes.
+
+**Open.** Whether installation writes to `~/.claude/`. This repo's rules put that
+path off-limits, so if installation is machine-wide rather than per-folder, the
+uninstall step stops being cleanup and becomes part of the procedure.
+
+---
+
 ## 2026-08-04 — Four decisions from Checkpoint 1
 
 Taken after the seven Phase 1 gates were built, merged and verified together. All
