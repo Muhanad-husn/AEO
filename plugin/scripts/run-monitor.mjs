@@ -26,7 +26,9 @@
 //             status it closed with is quoted.
 //   EXITED    Every process being watched is gone and no close record was written. The job
 //             crashed or was killed. Distinct from STALLED: there is nothing left to
-//             attach a debugger to.
+//             attach a debugger to. A pid the probe cannot RESOLVE looks the same as one
+//             that has exited, so the reason line also names the case where the recorded
+//             pid was never OS-visible in the first place (see the pid note below).
 //   MOVING    At least one signal moved since the previous look.
 //   QUIET     Nothing moved since the previous look. NOT A VERDICT. On a job that
 //             checkpoints less often than --interval this is the ordinary reading; the
@@ -72,12 +74,21 @@
 // look healthy — an unset threshold that produced a quiet pass would be L-08's first
 // finding word for word.
 //
-// WHY THE PID IS DISCOVERED FROM THE SENTINEL. `run-sentinel.mjs start <id> --pid $$`
+// WHY THE PID IS DISCOVERED FROM THE SENTINEL. `run-sentinel.mjs start <id> --pid <n>`
 // already records the owning process of a long job under `.aeo/runs/`, and a lane that
 // runs a long job raises one. So when --pid is absent the sentinel named by the runlog's
 // own `job` field is consulted, through the existing sentinelPath/projectAnchor helpers
 // rather than any new resolution. No sentinel and no --pid is not an error: the CPU signal
 // is unavailable, which is reported, and STALLED becomes unreachable.
+//
+// WHATEVER RAISED THE SENTINEL MUST HAVE RECORDED AN OS-VISIBLE PID. The probe below
+// resolves Windows process ids on Windows and POSIX process ids elsewhere, and nothing
+// upstream validates the number. A pid the probe cannot resolve is indistinguishable from
+// a pid that has exited, so a job whose sentinel carries an MSYS `$$` under Git Bash on
+// Windows reports EXITED while running: MSYS ids are not Windows ids, and Win32_Process
+// only knows Windows ids. That is a documentation defect at the raising end, not a defect
+// here, and it is why EXITED's reason line names the false-alarm case out loud. The
+// per-shell forms are in the monitor-design skill.
 //
 // WATCH BY DEFAULT, AND WHY THE OUTPUT APPENDS RATHER THAN REDRAWS. The founder runs this
 // in their own terminal, so watching is the natural mode; --once takes a single look. A

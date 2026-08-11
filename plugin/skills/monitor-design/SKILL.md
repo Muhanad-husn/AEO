@@ -32,15 +32,38 @@ silent.
    the boundary where a unit finishes, and one `close` at the end. While you are
    in the job's start-up path, raise its sentinel with the job's own process id:
 
-       node "${CLAUDE_PLUGIN_ROOT}/scripts/run-sentinel.mjs" start <job> --pid $$
+       node "${CLAUDE_PLUGIN_ROOT}/scripts/run-sentinel.mjs" start <job> --pid <n>
 
    `--pid` is optional and defaults to none. Without it the monitor has no
    process to read CPU from, so the third stall signal is permanently
    unavailable, `STALLED` becomes unreachable, and every report degrades to
    `SUSPECT` with that reason printed. Passing the pid is the documented habit;
-   a job that wants stall verdicts must do it. Use `$$` from the job's own POSIX
-   shell, `$PID` from PowerShell. The monitor finds the sentinel by job name, so
-   nothing needs passing at the monitor's end.
+   a job that wants stall verdicts must do it. The monitor finds the sentinel by
+   job name, so nothing needs passing at the monitor's end.
+
+   **The pid must be one the operating system can see**, and getting one right
+   depends on where the job starts. Best is not to ask a shell at all: if the job
+   is a Node or Python process, have the job itself raise its sentinel with
+   `process.pid` or `os.getpid()`. Nothing is translated, and there is no
+   question of whether the number names the job or the launcher that started it.
+   Failing that:
+
+   | Where the job starts | The pid to record |
+   | --- | --- |
+   | POSIX shell on Linux or macOS | `--pid $$` |
+   | PowerShell | `--pid $PID` |
+   | Git Bash or MSYS on Windows | `--pid $(ps -p $$ \| awk 'NR==2 {print $4}')` |
+
+   Under Git Bash, `$$` is the MSYS process id, not the Windows one, and the CPU
+   probe resolves Windows process ids only. A sentinel raised with an MSYS `$$`
+   therefore records a number nothing on the machine can look up, and a pid that
+   cannot be looked up reads as a pid that is gone. **The symptom is a live job
+   reported `EXITED`, with a reason saying its pid is gone and the run was never
+   closed.** That is a wrongly recorded pid, not a dead job. `ps`'s fourth
+   column, `WINPID`, is the number Windows knows the process by, which is what
+   the row above extracts. This failure is worse than the missing-pid case above,
+   because a missing pid degrades to `SUSPECT` and admits it is guessing, while
+   an unresolvable pid produces a confident, wrong claim that the job crashed.
 
 3. **Name the derivation the generic monitor cannot compute.** One sentence,
    about what this job's units mean. If the sentence comes out as progress,

@@ -13,7 +13,7 @@
 //
 // The usual shape, from the shell that will run the job:
 //
-//   node run-sentinel.mjs start corpus-ingest --what "full ingest, ~4h" --pid $$
+//   node run-sentinel.mjs start corpus-ingest --what "full ingest, ~4h" --pid $$   # POSIX
 //   ./run-the-long-job
 //   node run-sentinel.mjs stop corpus-ingest
 //
@@ -24,6 +24,17 @@
 // command and that parent shell exits immediately. A sentinel that expires while the job
 // is still running is the failure this whole mechanism exists to prevent, so the default
 // is no pid, which means the sentinel stands until someone clears it.
+//
+// AND THE RECORDED PID MUST BE ONE THE OPERATING SYSTEM CAN SEE. Nothing here validates
+// it: the number is stored as given, and every consumer looks it up against the OS
+// process table, this script's own stale check and the monitor's CPU probe alike. Under
+// Git Bash / MSYS on Windows `$$` is the MSYS process id, not the Windows one, so a
+// sentinel raised that way records a number no Windows lookup resolves, and a pid that
+// cannot be resolved is indistinguishable from a pid that is gone. A live job then reads
+// as crashed. `$$` is correct on Linux and macOS, `$PID` in PowerShell, and under MSYS
+// the Windows pid is `ps`'s WINPID column. Best of all, a Node or Python job raises its
+// own sentinel with process.pid / os.getpid() and translates nothing. The per-shell forms
+// live in the monitor-design skill, which is where the procedure belongs.
 //
 // Clearing has to stay trivial, and every block message names the file and this command.
 // A sentinel nobody can clear becomes a thing people delete reflexively, and that is how

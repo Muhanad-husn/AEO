@@ -17,7 +17,8 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 **Problem.** [`PLAN.md`](PLAN.md) puts the trigger eval inside P2.M — "re-run the
 trigger eval over the five description-triggered skills" — and then separately gives
 Phase 6 a `skill-creator` pass over **the same five skills** for trigger accuracy. Two
-phases, one measurement, one set of files.
+phases, one measurement, one set of files. (Five was the count when this was decided.
+Phase 3 added `monitor-design`, so the set is six; the decision is unaffected.)
 
 Running it in Phase 2 also measures the wrong moment. A trigger eval scores whether a
 description fires when it should. Phase 6 is where descriptions get tuned, so a Phase 2

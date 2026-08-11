@@ -60,16 +60,23 @@ it is not this one. Read it before running any lane end to end.
 
 ## Current stage
 
-Phases 0 through 2 complete. The gates exist, in Node, wired through
-`hooks/hooks.json`. Three agent charters and ten of eleven skills carry real
+Phases 0 through 3 complete. The gates exist, in Node, wired through
+`hooks/hooks.json`. Four agent charters and eleven of twelve skills carry real
 content; `status` is still a stub and lands in Phase 6.
+
+Phase 3 added the observability layer: `runlog.mjs` writes the fixed six-field
+record, `run-monitor.mjs` answers "is this thing still working" from a plain
+terminal, and the `monitor-designer` agent with its `monitor-design` skill covers
+job-specific overlays only.
 
 Both halves of Checkpoint 2's verify line have run against the testbed — the local
 gates and the GitHub path from issue to open pull request. The record is in
 [logs/2026-08-11-phase-2-verification/summary.md](logs/2026-08-11-phase-2-verification/summary.md).
+Checkpoint 3's four cases have run live against real processes; the record is in
+[logs/2026-08-11-phase-3-observability/summary.md](logs/2026-08-11-phase-3-observability/summary.md).
 
-Next is **Phase 3** of [docs/PLAN.md](docs/PLAN.md). Dogfooding is now unblocked:
-the stubs that made D21's constraint bite are filled.
+Next is **Phase 4** of [docs/PLAN.md](docs/PLAN.md). Dogfooding is unblocked: the
+stubs that made D21's constraint bite are filled.
 
 Four findings overturn things the vendored skill states as settled. They are cheap to
 miss and expensive to discover late:

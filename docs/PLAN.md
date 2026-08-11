@@ -289,8 +289,9 @@ only on files neither had created yet.
   never authored — and session start reads it first (EN-7, [D5](DECISIONS.md)).
 - The plugin ships as an installed unit rather than repo content, which removes the
   gitignored-harness problem instead of solving it (V-06).
-- `skill-creator` pass on the five description-triggered skills and the scaffolder's, for
-  trigger accuracy. The six lanes are excluded; they do not trigger on description.
+- `skill-creator` pass on the description-triggered skills and the scaffolder's, for
+  trigger accuracy. The six lanes are excluded; they do not trigger on description. There
+  were five when this line was written; Phase 3 added `monitor-design`, so it is six.
 - **The trigger eval runs here, once, and it is what judges that pass**
   ([D23](DECISIONS.md)). Moved out of P2.M so the measurement lands against the
   descriptions the tuning produces rather than the ones it is about to replace. A tuned
