@@ -565,10 +565,16 @@ describe('PowerShell reaches the same rules as Bash', () => {
     );
   });
 
-  test('a Windows path with backslashes still resolves into the root', () => {
+  test('a Windows path with backslashes still resolves into the root', (t) => {
     // The segmenter keeps a backslash that is not escaping shell syntax, precisely so a
     // drive path survives (L-09). If it did not, every path here would tokenise to
     // nonsense and the guard would pass everything.
+    //
+    // Windows only, and not because of the assertion style: this spawns the real guard,
+    // which reads the host's path rules. On POSIX a backslash is an ordinary character in
+    // a filename, so `<live>\corpus\notes.txt` is one file called that, sitting outside
+    // the root — a pass here would be correct behaviour, not the behaviour under test.
+    if (process.platform !== 'win32') return t.skip('backslash is not a separator on this platform');
     const { live, sandbox } = roots();
     const target = path.join(live, 'corpus', 'notes.txt').replace(/\//g, '\\');
     assertBlockedBecause(

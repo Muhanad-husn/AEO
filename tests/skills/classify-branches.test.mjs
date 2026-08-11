@@ -27,7 +27,7 @@
 //     group skips LOUDLY (L-08: a loud skip, never a quiet pass).
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
@@ -62,12 +62,41 @@ const git = (cwd, args) =>
  *  other spelling adds a second variable the child ignores. */
 const PATH_KEY = Object.keys(process.env).find(k => k.toLowerCase() === 'path') ?? 'PATH';
 
-/** Every PATH entry that does not contain a gh executable. */
+const GH_NAMES = ['gh', 'gh.exe', 'gh.cmd'];
+const GIT_NAMES = ['git', 'git.exe', 'git.cmd'];
+
+/** The first of `names` present in `dir`, or undefined. */
+const executableIn = (dir, names) => names.find(n => existsSync(path.join(dir, n)));
+
+/**
+ * Every PATH entry that does not contain a gh executable — with git put back if that
+ * removal cost us git.
+ *
+ * Removing whole directories is blunt, and on Linux it is wrong: gh and git both sit in
+ * /usr/bin, so the filter took git with it and every script under test exited 1 with
+ * "not inside a git repository". Nine tests failed for a reason none of them was
+ * testing, and only on the platform this suite had never run on. Where the filter costs
+ * us git, a scratch directory carrying a link to the real one goes back on the front.
+ *
+ * Windows never reaches the repair: gh and git install to different directories there.
+ */
+let repairedPath = null;
 function pathWithoutGh() {
-  const entries = (process.env[PATH_KEY] ?? '').split(path.delimiter);
-  return entries
-    .filter(dir => dir && !['gh', 'gh.exe', 'gh.cmd'].some(n => existsSync(path.join(dir, n))))
-    .join(path.delimiter);
+  if (repairedPath !== null) return repairedPath;
+  const entries = (process.env[PATH_KEY] ?? '').split(path.delimiter).filter(Boolean);
+  const kept = entries.filter(dir => !executableIn(dir, GH_NAMES));
+  if (kept.some(dir => executableIn(dir, GIT_NAMES))) return (repairedPath = kept.join(path.delimiter));
+
+  const gitDir = entries.find(dir => executableIn(dir, GIT_NAMES));
+  assert.ok(gitDir, 'no git found on PATH; these tests drive a real repository');
+  const name = executableIn(gitDir, GIT_NAMES);
+  const shim = tempDir('aeo-p24-git-');
+  // A link, never a copy. A copied git is a git that may not find its own libexec, and
+  // the failure of that is a confusing git rather than an absent one. If the link cannot
+  // be made, say so and stop: a suite that silently proceeds without git is the thing
+  // this repair exists to prevent.
+  symlinkSync(path.join(gitDir, name), path.join(shim, name));
+  return (repairedPath = [shim, ...kept].join(path.delimiter));
 }
 
 /** Whether a usable, authenticated gh exists. The query-failure group needs both. */
