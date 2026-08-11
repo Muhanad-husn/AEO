@@ -31,10 +31,15 @@ import { pathToFileURL } from 'node:url';
 // currency findings that bind Phase 2 (docs/EVIDENCE.md C-01, C-07, C-09, V-09).
 // ---------------------------------------------------------------------------
 
-const EXPECTED_SKILL_COUNT = 11; // PLAN P0.1: "eleven skill stubs"
-const EXPECTED_AGENT_COUNT = 3; // PLAN P0.3: "roster reduced to three"
+// PLAN P0.1 opened with "eleven skill stubs" and P0.3 with a "roster reduced to three".
+// Phase 3 adds one of each: the monitor-design skill and the monitor-designer agent. These
+// are the current inventory, not the Phase 0 inventory, and the expectation text below says
+// where each half of the number comes from so the citation stays honest as the plugin grows.
+const EXPECTED_SKILL_COUNT = 12;
+const EXPECTED_AGENT_COUNT = 4;
 
-// The six operator lanes (PLAN Phase 0): deterministic, user-invoked only.
+// The six operator lanes (PLAN Phase 0): deterministic, user-invoked only. Unchanged by
+// Phase 3 — monitor-design triggers on description and is deliberately not a seventh lane.
 const OPERATOR_LANES = new Set(['sprint-plan', 'sprint-start', 'fix', 'review', 'triage', 'status']);
 
 const MODEL_ALIASES = ['haiku', 'sonnet', 'opus']; // EN-9: pinned by alias, not a raw model id
@@ -228,14 +233,14 @@ function checkInventory(pluginRoot, results) {
 
   add(
     results,
-    `the plugin ships exactly ${EXPECTED_SKILL_COUNT} skills (docs/PLAN.md Phase 0)`,
+    `the plugin ships exactly ${EXPECTED_SKILL_COUNT} skills (docs/PLAN.md Phase 0's eleven, plus Phase 3's monitor-design)`,
     skillDirs.length === EXPECTED_SKILL_COUNT,
     `found ${skillDirs.length}: ${skillDirs.join(', ') || '(none)'}`,
   );
 
   add(
     results,
-    `the plugin ships exactly ${EXPECTED_AGENT_COUNT} agents (docs/PLAN.md P0.3)`,
+    `the plugin ships exactly ${EXPECTED_AGENT_COUNT} agents (docs/PLAN.md P0.3's three, plus Phase 3's monitor-designer)`,
     agentFiles.length === EXPECTED_AGENT_COUNT,
     `found ${agentFiles.length}: ${agentFiles.join(', ') || '(none)'}`,
   );

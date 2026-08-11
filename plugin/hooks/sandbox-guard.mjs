@@ -240,7 +240,12 @@ function readRoot(value, platform) {
   const raw = typeof value === 'string' ? value.trim() : '';
   if (raw === '') return { set: false, raw: '', root: null };
   const normalised = normalizeHookPath(raw, { platform });
-  return { set: true, raw, root: path.isAbsolute(normalised) ? normalised : null };
+  // Absoluteness is judged for the platform named, not the one this process runs on.
+  // Reading it from the host made the `platform` argument true for normalisation and a
+  // lie for the test that follows it: `D:/production` is not absolute to path.posix, so
+  // every declared root went null and the guard resolved nothing.
+  const p = platform === 'win32' ? path.win32 : path.posix;
+  return { set: true, raw, root: p.isAbsolute(normalised) ? normalised : null };
 }
 
 /**

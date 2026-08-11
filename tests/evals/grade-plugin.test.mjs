@@ -48,12 +48,12 @@ function write(root, relPath, content) {
 
 // ---------------------------------------------------------------------------
 // The golden fixture: a plugin root that satisfies every rule the grader checks.
-// Real skill names are reused (the six lanes plus five real non-lane skills) so the
-// fixture reads like a miniature, honest plugin rather than an arbitrary shape.
+// Real skill names are reused (the six lanes plus six real description-triggered skills)
+// so the fixture reads like a miniature, honest plugin rather than an arbitrary shape.
 // ---------------------------------------------------------------------------
 
 const LANES = ['sprint-plan', 'sprint-start', 'fix', 'review', 'triage', 'status'];
-const OTHER_SKILLS = ['red-green-refactor', 'tdd-plan', 'tdd-ci', 'safe-pr', 'safe-cleanup'];
+const OTHER_SKILLS = ['red-green-refactor', 'tdd-plan', 'tdd-ci', 'safe-pr', 'safe-cleanup', 'monitor-design'];
 const ALL_SKILLS = [...LANES, ...OTHER_SKILLS];
 
 function skillFrontmatter(name, { lane }) {
@@ -63,10 +63,11 @@ function skillFrontmatter(name, { lane }) {
   return lines.join('\n');
 }
 
-function agentFrontmatter({ name, tools, model, extra = '' }) {
+function agentFrontmatter({ name, tools, model, extra = '', body = '' }) {
   const lines = ['---', `name: ${name}`, `description: Fixture ${name} agent.`, `tools: ${tools}`, `model: ${model}`];
   if (extra) lines.push(extra);
   lines.push('---', '', `# ${name}`, '');
+  if (body) lines.push(body, '');
   return lines.join('\n');
 }
 
@@ -99,6 +100,17 @@ function makeGoldenPluginRoot() {
   write(root, 'agents/builder.md', agentFrontmatter({ name: 'builder', tools: 'Read, Grep, Glob, Edit, Write, Bash', model: 'sonnet' }));
   write(root, 'agents/reviewer.md', agentFrontmatter({ name: 'reviewer', tools: 'Read', model: 'opus' }));
   write(root, 'agents/triage.md', agentFrontmatter({ name: 'triage', tools: 'Read, Grep, Glob, Bash', model: 'haiku' }));
+  // The fourth agent carries a ${CLAUDE_PLUGIN_ROOT} reference to a script that exists in
+  // this fixture, so the path-resolution scan is exercised non-vacuously over an AGENT file
+  // and not only over a skill directory. The real monitor-designer charter points at the
+  // generic monitor the same way, which is what made that gap load-bearing.
+  write(root, 'scripts/run-monitor.mjs', '// stub monitor\n');
+  write(root, 'agents/monitor-designer.md', agentFrontmatter({
+    name: 'monitor-designer',
+    tools: 'Read, Grep, Glob, Edit, Write, Bash',
+    model: 'sonnet',
+    body: 'Builds on `${CLAUDE_PLUGIN_ROOT}/scripts/run-monitor.mjs`.',
+  }));
 
   write(root, 'hooks/fake-gate.mjs', '// stub gate\n');
   write(root, 'hooks/hooks.json', JSON.stringify({
@@ -207,26 +219,26 @@ describe('plugin.json (C-09)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Inventory: eleven skills, three agents, no commands/
+// Inventory: twelve skills, four agents, no commands/
 // ---------------------------------------------------------------------------
 
 describe('inventory', () => {
-  test('ten skills fails the skill-count expectation', () => {
+  test('eleven skills fails the skill-count expectation', () => {
     const root = makeGoldenPluginRoot();
     rmSync(path.join(root, 'skills', 'safe-cleanup'), { recursive: true, force: true });
     const report = gradePlugin(root);
-    const check = passedFor(report, 'ships exactly 11 skills')[0];
+    const check = passedFor(report, 'ships exactly 12 skills')[0];
     assert.equal(check.passed, false);
-    assert.match(check.evidence, /found 10/);
+    assert.match(check.evidence, /found 11/);
   });
 
-  test('two agents fails the agent-count expectation', () => {
+  test('three agents fails the agent-count expectation', () => {
     const root = makeGoldenPluginRoot();
     rmSync(path.join(root, 'agents', 'triage.md'));
     const report = gradePlugin(root);
-    const check = passedFor(report, 'ships exactly 3 agents')[0];
+    const check = passedFor(report, 'ships exactly 4 agents')[0];
     assert.equal(check.passed, false);
-    assert.match(check.evidence, /found 2/);
+    assert.match(check.evidence, /found 3/);
   });
 
   test('a commands/ directory fails the no-commands expectation (C-03 / D9)', () => {
@@ -444,6 +456,26 @@ describe('cross-cutting text scans', () => {
     assert.match(check.evidence, /does-not-exist\.md/);
   });
 
+  // The same scan runs over agent files, and until a charter carried a real
+  // ${CLAUDE_PLUGIN_ROOT} reference every agent's path check passed vacuously, so a broken
+  // reference in a charter was pinned by nothing. monitor-designer.md points at the generic
+  // monitor, so it is now a live check and gets both directions.
+  test('a ${CLAUDE_PLUGIN_ROOT} reference to a missing file in an AGENT charter fails that agent\'s path check', () => {
+    const root = makeGoldenPluginRoot();
+    write(root, 'agents/monitor-designer.md', agentFrontmatter({
+      name: 'monitor-designer',
+      tools: 'Read, Grep, Glob, Edit, Write, Bash',
+      model: 'sonnet',
+      body: 'Builds on `${CLAUDE_PLUGIN_ROOT}/scripts/does-not-exist.mjs`.',
+    }));
+    const report = gradePlugin(root);
+    const check = passedFor(report, 'every ${CLAUDE_PLUGIN_ROOT} path referenced under agents/monitor-designer.md resolves')[0];
+    assert.equal(check.passed, false);
+    assert.match(check.evidence, /does-not-exist\.mjs/);
+    // The other charters are untouched and still pass, vacuously.
+    assert.equal(passedFor(report, 'every ${CLAUDE_PLUGIN_ROOT} path referenced under agents/builder.md resolves')[0].passed, true);
+  });
+
   test('a skill with no ${CLAUDE_PLUGIN_ROOT} reference passes vacuously, distinguishably from "verified"', () => {
     const root = makeGoldenPluginRoot();
     const report = gradePlugin(root);
@@ -460,8 +492,8 @@ describe('cross-cutting text scans', () => {
 describe('against this repo\'s real plugin/ tree', () => {
   test('inventory and hooks.json wiring hold', () => {
     const report = gradePlugin(path.join(repoRoot, 'plugin'));
-    assert.equal(passedFor(report, 'ships exactly 11 skills')[0].passed, true);
-    assert.equal(passedFor(report, 'ships exactly 3 agents')[0].passed, true);
+    assert.equal(passedFor(report, 'ships exactly 12 skills')[0].passed, true);
+    assert.equal(passedFor(report, 'ships exactly 4 agents')[0].passed, true);
     assert.equal(passedFor(report, 'hooks/hooks.json exists and parses')[0].passed, true);
   });
 

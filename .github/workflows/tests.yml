@@ -20,10 +20,24 @@ jobs:
   battery:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       # No install step and no dependencies, by design: node --test only.
+      #
+      # GH_TOKEN arms the L-08 group in tests/skills/classify-branches.test.mjs. Those
+      # three tests need an authenticated gh — they assert that a FAILED `gh pr list` is
+      # reported as missing data rather than as "no PRs" — and they skip loudly without
+      # one, so the first green Linux run covered everything except the rule the file was
+      # written to enforce. gh is preinstalled here; only the auth was missing.
+      #
+      # No API traffic follows. The fixture repository points at https://example.invalid,
+      # so the query fails on DNS whether or not a token exists. The token exists to make
+      # `gh auth status` succeed, nothing more, which is why read-only is enough.
       - run: npm run test:all
+        env:
+          GH_TOKEN: ${{ github.token }}

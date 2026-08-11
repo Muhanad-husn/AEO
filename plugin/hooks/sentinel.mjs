@@ -123,8 +123,12 @@ export function projectAnchor(startDir) {
  * EPERM means the process exists and belongs to someone else, which is still alive.
  * Pid reuse can make a dead run look live; that direction blocks a commit rather than
  * killing a pipeline, so it is the direction to be wrong in.
+ *
+ * Exported so run-sentinel.mjs can run the same check at raise time, against the same
+ * table this file reads at stale-check time, rather than growing a second copy of one
+ * process-existence resolution (V-13).
  */
-function processAlive(pid) {
+export function processAlive(pid) {
   try {
     process.kill(pid, 0);
     return true;
