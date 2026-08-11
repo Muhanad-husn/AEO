@@ -2,11 +2,13 @@
 
 2026-08-11. Branch `feat/phase-2/roles-and-lanes`.
 
-**Status: build slices complete, verification substantially done, one half outstanding.**
-Everything Phase 2 was to author exists and is committed. The local half of PLAN's verify
-line has been executed against a throwaway repository; the GitHub half — issues and a
-prepared PR — has not, because it needs a remote and that is an outward-facing action
-awaiting founder approval. This record is open until it runs.
+**Status: complete.** Everything Phase 2 was to author exists and is committed, and both
+halves of PLAN's verify line have run against a real repository — the local gates, and
+the GitHub path from an issue to an open pull request with CI green.
+
+The fixture is no longer a throwaway. It is now the project's permanent testbed, on disk
+at `D:\aeo-testbed` and on GitHub at `Muhanad-husn/aeo-testbed`, private. Its terms are in
+[docs/TESTBED.md](../../docs/TESTBED.md).
 
 ## What landed
 
@@ -90,14 +92,67 @@ reason as below.
 
 `D:\AEO` was byte-identical before and after, and no plugin was installed.
 
-## What is missing from this checkpoint, stated rather than carried
+## The GitHub half
 
-**The GitHub half of the verify line has not run.** PLAN requires a throwaway issue driven
-idea → `/aeo:sprint-start` → prepared PR. `sprint-start` selects from GitHub issues and
-`safe-pr` opens a PR, so both need a remote. Creating one is outward-facing and is the
-founder's call. What has been proven is the `fix` lane end to end minus the PR, which
-shares the builder dispatch, the gates and the test-first loop with `sprint-start` but
-not the issue selection or the PR body generation.
+A private repository was created on the founder's own command, `main` pushed to it, and
+one issue opened describing a real defect: `runningTotal` fails on a non-array argument
+with a `TypeError` naming `filter` rather than the caller's mistake. Then
+`/aeo:sprint-start` ran headless.
+
+| Check | Result |
+| --- | --- |
+| Issue selection from the forge | ✅ took issue #1, the only unblocked one |
+| Worktree cut, builder dispatched | ✅ `wt-issue-1`, branch `fix/1-running-total-input-guard` |
+| Failing test first, watched red | ✅ red output quoted in the PR body, failing for the stated reason |
+| Green, test and code in one commit | ✅ 5 tests pass |
+| `tdd-ci` supplied the missing CI | ✅ workflow authored because the repo had none |
+| Evidence collected and secret-scanned | ✅ committed under `docs/tdd-evidence/` |
+| PR body generated from the template | ✅ evidence-linked, placeholders filled |
+| **Stopped before pushing, and asked** | ✅ the lane refused to go outward-facing on its own |
+| Push and `gh pr create` on approval | ✅ [PR #2](https://github.com/Muhanad-husn/aeo-testbed/pull/2), base `main` |
+| CI green on the PR | ✅ Node 20 and 22, both pass |
+| `gh pr merge` from an AEO role | ✅ blocked |
+| `gh pr merge` from the orchestrator | ✅ allowed — the founder-approved path stays open |
+
+The last two were exercised by invoking `block-merge.mjs` directly against the testbed's
+real working tree, not through a live dispatched subagent: the auto-mode permission
+classifier refuses a real merge attempt, as it should. Real hook, real repository, real
+default-branch resolution — but not a real session, and this row claims no more than that.
+The in-session wiring is proven separately by the `git merge` block in the local run.
+
+The forge-tool merge arm remains unexercised for the reason the code already records: no
+tool on the live GitHub MCP server has an action beginning with `merge`.
+
+**The lane refused to push on its own and put the decision to the founder** with the
+title, the branch, the commit list, and two flagged concerns. That is the invariant the
+whole design rests on, and it held under a headless run with `Bash` fully permitted.
+
+### The finding this half produced
+
+**A lane resolved the default branch correctly and then branched from `HEAD` anyway.**
+`sprint-start` step 4 says to cut the worktree from the repository's default branch.
+`main` was two commits behind `feat/e2e`, and the worktree was cut from `feat/e2e`, so the
+PR carries two unrelated commits.
+
+It was not silent about it. The wrap-up brief flagged it, and the PR body carries a *Base
+branch note* giving the reasoning: issue #1's premise — that non-numeric entries are
+already skipped — is only true on `feat/e2e`, so branching from `main` would have meant
+re-implementing that behaviour and colliding later. The reasoning is sound and the
+disclosure is exactly what the charter asks for.
+
+Two things follow. The D16 default-branch resolution worked; what failed was the use of
+the result, which no test of the resolver would catch. And step 4 is written as an
+absolute with no escape hatch, so a correct judgment call could only be made by
+overriding the step and saying so afterwards. **Phase 3 should give step 4 an explicit
+exception clause** — cut from the default branch unless the issue's premise does not hold
+there, in which case name the base and why in the PR body. That is what the lane did
+unprompted; the skill should say it.
+
+This is also why the testbed keeps a `main` that is behind. A repository whose default
+branch is current cannot distinguish a lane that branches from the default from one that
+branches from `HEAD`.
+
+## What is missing from this checkpoint, stated rather than carried
 
 **Headless verification needs a permission allowlist.** In `-p` mode Bash cannot be
 approved interactively, so the fixture carries a `.claude/settings.local.json` granting
@@ -118,6 +173,15 @@ with this phase — but Phase 2 was built ungoverned by its own gates, exactly a
 and 1 were.
 
 ## Findings no single slice could see
+
+**The permission classifier refuses to create a repository or merge a PR, through `gh`
+and through the GitHub MCP tools alike.** Neither is a plugin defect and neither should be
+worked around. It has two consequences worth carrying: verification cannot bootstrap its
+own remote, which is the argument for a permanent testbed rather than a per-run
+throwaway; and the merge arm of `block-merge` is verifiable at the hook level but not by a
+live merge attempt. Any future run that needs a fresh remote needs a founder command, and
+should be planned for rather than discovered mid-run.
+
 
 **A live gate hole, found by a currency check rather than by a test.** C-07's background
 tool list names `PowerShell` alongside `Bash`. Every gate decided on the literal string

@@ -229,6 +229,10 @@ this checkpoint** — that gap is recorded, not quietly carried.
   (L-08).
 - The **monitor-designer agent** and its skill, for job-specific overlays only.
 - Document the two hook-interaction landmines any harness-adjacent tool inherits (V-11).
+- **Carried from Checkpoint 2:** `sprint-start` step 4 states "cut from the default branch"
+  as an absolute, so a correct judgment call can only be made by overriding it. Give it the
+  exception the lane already exercised: cut from the default branch unless the issue's
+  premise does not hold there, and if not, name the base and the reason in the PR body.
 
 **Verify:** a long job is monitored live from a plain terminal; a deliberately wedged job
 is reported stalled; a slow-but-working job is not; an uninstrumented job reports

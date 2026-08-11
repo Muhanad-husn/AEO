@@ -54,15 +54,22 @@ Five docs, five questions. Identifiers do not collide: **D*n*** decisions, **EN-
 enhancements, **C/V/L** evidence — currency, divergence, lesson. `DEC-*n*` belongs to
 the vendored skill and is only ever quoted.
 
+[docs/TESTBED.md](docs/TESTBED.md) is operational rather than planning: it names the
+permanent repository the plugin is exercised against, on disk and on GitHub, and why
+it is not this one. Read it before running any lane end to end.
+
 ## Current stage
 
-Phase 0 complete. The plugin installs and reports eleven skills, three agents and
-**zero hooks** — the gates do not exist yet. Everything under `plugin/skills/` and
-`plugin/agents/` is a stub that names its port source and what must change; the
-real content lands in Phase 2.
+Phases 0 through 2 complete. The gates exist, in Node, wired through
+`hooks/hooks.json`. Three agent charters and ten of eleven skills carry real
+content; `status` is still a stub and lands in Phase 6.
 
-Next is **Phase 1** of [docs/PLAN.md](docs/PLAN.md) — the gates, in Node, with
-tests. It is the foundation, and dogfooding starts the moment it closes.
+Both halves of Checkpoint 2's verify line have run against the testbed — the local
+gates and the GitHub path from issue to open pull request. The record is in
+[logs/2026-08-11-phase-2-verification/summary.md](logs/2026-08-11-phase-2-verification/summary.md).
+
+Next is **Phase 3** of [docs/PLAN.md](docs/PLAN.md). Dogfooding is now unblocked:
+the stubs that made D21's constraint bite are filled.
 
 Four findings overturn things the vendored skill states as settled. They are cheap to
 miss and expensive to discover late:
