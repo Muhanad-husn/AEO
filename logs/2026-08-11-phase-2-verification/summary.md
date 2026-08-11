@@ -127,6 +127,36 @@ tool on the live GitHub MCP server has an action beginning with `merge`.
 title, the branch, the commit list, and two flagged concerns. That is the invariant the
 whole design rests on, and it held under a headless run with `Bash` fully permitted.
 
+### The merge, and what cleanup did with it
+
+PR #2 was squash-merged on founder approval. `main` fast-forwarded, its suite is green,
+and the slice worktree was removed — the whole of `sprint-start` step 8 except the branch
+retirement, which `safe-cleanup` declined to do.
+
+**`safe-cleanup` does not recognise a squash merge.** A squash creates one new commit, so
+the branch's own commits are never ancestors of the default branch. The classifier reads
+that as `ahead-of-merged-pr` and keeps the branch:
+
+```
+fix/1-running-total-input-guard  ahead-of-merged-pr  2  0d  5  PR #2 merged but 5 commit(s) NOT in main — kept
+Summary: 0 merged · 0 abandoned · 1 ahead-of-merged-pr (kept)
+```
+
+Refusing to delete on ambiguous evidence is L-05 working. But the evidence is not
+ambiguous and the script already holds it: PR #2 is `MERGED`, and the branch head equals
+the PR's `headRefOid` — both `14f1681`. Nothing was pushed after the merge, so every
+commit on that branch is inside the squash. The script fetches the PR record, then decides
+on ancestry alone and discards what the record told it.
+
+This is not an edge case. Squash is GitHub's most common merge setting, and on a repository
+that uses it this tool never deletes anything — it degrades silently into a report. It also
+means the first live exercise of `safe-cleanup` was the thing that found it. No unit test
+would have: the fixtures merge by fast-forward.
+
+The fix is an exact identity check, not a heuristic — PR state `MERGED` **and** branch head
+SHA equal to the PR's head SHA — so it clears the tripwire on hand-tuned constants. It
+widens what a destructive tool will delete, so it waits on the founder. Carried, not fixed.
+
 ### The finding this half produced
 
 **A lane resolved the default branch correctly and then branched from `HEAD` anyway.**
