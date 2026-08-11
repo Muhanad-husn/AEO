@@ -5,7 +5,7 @@
   "description": "AEO plugin repository. This manifest exists so AEO's own commit gate can detect AEO's test command and gate AEO's commits (D10 detection, no config file).",
   "license": "MIT",
   "scripts": {
-    "test": "node --test tests/hooks/sandbox-session.test.mjs tests/hooks/runtime-fallback.test.mjs tests/hooks/hooks-json.test.mjs tests/hooks/stack.test.mjs tests/hooks/test-tiers.test.mjs tests/evals/grade-plugin.test.mjs tests/scripts/runlog.test.mjs tests/scripts/run-monitor.test.mjs",
+    "test": "node --test tests/hooks/sandbox-session.test.mjs tests/hooks/runtime-fallback.test.mjs tests/hooks/hooks-json.test.mjs tests/hooks/stack.test.mjs tests/hooks/test-tiers.test.mjs tests/evals/grade-plugin.test.mjs tests/scripts/runlog.test.mjs tests/scripts/run-monitor.test.mjs tests/scripts/run-sentinel.test.mjs",
     "test:integration": "node --test tests/hooks/sandbox-guard.test.mjs tests/hooks/commit-gate.test.mjs tests/hooks/session-status.test.mjs tests/hooks/block-merge.test.mjs tests/hooks/path-guard.test.mjs tests/hooks/lib.test.mjs tests/hooks/review-jail.test.mjs tests/skills/classify-branches.test.mjs",
     "test:all": "npm test && npm run test:integration",
     "grade:plugin": "node evals/grade-plugin.mjs plugin"
