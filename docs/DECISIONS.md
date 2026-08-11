@@ -57,6 +57,47 @@ given it, at no risk to the work. Cost is about ten minutes.
 path off-limits, so if installation is machine-wide rather than per-folder, the
 uninstall step stops being cleanup and becomes part of the procedure.
 
+**Closed by the run.** Installation is machine-wide. The marketplace registration
+and the plugin cache both live under `~/.claude/`, and `--scope local` scopes only
+the enablement flag. Registering and removing a marketplace is therefore part of
+the procedure, not cleanup after it. D21 held otherwise: the smoke test left
+`D:\AEO` byte-identical.
+
+### D22 — What the first live run of the gates found
+
+The D21 run exercised ten cases against the installed plugin. Recorded here
+because the findings outlived the fixture, which is deleted.
+
+**Confirmed working.** All three `cd`-and-delete forms blocked, which is the
+command segmenter holding up outside its own tests. `block-merge` and `path-guard`
+blocked a role subagent and
+stayed clear of the main session, so C-02's identity test is right in both
+directions. The commit gate refused a commit on the default branch, and running
+the suite red proved it genuinely executes the tests rather than timing out into a
+pass.
+
+**Fixed the same day.** The declared production data root was defended against
+Bash and open to every file tool: a `Write` created a file inside it unblocked,
+and a `Read` of a file inside it succeeded while `cat` of the same file was
+refused. The guard's own charter covers reads, so the resolution extended it to
+the file tools rather than relaxing the shell side.
+
+**Carried to Phase 2**, in the order they matter:
+
+| Finding | Why it waits |
+| --- | --- |
+| A shell redirect writes to `.claude/` unchallenged — `path-guard` matches the edit tools, and a role holds Bash | Needs `path-guard` to read Bash redirect targets, which is the segmenter's job and a design question, not a patch |
+| `git reset --hard` is ungated, so a role can discard work silently | A new rule, not a gap in an existing one |
+| The session-start report names one guard of five | Cosmetic until the roster stops changing |
+| `Glob` and `Grep` reach production data | Pinned by a test as a decision. They carry a pattern plus a path, a wider surface than the fix took on |
+| `review-jail` and the GitHub merge path were never exercised | The run had no reviewer role and no remote |
+
+**Method note.** The first attempt at this run produced nothing usable: four of
+five guards exempt the main session by design, so the checks could never fire, and
+the two environment variables the data guard needs sat in a second file the session
+was never given. Splitting the instructions is what lost them. One file, and every
+check routed through the context where the guard actually applies.
+
 ---
 
 ## 2026-08-04 — Four decisions from Checkpoint 1
