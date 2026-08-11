@@ -6,13 +6,12 @@ disable-model-invocation: true
 
 # Status — the North Star, generated
 
-No port source — this skill is new to this project (EN-7, D5 in
-`docs/DECISIONS.md`). It closes a gap the vendored skill has: a
-hand-maintained tracker that drifts from the issues and PRs it's supposed
-to summarize. This skill instead reads GitHub issues, PR state, and the
-repo's Decision Log directly, every time it runs, and renders them —
-never edited by hand, never trusted from a stale memory file (see L-08's
-"front-load ground truth" lesson in `docs/EVIDENCE.md`).
+No port source — this skill is new to this project. It closes a gap the
+vendored skill has: a hand-maintained tracker that drifts from the issues
+and PRs it's supposed to summarize. This skill instead reads GitHub
+issues, PR state, and the repo's Decision Log directly, every time it
+runs, and renders them — never edited by hand, and never taken on a
+stale memory file's word for it.
 
 **Status:** not yet implemented. This stub declares the contract only. It
 lands in Phase 6, once the plugin's own issue and PR conventions are
