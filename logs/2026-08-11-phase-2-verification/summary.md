@@ -182,9 +182,26 @@ state from a test. One further test pins the premise with real git: it squash-me
 branch and asserts `git cherry` still reports every commit absent. If that ever stops
 holding, the test says why the rule exists.
 
-The apply run that would retire the branch is refused by the permission classifier, so the
-branch is still present locally and on the remote. The tool never touches remotes by design
-in any case.
+The apply run is refused by the permission classifier, so the founder ran it. It completed
+the whole path this checkpoint had never exercised: the recovery log written before any
+deletion, the delete-time re-verification passing on head identity, `git branch -D`, and
+`feat/e2e` left alone.
+
+```
+----- RECOVERY (restore any of these with:  git branch <name> <sha>) -----
+  14f1681d957d4113e9451c20bd3f5f4b75b80644  fix/1-running-total-input-guard
+----- DELETING (local only) -----
+  delete fix/1-running-total-input-guard  (git branch -D)
+Done. Deleted 1 local branch(es), 0 skipped/failed. Remote was NOT touched.
+```
+
+The remote branch is still there. That is the tool's contract, stated in its first line —
+it never touches a remote — and not an oversight. GitHub's own delete-branch-on-merge
+setting is the right place for that, and no plugin code should be reaching for
+`push --delete`.
+
+**`sprint-start` step 8 has now run end to end**, on a real repository, through the whole
+chain: merge on founder approval, `safe-cleanup` on the merged branch, worktree removed.
 
 ### The finding this half produced
 
