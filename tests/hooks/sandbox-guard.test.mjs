@@ -543,6 +543,59 @@ describe('the operation directory', () => {
 // deliberate decision and a silent change of mind in either direction is the expensive
 // kind.
 
+// The same hole, one tool further out (C-07). D22 closed the file-tool half by widening
+// the matcher off `^Bash$`; PowerShell is a first-class tool that survives the
+// background-subagent filter and was still outside it, so `Get-Content <file inside
+// production data>` passed while `cat` of the same file was refused. This gate does not
+// exempt the main session, which is what made it the one that was actually open.
+//
+// The segmenter is a Bash reader. It handles these forms because the two shells agree on
+// them, and where they disagree it declines to read rather than guessing: a PowerShell
+// backtick reads as a command substitution and errors, and an error blocks.
+describe('PowerShell reaches the same rules as Bash', () => {
+  const pwsh = (command, cwd, extra = {}) => ({ ...bash(command, cwd, extra), tool_name: 'PowerShell' });
+
+  test('a cmdlet reading a file inside production data blocks, as `cat` does', () => {
+    const { live, sandbox } = roots();
+    const target = path.join(live, 'index', 'entries.jsonl');
+    assertBlockedBecause(
+      guard({ payload: pwsh(`Get-Content ${target}`, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
+      NAMES_LIVE_DATA,
+      'Get-Content of production data',
+    );
+  });
+
+  test('a Windows path with backslashes still resolves into the root', () => {
+    // The segmenter keeps a backslash that is not escaping shell syntax, precisely so a
+    // drive path survives (L-09). If it did not, every path here would tokenise to
+    // nonsense and the guard would pass everything.
+    const { live, sandbox } = roots();
+    const target = path.join(live, 'corpus', 'notes.txt').replace(/\//g, '\\');
+    assertBlockedBecause(
+      guard({ payload: pwsh(`Get-Content ${target}`, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
+      NAMES_LIVE_DATA,
+      'a backslash-separated target',
+    );
+  });
+
+  test('a cd into production data is honoured on the PowerShell arm too', () => {
+    const { live, sandbox } = roots();
+    assertBlockedBecause(
+      guard({ payload: pwsh(`cd ${live}; Remove-Item -Recurse corpus`, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
+      OPERATES_IN,
+      'a cd through the PowerShell statement separator',
+    );
+  });
+
+  test('an ordinary command outside production data still passes', () => {
+    const { live, sandbox } = roots();
+    for (const command of ['Get-ChildItem', 'git status', 'Get-Content README.md']) {
+      const r = guard({ payload: pwsh(command, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } });
+      assert.equal(r.status, 0, `${command} should not be blocked: ${r.stderr}`);
+    }
+  });
+});
+
 describe('the file tools', () => {
   test('every file tool blocks on a target inside production data', () => {
     const { live, sandbox } = roots();

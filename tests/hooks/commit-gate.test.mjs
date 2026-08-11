@@ -187,6 +187,17 @@ describe('the protected branch is resolved, never assumed', () => {
     assert.match(result.stderr, /BLOCKED: no direct commits on main/);
   });
 
+  // C-07. This gate never read tool_name — it decides from tool_input.command alone — so
+  // the only thing standing between it and a PowerShell commit was hooks.json's matcher,
+  // which said `^Bash$`. The matcher is asserted in hooks-json.test.mjs; this proves the
+  // gate itself does the right thing once the call reaches it.
+  test('a commit on main blocks when the call arrives as PowerShell', () => {
+    const dir = makeRepo({ branch: 'main', defaultBranch: 'main' });
+    const result = runGate({ ...commitPayload(dir), tool_name: 'PowerShell' });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /BLOCKED: no direct commits on main/);
+  });
+
   test('a repo on master blocks on master', () => {
     const dir = makeRepo({ branch: 'master', defaultBranch: 'master' });
     const result = runGate(commitPayload(dir));

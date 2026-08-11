@@ -76,6 +76,40 @@ function bash(command, extra = {}) {
   return { tool_name: 'Bash', tool_input: { command }, agent_type: 'aeo:builder', ...extra };
 }
 
+// C-07: PowerShell is a first-class tool that survives the background-subagent filter,
+// and this gate decided on the literal string 'Bash'. A role that holds it could run
+// `git merge` past a gate whose whole product is that it cannot. Latent rather than live
+// while no role declares the tool, which is exactly the kind of gap that opens the day
+// someone edits a `tools:` line for an unrelated reason.
+function pwsh(command, extra = {}) {
+  return { tool_name: 'PowerShell', tool_input: { command }, agent_type: 'aeo:builder', ...extra };
+}
+
+describe('PowerShell is gated on the same terms as Bash (C-07)', () => {
+  for (const command of [
+    'git merge feat/x',
+    'git -C sub merge feat/x',
+    'git branch -D feat/x',
+    'git push --mirror',
+    'gh pr merge 12',
+  ]) {
+    test(`${command} is blocked for a role`, () => {
+      const r = runHook(pwsh(command));
+      assert.equal(r.status, 2, `expected a block, got ${r.status}: ${r.stderr}`);
+    });
+  }
+
+  test('a read-only git call still passes, so the widening did not over-block', () => {
+    const r = runHook(pwsh('git merge-base HEAD main'));
+    assert.equal(r.status, 0, `merge-base is read-only and must pass: ${r.stderr}`);
+  });
+
+  test('the orchestrator keeps its approved path on PowerShell too', () => {
+    const r = runHook({ tool_name: 'PowerShell', tool_input: { command: 'git merge feat/x' } });
+    assert.equal(r.status, 0, 'the main session merges on founder approval; this gate never blocks it');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // git merge (V-02)
 // ---------------------------------------------------------------------------

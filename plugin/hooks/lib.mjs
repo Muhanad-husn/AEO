@@ -304,6 +304,36 @@ export function toolFilePath(payload) {
 }
 
 // ---------------------------------------------------------------------------
+// Which tools run a shell command
+// ---------------------------------------------------------------------------
+
+/**
+ * The tools whose payload carries a shell command under `tool_input.command`.
+ *
+ * WHY THIS IS A SET AND NOT THE STRING 'Bash'. `PowerShell` is a first-class tool that
+ * survives the background-subagent filter alongside Bash (C-07), and every gate here was
+ * written against Bash alone. That left the sandbox guard, which is the one gate that
+ * applies to the main session rather than exempting it, refusing `cat <file in the
+ * production data root>` while allowing `Get-Content` on the same file. Exactly the shape
+ * D22 found and fixed for the file tools, one tool short.
+ *
+ * The segmenter below reads both. The forms that differ are the forms it already declines
+ * to read: a PowerShell backtick escape reads as a Bash command substitution and is
+ * reported as an error, and an error blocks. PowerShell's `$env:NAME='v';` seam is not a
+ * `NAME=value` prefix, so the sandbox guard does not credit it as a sandboxed run. Both
+ * land on the blocking side, which is the only direction a widened matcher may fail in.
+ *
+ * hooks.json's matchers must list exactly these names. `tests/hooks/hooks-json.test.mjs`
+ * asserts that, because a matcher and a set in two files is V-13 again.
+ */
+export const SHELL_TOOLS = new Set(['Bash', 'PowerShell']);
+
+/** True when this payload's tool runs a shell command. */
+export function isShellTool(payload) {
+  return SHELL_TOOLS.has(typeof payload?.tool_name === 'string' ? payload.tool_name : '');
+}
+
+// ---------------------------------------------------------------------------
 // Identity matching (V-12)
 // ---------------------------------------------------------------------------
 

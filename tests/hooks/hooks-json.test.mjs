@@ -22,7 +22,7 @@ import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { HOOK_TIMEOUT_SECONDS } from '../../plugin/hooks/commit-gate.mjs';
-import { RUNTIME_MISSING_BANNER, preflight } from '../../plugin/hooks/lib.mjs';
+import { RUNTIME_MISSING_BANNER, SHELL_TOOLS, preflight } from '../../plugin/hooks/lib.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
 const pluginRoot = path.join(repoRoot, 'plugin');
@@ -252,9 +252,57 @@ describe('matchers', () => {
     }
   });
 
-  test('the Bash gates are anchored, not a bare substring (V-12: BashOutput is not Bash)', () => {
+  test('the shell gates are anchored, not a bare substring (V-12: BashOutput is not Bash)', () => {
     const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('commit-gate.mjs')));
-    assert.equal(group.matcher, '^Bash$');
+    assert.equal(group.matcher, '^(Bash|PowerShell)$');
+  });
+
+  // C-07. PowerShell is a first-class tool that survives the background-subagent filter,
+  // and every gate here was written against Bash alone. The sandbox guard is the one that
+  // was actually open: it does not exempt the main session, so it refused `cat <file in
+  // the production data root>` while allowing `Get-Content` on the same file.
+  //
+  // These assert the matcher against lib's SHELL_TOOLS rather than against a literal, so
+  // a third shell tool cannot be added to the set and quietly left out of the wiring.
+  // A matcher and a set maintained in two files is V-13's failure with new names.
+  test('every gate that reads tool_input.command matches exactly lib.mjs SHELL_TOOLS', () => {
+    const expected = [...SHELL_TOOLS].join('|');
+    for (const script of ['commit-gate.mjs', 'block-merge.mjs']) {
+      const groups = parsed.hooks.PreToolUse.filter(
+        (g) => g.matcher?.startsWith('^(') && g.hooks.some((h) => scriptOf(h)?.endsWith(script)),
+      );
+      assert.ok(groups.length > 0, `expected a shell-matched PreToolUse group for ${script}`);
+      for (const g of groups) {
+        assert.equal(g.matcher, `^(${expected})$`, `${script} is wired to a matcher that is not SHELL_TOOLS`);
+      }
+    }
+  });
+
+  test('the sandbox guard matches every shell tool as well as the file tools', () => {
+    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('sandbox-guard.mjs')));
+    assert.ok(group, 'expected a PreToolUse group for sandbox-guard.mjs');
+    for (const tool of SHELL_TOOLS) {
+      assert.ok(
+        toolMatches(group.matcher, tool),
+        `sandbox-guard does not match ${tool}, so that tool reaches production data unchecked`,
+      );
+    }
+    // The file tools it was extended to cover in D22 stay covered.
+    for (const tool of ['Read', 'Write', 'Edit', 'NotebookEdit']) {
+      assert.ok(toolMatches(group.matcher, tool), `sandbox-guard stopped matching ${tool}`);
+    }
+  });
+
+  test('no shell tool reaches a gate that only the file-tool fence protects', () => {
+    // path-guard is deliberately NOT widened: a shell writes through a redirect, which
+    // path-guard cannot see whatever its matcher says. That gap is D22's carried finding
+    // and belongs to the segmenter, not here. This test pins the decision so the next
+    // reader does not "fix" the matcher and believe the hole closed.
+    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('path-guard.mjs')));
+    assert.ok(group, 'expected a PreToolUse group for path-guard.mjs');
+    for (const tool of SHELL_TOOLS) {
+      assert.ok(!toolMatches(group.matcher, tool), `path-guard now matches ${tool}; see D22 before widening it`);
+    }
   });
 
   test('the forge-tool matcher matches D14\'s namespace-agnostic pattern, not one literal server name', () => {
@@ -296,11 +344,11 @@ describe('matchers', () => {
     assert.equal(toolMatches(group.matcher, 'Read'), false, 'the guard has no business on a read tool');
   });
 
-  test('block-merge is wired on both arms it decides: Bash and the forge', () => {
+  test('block-merge is wired on both arms it decides: the shells and the forge', () => {
     const matchers = parsed.hooks.PreToolUse.filter((g) =>
       g.hooks.some((h) => scriptOf(h)?.endsWith('block-merge.mjs')),
     ).map((g) => g.matcher);
-    assert.deepEqual(matchers.sort(), ['^Bash$', 'mcp__.*github.*__.*']);
+    assert.deepEqual(matchers.sort(), [`^(${[...SHELL_TOOLS].join('|')})$`, 'mcp__.*github.*__.*']);
   });
 });
 

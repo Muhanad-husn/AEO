@@ -6,7 +6,7 @@
 // this script has no second wiring, so it decides identity from the payload alone
 // every time (C-02).
 //
-// Blocked, for an AEO subagent's Bash calls only (see F5 below):
+// Blocked, for an AEO subagent's shell calls only — Bash or PowerShell (see F5 below):
 //   - git merge, including through `git -C <dir> merge` (V-02)
 //   - gh pr merge, gh api .../merge
 //   - git branch -d / -D / --delete (local branch deletion)
@@ -41,6 +41,7 @@ import {
   currentBranch,
   defaultBranch,
   isAnyAeoRole,
+  isShellTool,
   matchesGitSubcommand,
   resolveWorktree,
   runGate,
@@ -280,7 +281,7 @@ await runGate({
       return; // every other forge tool passes
     }
 
-    if (tool !== 'Bash') return;
+    if (!isShellTool(payload)) return; // Bash or PowerShell; C-07
     if (!isAnyAeoRole(payload)) return; // orchestrator's own approved path (C-02, F5)
 
     const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
