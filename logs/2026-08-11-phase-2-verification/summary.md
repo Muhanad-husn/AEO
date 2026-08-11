@@ -2,9 +2,11 @@
 
 2026-08-11. Branch `feat/phase-2/roles-and-lanes`.
 
-**Status: build slices complete, verification partial.** Everything Phase 2 was to
-author exists and is committed. The end-to-end run named in PLAN's verify line has not
-been performed. This record is open until it is.
+**Status: build slices complete, verification substantially done, one half outstanding.**
+Everything Phase 2 was to author exists and is committed. The local half of PLAN's verify
+line has been executed against a throwaway repository; the GitHub half — issues and a
+prepared PR — has not, because it needs a remote and that is an outward-facing action
+awaiting founder approval. This record is open until it runs.
 
 ## What landed
 
@@ -49,12 +51,59 @@ not judge prose, and does not measure whether a skill triggers. It has **no cont
 with the vendored skill's 1.0-versus-0.27–0.45 benchmark: different harness, different
 artifact shape. Any comparison between those numbers would be invented.
 
+## The live run
+
+A Node fixture repository was created outside this tree, in the OS temp scratchpad, with
+a real `package.json` test command. The plugin was loaded with `claude --plugin-dir`
+rather than installed. **That is better than D21's procedure and should replace it:**
+nothing is written to `~/.claude/`, no marketplace is registered, no cache is populated,
+and the uninstall step disappears because there was no install. D21 assumed installation
+was the only route; it is not.
+
+Every check below ran headless against the real plugin, in that repository.
+
+| Check | Result |
+| --- | --- |
+| Plugin loads, hooks active | ✅ 3 agents, hooks reported loaded |
+| Model-visible skills | ✅ exactly the five description-triggered ones |
+| The six lanes hidden from model invocation | ✅ absent from the model's skill list, per D9 |
+| `/aeo:fix` drives a real change test-first | ✅ test and code together, 4 behavioural tests, edge cases |
+| Node stack detection resolves `npm test` | ✅ |
+| Commit on a feature branch with a green suite | ✅ allowed |
+| **Commit with a red suite** | ✅ **blocked**, with the failing assertion echoed |
+| Commit on the default branch | ✅ blocked |
+| `review-jail` on a reviewer's repo `Read` | ✅ blocked; only the packet root reachable |
+| `block-merge` on a role's `git merge` | ✅ blocked |
+
+The red-suite case is the one that matters most. A commit gate that resolves a test
+command but never runs it passes every green case identically, so only a deliberately red
+suite distinguishes a working gate from a silent one. It blocked and quoted the real
+assertion failure.
+
+The reviewer returned `NEEDS_CONTEXT` rather than guessing, which is what its charter
+says to do when the packet does not carry what it needs. Its resolved packet root was the
+`<os temp>/aeo-review-packets` convention, matching the gate.
+
+**Two paths D22 recorded as never exercised are now exercised:** `review-jail` and a
+role's merge attempt. The GitHub forge merge path remains unexercised, for the same
+reason as below.
+
+`D:\AEO` was byte-identical before and after, and no plugin was installed.
+
 ## What is missing from this checkpoint, stated rather than carried
 
-**The end-to-end run has not happened.** PLAN's verify line requires a throwaway issue
-driven idea → `/aeo:sprint-start` → prepared PR on a scratch repo with no manual git.
-Nothing in this phase substitutes for it. It needs the plugin installed somewhere
-disposable, per D21, and it is the first exercise of the whole chain.
+**The GitHub half of the verify line has not run.** PLAN requires a throwaway issue driven
+idea → `/aeo:sprint-start` → prepared PR. `sprint-start` selects from GitHub issues and
+`safe-pr` opens a PR, so both need a remote. Creating one is outward-facing and is the
+founder's call. What has been proven is the `fix` lane end to end minus the PR, which
+shares the builder dispatch, the gates and the test-first loop with `sprint-start` but
+not the issue selection or the PR body generation.
+
+**Headless verification needs a permission allowlist.** In `-p` mode Bash cannot be
+approved interactively, so the fixture carries a `.claude/settings.local.json` granting
+it. Worth knowing for anyone automating this: permissions and hooks are independent
+layers, so granting Bash does not weaken the gate under test — the commit gate still
+blocked a red suite with Bash fully allowed.
 
 **There is no trigger-accuracy number, deliberately** ([D23](../../docs/DECISIONS.md)).
 The trigger eval moved to Phase 6, where descriptions are tuned, because a number taken
