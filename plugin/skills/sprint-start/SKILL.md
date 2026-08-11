@@ -26,7 +26,10 @@ both short.
 
 3. **Kickoff brief** (plain + technical + one-line "done when").
 
-4. **Cut the worktree** from the repository's default branch:
+4. **Cut the worktree** from the repository's default branch, unless the
+   issue's premise doesn't hold there — e.g. it depends on behaviour that
+   only exists on another branch — in which case cut from that branch
+   instead and name it and the reason in the PR body:
 
    ```
    git worktree add -b <branch> <path> <default-branch>
