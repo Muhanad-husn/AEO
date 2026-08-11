@@ -9,10 +9,11 @@
  * Safety guarantees:
  *   - Refuses to run on a detached HEAD (the "current branch" must be well-defined to protect it).
  *   - An OPEN PR always wins — such a branch is never deletable, even if it is an ancestor of the base.
- *   - A branch is only "merged" (safe) if its commits are genuinely in the base: either an ancestor,
- *     or `git cherry` shows every commit is patch-present in the base. A branch whose PR merged but
- *     which carries extra commits not in the base is KEPT ("ahead-of-merged-pr"), never force-deleted —
- *     this defeats branch-name reuse and post-merge commits.
+ *   - A branch is only "merged" (safe) if its commits are genuinely in the base: an ancestor, or
+ *     `git cherry` shows every commit is patch-present in the base, or the forge recorded that this
+ *     exact branch head was the head it merged. A branch whose PR merged but which carries extra
+ *     commits not in the base is KEPT ("ahead-of-merged-pr"), never force-deleted — this defeats
+ *     branch-name reuse and post-merge commits.
  *   - Force-delete (`-D`) is re-verified at delete time; recovery SHAs are logged to a file BEFORE
  *     any deletion, and deletion aborts if that log cannot be written.
  *   - A failed PR query is missing data, not "no PRs": apply mode refuses rather than delete
@@ -43,6 +44,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const VALUE_FLAGS = new Set(['base', 'protected', 'log']);
 
@@ -78,6 +80,33 @@ function cherryAhead(branch, base) {
   if (out === null) return null;
   if (out === '') return 0;
   return out.split('\n').filter(l => l.startsWith('+')).length;
+}
+
+// The squash case, which `git cherry` cannot see.
+//
+// A squash merge replaces every commit on the branch with one new commit in the base. None
+// of the branch's commits become ancestors, and their patch-ids do not survive being
+// combined, so `git cherry` reports every one of them as absent. It covers a rebase merge,
+// where each commit keeps its patch under a new SHA, and misses squash completely. Squash
+// is GitHub's most common merge setting, so without this the tool deletes nothing on the
+// repositories that most need it — it degrades into a report, quietly.
+//
+// The forge already recorded the answer. The PR carries the head SHA it merged, so if the
+// branch still points at exactly that commit, its tip is what went in, whatever strategy
+// was used.
+//
+// This is strictly tighter than "a PR on this branch merged", and it preserves both cases
+// the ahead-of-merged-pr rule exists to defeat. Post-merge commits move the head, so the
+// SHAs differ and the branch is kept. A reused branch name is a different commit, so the
+// SHAs differ and it is kept. Every merged PR on the branch is checked rather than the
+// first: a match on any of them means this exact tip was merged.
+//
+// Exported for the tests. `gh` cannot be shimmed on Windows, so the only way to assert
+// this rule against PR records is to hand them to it directly.
+export function mergedAtRecordedHead(branchSha, mergedPrs) {
+  if (typeof branchSha !== 'string' || branchSha === '') return null;
+  if (!Array.isArray(mergedPrs)) return null;
+  return mergedPrs.find(p => typeof p?.headRefOid === 'string' && p.headRefOid === branchSha) ?? null;
 }
 
 function detectBase(args) {
@@ -136,7 +165,7 @@ function main() {
   let prTruncated = false;
   let prQueryFailed = false;
   if (prCapable) {
-    const out = gh(['pr', 'list', '--state', 'all', '--json', 'number,state,headRefName,url,mergedAt', '--limit', '500']);
+    const out = gh(['pr', 'list', '--state', 'all', '--json', 'number,state,headRefName,url,mergedAt,headRefOid', '--limit', '500']);
     if (out === null) prQueryFailed = true;
     else {
       try {
@@ -163,27 +192,37 @@ function main() {
 
     const prs = prByBranch[b.name] || [];
     const openPr = prs.find(p => p.state === 'OPEN');
-    const mergedPr = prs.find(p => p.state === 'MERGED');
+    const mergedPrs = prs.filter(p => p.state === 'MERGED');
+    const mergedPr = mergedPrs[0];
     const closedPr = prs.find(p => p.state === 'CLOSED'); // gh: CLOSED excludes MERGED
     const ancestor = gitOk(['merge-base', '--is-ancestor', b.name, base]);
     const unique = parseInt(git(['rev-list', '--count', `${base}..${b.name}`]) || '0', 10);
     const ageDays = Number.isFinite(b.ts) ? Math.floor((now - b.ts) / 86400) : null;
 
-    let status, delFlag = null, reason = '';
+    // Set only when the branch was classified on head identity rather than on content, so
+    // the delete-time re-verification below knows which question to re-ask.
+    let status, delFlag = null, reason = '', mergedHeadOid = null;
     if (openPr) {
       status = 'open-pr'; reason = `PR #${openPr.number} open — never delete`;
     } else if (ancestor) {
       status = 'merged'; delFlag = '-d'; reason = `commits already in ${base}`;
     } else if (mergedPr) {
       const ahead = cherryAhead(b.name, base);
-      if (ahead === 0) { status = 'merged'; delFlag = '-D'; reason = `PR #${mergedPr.number} merged; all commits present in ${base}`; }
-      else { status = 'ahead-of-merged-pr'; reason = `PR #${mergedPr.number} merged but ${ahead == null ? 'some' : ahead} commit(s) NOT in ${base} — kept`; }
+      const squashed = ahead === 0 ? null : mergedAtRecordedHead(b.sha, mergedPrs);
+      if (ahead === 0) {
+        status = 'merged'; delFlag = '-D'; reason = `PR #${mergedPr.number} merged; all commits present in ${base}`;
+      } else if (squashed) {
+        status = 'merged'; delFlag = '-D'; mergedHeadOid = squashed.headRefOid;
+        reason = `PR #${squashed.number} merged this exact head (${b.sha.slice(0, 7)}) — squashed into ${base}`;
+      } else {
+        status = 'ahead-of-merged-pr'; reason = `PR #${mergedPr.number} merged but ${ahead == null ? 'some' : ahead} commit(s) NOT in ${base} — kept`;
+      }
     } else if (closedPr) {
       status = 'abandoned'; delFlag = '-D'; reason = `PR #${closedPr.number} closed unmerged; ${unique} commit(s) not in ${base}`;
     } else {
       status = 'local-only'; reason = `${unique} commit(s) not in ${base}${prKnown ? ', no PR' : ', PR state unknown (PR data not retrieved)'}`;
     }
-    rows.push({ ...b, status, delFlag, unique, ageDays, pr: prs[0]?.number ?? null, reason });
+    rows.push({ ...b, status, delFlag, unique, ageDays, pr: prs[0]?.number ?? null, reason, mergedHeadOid });
   }
 
   // Report
@@ -302,10 +341,22 @@ function main() {
   for (const r of toDelete) {
     if (protectedSet.has(r.name)) { console.log(`  skip   ${r.name} (protected)`); skipped++; continue; }
     if (!['merged', 'abandoned'].includes(r.status)) { console.log(`  skip   ${r.name} (${r.status} — not eligible)`); skipped++; continue; }
-    // Re-verify force-deletes at the moment of deletion to catch any drift since classification.
+    // Re-verify force-deletes at the moment of deletion to catch any drift since
+    // classification. Re-ask the question the branch was classified on: a squash-merged
+    // branch would fail a cherry check by construction, so re-running that one would refuse
+    // every branch this fix exists to release. Head identity is the drift check there — if
+    // the branch has moved off the commit the forge merged, it is no longer that branch.
     if (r.delFlag === '-D' && r.status === 'merged') {
-      const ahead = cherryAhead(r.name, base);
-      if (ahead !== 0) { console.log(`  SKIP   ${r.name} (now has ${ahead == null ? 'undetermined' : ahead} commit(s) not in ${base} — refusing force-delete)`); skipped++; continue; }
+      if (r.mergedHeadOid) {
+        const nowSha = git(['rev-parse', r.name]);
+        if (nowSha !== r.mergedHeadOid) {
+          console.log(`  SKIP   ${r.name} (head moved to ${nowSha ? nowSha.slice(0, 7) : 'unknown'} since classification — refusing force-delete)`);
+          skipped++; continue;
+        }
+      } else {
+        const ahead = cherryAhead(r.name, base);
+        if (ahead !== 0) { console.log(`  SKIP   ${r.name} (now has ${ahead == null ? 'undetermined' : ahead} commit(s) not in ${base} — refusing force-delete)`); skipped++; continue; }
+      }
     }
     const ok = gitOk(['branch', r.delFlag, r.name]);
     if (ok) { console.log(`  delete ${r.name}  (git branch ${r.delFlag})`); deleted++; }
@@ -314,4 +365,7 @@ function main() {
   console.log(`\nDone. Deleted ${deleted} local branch(es), ${skipped} skipped/failed. Remote was NOT touched. Recovery log: ${logPath}`);
 }
 
-main();
+// Run only when invoked as a script. The tests import `mergedAtRecordedHead`, and without
+// this guard that import would run a branch classification against whatever repository the
+// test runner happens to be sitting in.
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

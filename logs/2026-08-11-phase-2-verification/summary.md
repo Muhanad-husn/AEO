@@ -34,11 +34,11 @@ fail-closed logic, which is what P2.4 is.
 
 | Measure | Value |
 | --- | --- |
-| Acceptance grader | 91 expectations, 91 pass |
-| Planted-defect control | 4 planted, 4 caught |
+| Acceptance grader | 92 expectations, 92 pass |
+| Planted-defect control | 6 planted, 6 caught |
 | Fast tier | 139 pass, 0 fail |
-| Integration tier | 486 tests, 485 pass, 1 skipped |
-| Tests added this phase | 49 |
+| Integration tier | 497 tests, 496 pass, 1 skipped |
+| Tests added this phase | 60 |
 
 The one skip is a platform-conditional directory-link case in `review-jail.test.mjs`, not
 a guarded group silently declining to run.
@@ -153,9 +153,38 @@ that uses it this tool never deletes anything — it degrades silently into a re
 means the first live exercise of `safe-cleanup` was the thing that found it. No unit test
 would have: the fixtures merge by fast-forward.
 
-The fix is an exact identity check, not a heuristic — PR state `MERGED` **and** branch head
-SHA equal to the PR's head SHA — so it clears the tripwire on hand-tuned constants. It
-widens what a destructive tool will delete, so it waits on the founder. Carried, not fixed.
+**Fixed, on founder approval.** The rule is an exact identity check, not a heuristic: a
+merged PR whose recorded head SHA equals the branch head releases the branch. No threshold,
+no tunable, nothing to defend. Both cases the old rule existed to defeat still hold — a
+post-merge commit moves the head, and a reused branch name is a different commit, so the
+SHAs differ and the branch is kept either way. Every merged PR on the branch is checked
+rather than the first.
+
+The delete-time re-verification had to change with it. It re-ran the cherry check, which a
+squash-merged branch fails by construction, so classification would have said `merged` and
+the delete step would have skipped it — the tool would still have deleted nothing. It now
+re-asks whichever question the branch was classified on.
+
+Same run, after the fix:
+
+```
+fix/1-running-total-input-guard  merged  2  0d  5  PR #2 merged this exact head (14f1681) — squashed into main
+Summary: 1 merged · 0 abandoned · 0 ahead-of-merged-pr (kept) · 0 open-PR (kept) · 1 local-only/unknown (kept)
+```
+
+`feat/e2e` stayed kept, so the keep-set is not hollow and L-05's guard is unaffected.
+
+Two planted defects were used as controls, both caught: matching on a SHA prefix (1 test
+fails) and dropping the SHA comparison entirely, which is the "delete any branch with a
+merged PR" catastrophe (5 tests fail). Nine new tests, all against PR records handed to the
+rule directly — `gh` cannot be shimmed on Windows, so the CLI cannot be driven into this
+state from a test. One further test pins the premise with real git: it squash-merges a
+branch and asserts `git cherry` still reports every commit absent. If that ever stops
+holding, the test says why the rule exists.
+
+The apply run that would retire the branch is refused by the permission classifier, so the
+branch is still present locally and on the remote. The tool never touches remotes by design
+in any case.
 
 ### The finding this half produced
 

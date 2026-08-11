@@ -32,11 +32,17 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
 
 const SCRIPT = path.resolve(
   import.meta.dirname,
   '../../plugin/skills/safe-cleanup/scripts/classify-branches.mjs',
 );
+
+// Importing the script is only safe because it guards `main()` behind an
+// invoked-as-a-script check. Without that guard this import would classify branches in
+// whatever repository the runner is sitting in — which is this one.
+const { mergedAtRecordedHead } = await import(pathToFileURL(SCRIPT).href);
 
 const scratch = [];
 after(() => {
@@ -247,6 +253,121 @@ describe('a failed gh pr list is missing data, never "no PRs"', () => {
 // ---------------------------------------------------------------------------
 // The guarantees the port must not have broken
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// The squash merge, which `git cherry` cannot see
+// ---------------------------------------------------------------------------
+//
+// Found by the first live run rather than by any test here, and no fixture in this file
+// could have found it: they all merge by fast-forward. On a repository that squash-merges,
+// which is GitHub's most common setting, the tool kept every branch and deleted nothing.
+//
+// The rule is asserted against PR records handed to it directly. `gh` cannot be shimmed on
+// Windows (see the preamble), so the CLI path cannot be driven into this state from a test
+// — the premise test below covers the git half, the unit tests cover the decision, and the
+// join of the two ran live against the testbed.
+
+describe('git cherry does not see a squash merge — the premise of the whole rule', () => {
+  test('a squash-merged branch still reports every commit as absent from the base', () => {
+    const dir = makeRepo({ branches: [{ name: 'feat/squashed', ahead: true }] });
+    git(dir, ['checkout', '-q', 'feat/squashed']);
+    writeFileSync(path.join(dir, 'second.txt'), 'y\n');
+    git(dir, ['add', '.']);
+    git(dir, ['commit', '-q', '-m', 'second commit on the branch']);
+    git(dir, ['checkout', '-q', 'main']);
+    git(dir, ['merge', '--squash', 'feat/squashed']);
+    git(dir, ['commit', '-q', '-m', 'squashed feat/squashed into main']);
+
+    // The content is in main...
+    assert.ok(existsSync(path.join(dir, 'second.txt')), 'the squash must have brought the content over');
+    // ...and git still says none of the branch's commits are there, because a squash does
+    // not preserve their patch-ids. This is exactly what made the tool keep the branch.
+    const cherry = git(dir, ['cherry', 'main', 'feat/squashed']).trim();
+    assert.ok(
+      cherry.split('\n').filter(l => l.startsWith('+')).length > 0,
+      'if this ever stops holding, the head-identity rule is no longer needed',
+    );
+    let isAncestor = true;
+    try { git(dir, ['merge-base', '--is-ancestor', 'feat/squashed', 'main']); }
+    catch { isAncestor = false; }
+    assert.equal(isAncestor, false, 'a squashed branch is not an ancestor of the base either');
+  });
+});
+
+describe('a merged PR that recorded this exact head releases the branch', () => {
+  const HEAD = 'a'.repeat(40);
+  const OTHER = 'b'.repeat(40);
+
+  test('the branch tip is the head the forge merged', () => {
+    const pr = { number: 2, state: 'MERGED', headRefOid: HEAD };
+    assert.equal(mergedAtRecordedHead(HEAD, [pr]), pr);
+  });
+
+  test('a branch that moved past the merged head is not released', () => {
+    // Post-merge commits: the case the ahead-of-merged-pr rule exists for. Still kept.
+    assert.equal(mergedAtRecordedHead(OTHER, [{ number: 2, state: 'MERGED', headRefOid: HEAD }]), null);
+  });
+
+  test('a reused branch name is not released, because it is a different commit', () => {
+    // Same branch name, new work, old merged PR still on record. The name matches and the
+    // SHA does not, which is the whole point of deciding on the SHA.
+    assert.equal(mergedAtRecordedHead(OTHER, [{ number: 7, state: 'MERGED', headRefOid: HEAD }]), null);
+  });
+
+  test('every merged PR on the branch is checked, not just the first', () => {
+    const older = { number: 1, state: 'MERGED', headRefOid: HEAD };
+    const newer = { number: 9, state: 'MERGED', headRefOid: OTHER };
+    assert.equal(mergedAtRecordedHead(HEAD, [newer, older]), older);
+  });
+
+  test('a merged PR with no recorded head releases nothing', () => {
+    // An older gh, or a forge whose record omits the field. Missing data is not a match:
+    // the branch stays kept, which is the same answer as before this rule existed.
+    assert.equal(mergedAtRecordedHead(HEAD, [{ number: 2, state: 'MERGED' }]), null);
+    assert.equal(mergedAtRecordedHead(HEAD, [{ number: 2, state: 'MERGED', headRefOid: null }]), null);
+    assert.equal(mergedAtRecordedHead(HEAD, [{ number: 2, state: 'MERGED', headRefOid: '' }]), null);
+  });
+
+  test('a prefix of the merged head is not the merged head', () => {
+    // Abbreviated SHAs are everywhere in git output. A prefix match here would release a
+    // branch on a substring, so the comparison is whole-value (V-12's shape).
+    assert.equal(mergedAtRecordedHead(HEAD.slice(0, 7), [{ number: 2, state: 'MERGED', headRefOid: HEAD }]), null);
+    assert.equal(mergedAtRecordedHead(HEAD, [{ number: 2, state: 'MERGED', headRefOid: HEAD.slice(0, 7) }]), null);
+  });
+
+  test('an unusable branch SHA or PR list releases nothing', () => {
+    assert.equal(mergedAtRecordedHead('', [{ number: 2, state: 'MERGED', headRefOid: HEAD }]), null);
+    assert.equal(mergedAtRecordedHead(null, [{ number: 2, state: 'MERGED', headRefOid: HEAD }]), null);
+    assert.equal(mergedAtRecordedHead(HEAD, []), null);
+    assert.equal(mergedAtRecordedHead(HEAD, null), null);
+    assert.equal(mergedAtRecordedHead(HEAD, undefined), null);
+  });
+
+  test('the script asks the forge for the head SHA it merged', () => {
+    // The rule cannot fire on data that was never requested. This pins the gh query, which
+    // is the one part of the join a unit test cannot reach.
+    const source = readFileSync(SCRIPT, 'utf8');
+    assert.match(source, /'pr', 'list'[\s\S]*?headRefOid/);
+  });
+
+  test('a squash-classified branch is re-verified on head identity, not on cherry', () => {
+    // Re-running the cherry check at delete time would refuse every branch this rule
+    // releases, by construction — the classification would say merged and the delete step
+    // would skip it, and the tool would still delete nothing.
+    const source = readFileSync(SCRIPT, 'utf8');
+    assert.match(source, /if \(r\.mergedHeadOid\)/);
+    assert.match(source, /head moved to/);
+  });
+
+  test('importing the script does not classify anything', () => {
+    // The export only exists because the tests need it. If the import ran main(), it would
+    // run against this repository, and every test in this file would be sitting downstream
+    // of a real branch classification.
+    const source = readFileSync(SCRIPT, 'utf8');
+    assert.doesNotMatch(source, /^main\(\);$/m);
+    assert.match(source, /fileURLToPath\(import\.meta\.url\)\) main\(\);/);
+  });
+});
 
 describe('the pre-existing safety guarantees still hold', () => {
   test('--apply without --yes refuses, before either new guard is consulted', () => {
