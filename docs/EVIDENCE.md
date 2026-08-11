@@ -27,6 +27,7 @@ build requirement or a decision input.
 | **C-07** | Subagents run in the background by default and lose tools there | Phase 2 |
 | **C-08** | No dispatch-time tool restriction; only `permissions.deny` reaches subagents | Phase 0 |
 | **C-09** | Manifest, marketplace and `${CLAUDE_PLUGIN_ROOT}` specifics | Phase 0 · Phase 7 |
+| **C-10** | Claude 5 context guidance: author skills lean; don't port verification prose | Phase 2 |
 | **V-01** | The v1 red-commit escape hatch is still live | P1.3 |
 | **V-02** | `block-merge` carries two fixes the skill never absorbed | P1.2 |
 | **V-03** | `format` still uses `CLAUDE_PROJECT_DIR` | closed by [D13](DECISIONS.md) |
@@ -208,6 +209,49 @@ subagents — the bootstrap guardrail until Phase 1 lands.
 - Marketplace: `.claude-plugin/marketplace.json` at repo root; requires `name`,
   `owner`, `plugins`. Each entry requires only `name` and `source` — a relative path
   when the plugin lives in the same repo.
+
+### C-10 — Claude 5 context guidance: author skills lean, don't port verification prose
+
+`https://claude.com/blog/the-new-rules-of-context-engineering-for-claude-5-generation-models`
+(published 2026-07-24; checked 2026-08-11)
+
+Anthropic removed over 80% of Claude Code's *own* system prompt for the Claude 5
+generation with no measured regression on coding evals, and published the guidance
+that follows from it:
+
+- CLAUDE.md files stay lightweight — describe what the repo is for, spend tokens on
+  gotchas, not on restating the obvious.
+- Skills are "lightweight guides to let Claude find information when needed." Avoid
+  overconstraining them "except in highly important areas"; split long skills into
+  many progressively-loaded files.
+- Prefer code-shaped references (a mockup, a test suite) over prose descriptions.
+- Explicit verification instructions cause over-verification on Claude 5 models;
+  their removal cut wasted tokens with no quality loss. Verification guidance
+  belongs in selectively-loaded skills, not upfront prompts.
+- A `/doctor` command now exists to rightsize skills and CLAUDE.md files.
+
+Secondary coverage widely misreports this as "delete 80% of your docs" or "CLAUDE.md
+is deprecated." Neither appears in the post. Verify claims about it against the post
+itself.
+
+**What changes.** The Phase 2 port is a re-authoring, not a copy. The vendored
+skill's charters and skills were written for the generation that needed explicit
+constraint stacks; ported verbatim they are now actively counterproductive. Three
+rules for every Phase 2 artifact:
+
+1. **Never restate in prose what a gate enforces.** Enforcement lives in
+   `hooks/hooks.json` (C-01). A charter line that duplicates a gate is dead weight
+   at best and an instruction conflict at worst.
+2. **Drop explicit verify-your-work instructions from agent prompts.** The test
+   gate is the verification; prose repetition of it triggers over-verification.
+3. **Overconstrain only the genuinely critical:** merge authority, reviewer
+   isolation (L-01), data-safety rules (L-02/L-03). Everything else states intent
+   and trusts judgment.
+
+**What does not change.** Phase 1 is untouched — deterministic gates outside the
+prompt are exactly the direction this guidance points. The dispositions in
+[DECISIONS.md](DECISIONS.md) already assume lean skills; this sharpens the bar,
+it does not move any phase.
 
 ---
 
