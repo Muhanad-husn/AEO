@@ -10,6 +10,35 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-11 — One decision from Phase 2
+
+### D23 — The trigger eval moves to Phase 6, where the tuning tool already is
+
+**Problem.** [`PLAN.md`](PLAN.md) puts the trigger eval inside P2.M — "re-run the
+trigger eval over the five description-triggered skills" — and then separately gives
+Phase 6 a `skill-creator` pass over **the same five skills** for trigger accuracy. Two
+phases, one measurement, one set of files.
+
+Running it in Phase 2 also measures the wrong moment. A trigger eval scores whether a
+description fires when it should. Phase 6 is where descriptions get tuned, so a Phase 2
+number is a reading of text that is scheduled to change, and the Phase 6 pass would
+re-roll it. L-10 records what that costs: a one-word cosmetic relabel once re-rolled 93
+of 176 results.
+
+**Decision.** The trigger eval belongs to Phase 6, run once, against the descriptions
+`skill-creator` produces. P2.M keeps only the acceptance grader, which is what the
+plugin-shaped rewrite of `grade_repo.py` actually replaces. Approved by the founder at
+Checkpoint 2.
+
+**Impact.** Checkpoint 2 closes with no trigger-accuracy number, and that gap is stated
+in the checkpoint record rather than left to be noticed. Phase 6 gains the measurement
+its tuning pass needs to be judged by, which it did not previously have — the pass was
+specified with no before-and-after.
+
+**What this does not license.** Phase 6 may not tune a description and declare it
+improved without the eval. A tuning pass with no measurement is the thing principle 6
+exists to prevent.
+
 ## 2026-08-07 — Two decisions closing Phase 1
 
 Both taken by the founder at the Phase 1 close, in response to costs the phase

@@ -202,14 +202,19 @@ as the skill it replaces.
 
 **The measurement slice (P2.M, Opus).** `grade_repo.py` grades a scaffolded
 `.claude/{agents,skills,hooks}` tree that the plugin no longer produces — every check
-would fail by design. Rewrite it as a plugin-shaped acceptance grader, refresh the two
-structural evals for the new shape, and re-run the trigger eval over the five
-description-triggered skills. Read L-10 before reading any number: measure the noise floor
-first, and diff what flipped rather than the totals.
+would fail by design. Rewrite it as a plugin-shaped acceptance grader. Read L-10 before
+reading any number: state the noise floor, diff what flipped rather than the totals, and
+plant known defects to confirm the grader catches them before trusting a clean score.
+
+**The trigger eval is not in this phase** ([D23](DECISIONS.md)). It scores whether a
+description fires when it should, and Phase 6 is where descriptions get tuned — so a
+number taken here reads text that is scheduled to change, and Phase 6's `skill-creator`
+pass over the same five skills would re-roll it.
 
 **Verify:** a throwaway issue goes idea → `/aeo:sprint-start` → prepared PR on a scratch
-repo, with no manual git; the refreshed benchmark is at or above the vendored skill's
-baseline, with the noise floor stated.
+repo, with no manual git; the acceptance grader is clean against the plugin tree, with
+its positive control reported and its limits stated. **No trigger-accuracy number closes
+this checkpoint** — that gap is recorded, not quietly carried.
 **⛔ CHECKPOINT 2.**
 
 ## Phase 3 — Observability
@@ -282,6 +287,10 @@ only on files neither had created yet.
   gitignored-harness problem instead of solving it (V-06).
 - `skill-creator` pass on the five description-triggered skills and the scaffolder's, for
   trigger accuracy. The six lanes are excluded; they do not trigger on description.
+- **The trigger eval runs here, once, and it is what judges that pass**
+  ([D23](DECISIONS.md)). Moved out of P2.M so the measurement lands against the
+  descriptions the tuning produces rather than the ones it is about to replace. A tuned
+  description with no before-and-after is not an improvement, it is a claim.
 
 **Verify:** scaffolding a fresh repo on a non-Python stack produces a working org;
 `/aeo:status` reflects reality with no hand-maintained file.
