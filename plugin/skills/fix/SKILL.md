@@ -1,19 +1,53 @@
 ---
 name: fix
-description: Take a small, scoped fix — a bug, a rename, a config or dependency tweak, a copy change — straight from description to a reviewed PR in one builder dispatch, skipping sprint-planning ceremony but not the commit and merge gates. Bounces anything feature-scale back to sprint-start. Use when asked for a quick fix, or handed a small, well-defined change.
+description: Take a small, scoped fix — a bug, a rename, a config or dependency tweak, a copy change — straight from description to a founder-approved PR in one builder dispatch, skipping sprint-planning ceremony and the reviewer stage, but not the commit and merge gates. Bounces anything feature-scale back to sprint-start. Use when asked for a quick fix, or handed a small, well-defined change.
 disable-model-invocation: true
 ---
 
 # Fix — the fast lane
 
-The scope check is the whole skill: if it fits in one sentence and doesn't
-need a planned issue, cut a worktree straight from the default branch,
-dispatch the builder with the scoped description, and prepare the PR with
-`safe-pr`. No slice plan, no test-author relay, no reviewer stage unless
-the founder asks for one. Still gated — the commit hook and the merge
-block bind exactly as they do on the sprint lane.
+One judgement call, one dispatch, one PR. The lane skips ceremony, not
+gates.
 
-**Ports from** `source/axial/dot-claude/skills/fix/SKILL.md`.
+## Procedure
 
-**Changes on port:** the same worktree-vs-main-checkout split noted in
-`sprint-start` generalizes the same way here. Full port lands in Phase 2.
+1. **Scope check.** Fix-sized: a bug, a rename, a config or dependency
+   tweak, a copy change, a small behavioural correction. Feature-scale
+   work (a new behaviour surface, a new module, anything that deserves a
+   planned issue) bounces to `sprint-start`. When in doubt, it's a slice,
+   not a fix. The same check decides review: if the change turns out to
+   touch a shared, widely-depended-on module or core config or dependency
+   wiring, it has stopped being fix-sized. Bounce it rather than pushing
+   it through unreviewed.
+
+2. **Cut the worktree** from the default branch. As in `sprint-start`,
+   name anything the project's build needs that a fresh worktree won't
+   inherit, and run whatever depends on it in the main checkout instead.
+   Most fixes have nothing like that.
+
+3. **Dispatch the builder** with the scoped description. For a
+   behavioural bug: a regression test that fails before the fix and
+   passes after, committed with it. For a non-behavioural change: the
+   existing suite is the oracle. It runs its own tests locally, and if
+   the fix touches a module with outer acceptance contracts, it either
+   runs those locally too or the PR waits for CI green before approval is
+   requested. If the fix moves behaviour the spec describes, the builder
+   updates the spec in the same branch. No test-author relay and no
+   reviewer stage.
+
+4. **Stay in the lane.** A BLOCKED report on scope creep stops the
+   session and routes to `sprint-start`.
+
+5. **Prepare the PR** with `safe-pr`. Note any spec edit in one line of
+   the PR body. The lane stops here.
+
+6. **Report and pause.** Post the PR link, report `DONE`. The
+   orchestrator merges only on the founder's explicit "approved", then
+   runs `safe-cleanup` and removes the worktree.
+
+## Invariants
+
+- One fix = one worktree = one branch = one PR. Never batch, never merge
+  without founder approval.
+- Statuses: DONE, DONE_WITH_CONCERNS, BLOCKED, NEEDS_CONTEXT. Concerns go
+  to the PR or issue thread.

@@ -6,14 +6,15 @@ disable-model-invocation: true
 
 # Triage — entry point
 
-Hands the founder's request and its relevant context — idea text, issue
-numbers, spec sections — to the triage role, which reads the code and the
-backlog through the GitHub issue tools and comes back with a
-scoping/decomposition/priority proposal. It writes no code and files
-nothing; the founder acts on the proposal through `sprint-plan`'s
-draft-then-approve flow, or by approving a single issue directly.
+Dispatch the triage role with the founder's request and whatever context
+bears on it: idea text, issue numbers, spec sections. It reads code and
+the backlog through the GitHub issue tools and comes back with a
+scoping, decomposition, or priority proposal.
 
-**Ports from** `source/axial/dot-claude/skills/triage/SKILL.md`.
+Triage writes no code and files nothing. Every proposal carries its
+options, a recommendation, and its cost; the founder decides. Issue
+creation itself follows `sprint-plan`'s draft-then-approve flow, or, for
+one quick issue, draft the body, show the founder, file on approval.
 
-**Changes on port:** near-verbatim — this skill is already stack-agnostic.
-Full port lands in Phase 2, alongside the triage agent role built in P0.3.
+Being read-only, triage can run alongside other read-only work (a
+review, a research pass) with no worktree and no coordination needed.
