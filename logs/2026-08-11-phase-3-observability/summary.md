@@ -117,7 +117,7 @@ job raise its own sentinel with `process.pid` or `os.getpid()`, and gives the
 per-shell table for when a shell must do it, with `WINPID` for Git Bash. The
 `EXITED` verdict was not weakened to paper over it.
 
-## Open, and awaiting a decision
+## The second consequence, and its fix (P3.5, `b760272`)
 
 The same wrong pid has a second consequence, found while writing up the first and
 worse than it. `hooks/sentinel.mjs` decides a sentinel is stale by asking
@@ -132,11 +132,24 @@ A stale sentinel does not block. So a long job raised that way silently loses th
 protection the sentinel exists to give it, and a concurrent session's commit gate
 can run the suite and kill it — L-02's incident, exactly.
 
-Documentation now warns about it in three places, but a gate that fails open on a
-wrong pid is still a gate that fails open. The proposed fix is one check at the
-raising end: `run-sentinel start` refuses a pid that is not alive at raise time,
-so an unresolvable pid can never be recorded. Not built; it is the founder's
-call, and it is the only thing Phase 3 leaves open.
+Documentation warns about it in three places, but a gate that fails open on a
+wrong pid is still a gate that fails open. The founder approved the fix and it
+landed: `run-sentinel start` checks the pid against the OS process table before
+writing anything, and refuses with a non-zero exit and no file. Raise time is the
+only moment without ambiguity, because the process is supposed to be running right
+then; every downstream reader has to treat "cannot resolve" and "resolved and gone"
+as one fact. `processAlive` is exported from the guard rather than copied, so both
+checks read the same table through the same code, and `inspectRuns`'s stale rule is
+untouched. No override flag.
+
+The check is not total, and the residue fails in the safe direction.
+`process.kill(pid, 0)` counts access-denied as alive, deliberately, because a job
+running as another user is still a job. A wrong pid landing on that path is
+accepted, the sentinel stands, and a commit is blocked rather than a guard
+dropped. Both directions were measured here: MSYS pid 13760 is refused, while
+15517 reads alive through that path. The monitor can still report `EXITED` for
+that second case, since its CPU probe resolves the pid differently; that is the
+documented false alarm its reason line already names.
 
 ## Carried forward
 
