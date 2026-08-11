@@ -7,31 +7,96 @@ description: Safely retire local feature branches once their pull requests have 
 
 The companion to `safe-pr`: once a PR is done, this classifies every local
 branch against the base branch and the PR state, shows the founder the
-table, and deletes only the categories approved — merged branches by
-default, abandoned ones only on explicit opt-in. Dry-run until confirmed;
-a recovery log with every deleted branch's SHA is written before any
-deletion.
+table, and deletes only the categories approved. Same posture as `safe-pr` —
+report first, confirm before deleting, keep everything recoverable.
+**Local branches only** — this skill never touches the remote.
 
-**Ports from**
-`source/upstream-red-green-refactor/.agents/skills/safe-cleanup/SKILL.md`,
-upstream at `593e7ab`. The executable (`scripts/classify-branches.mjs`) is
-byte-identical between upstream and the prior production copy, and audited
-clean: dry-run by default, `--apply --yes` plus an explicit category flag,
-a static protected set, a recovery log of every deleted SHA written before
-deletion, and refusal on a detached HEAD or an ambiguous base. None of
-that is L-05's guard — its only length check (`if (!toDelete.length)`)
-guards the *delete* set being empty. L-05 (`docs/EVIDENCE.md`) is the
-opposite direction: an empty or suspiciously small *keep* set, which is
-what running in the wrong working directory produces, and which makes
-every artifact look orphaned.
+Classification lives in
+`${CLAUDE_PLUGIN_ROOT}/skills/safe-cleanup/scripts/classify-branches.mjs`,
+cross-referencing git merge status and `gh` PR state. Dry-run by default;
+deletes nothing without `--apply --yes` plus the category approved.
 
-**Changes on port:** L-05's fail-closed abort on an empty or suspiciously
-small keep-set is added during the Phase 2 port, not merely verified —
-with no override flag, raised before any confirmation prompt, logging, or
-deletion. The port also closes a related hazard: `gh()` returns `null` on
-failure and the PR-list loop swallows the error, so a failed `gh pr list`
-silently clears PR data for every branch rather than reporting "no open
-PRs" — which can let a branch an open PR would otherwise protect fall
-through to the ancestor-merged rule and be deleted. The port must treat
-that failure as missing data, not as an all-clear. Full port lands in
-Phase 2.
+## What counts as what
+
+| Bucket | Meaning | Default action |
+|---|---|---|
+| **merged** | Commits already in the base (ancestor), or PR merged and `git cherry` confirms every commit is present in the base | Eligible to delete (after confirmation) |
+| **ahead-of-merged-pr** | PR merged, but the branch carries extra commits not in the base (reused name, or commits pushed after merge) | Never delete — report only |
+| **abandoned** | PR closed without merging — carries commits not in the base | Delete only on explicit opt-in; recoverable via reflog or the log only |
+| **open-pr** | Has an open PR — active work, wins even if the branch is an ancestor of the base | Never delete |
+| **local-only** | Unmerged local commits, no PR (possible WIP) | Never auto-delete — report only |
+| **protected** | base / `main`/`master`/`develop`/`release`, the current branch | Never delete |
+
+If `gh` or the remote is unavailable, or a lookup fails, PR-based buckets
+can't be determined — only git-merged branches are eligible, and the report
+says so.
+
+## Procedure
+
+1. Freshen the base branch first (`git fetch origin` plus fast-forward, if
+   there's a remote), then run from the repo root, ideally with the base
+   branch checked out — the current branch is always protected, so a
+   feature branch can only become eligible once it's no longer current. The
+   script refuses to run on a detached HEAD, since the current branch must
+   be well-defined to protect it.
+2. Dry-run report — deletes nothing:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/skills/safe-cleanup/scripts/classify-branches.mjs"
+   ```
+
+   Show the founder the table and the summary (merged / abandoned / kept
+   counts).
+3. Confirm. Explain the buckets in plain terms: merged branches are safe
+   (their work is in the base, or their PR merged); abandoned branches
+   carry commits not in the base, so deleting them drops that work,
+   recoverable only via `git reflog` for a limited window; open-pr and
+   local-only branches stay untouched regardless. Get an explicit go-ahead
+   for the merged set, and a **separate** one for the abandoned set if the
+   founder wants those gone too.
+4. Apply — delete only the approved categories, writing a recovery log
+   first:
+
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/skills/safe-cleanup/scripts/classify-branches.mjs" --apply --yes --delete-merged
+   ```
+
+   The recovery log (`.tdd-branch-cleanup.log` by default, or `--log
+   <path>`) is written before any deletion, and the run aborts if it can't
+   be written. Add `--delete-abandoned` only if the founder approved that
+   set. `--protected name1,name2` shields extra branches; `--base <branch>`
+   overrides base-branch detection.
+5. Report which branches were deleted, and surface the recovery block
+   (`branch → SHA`) — restoring one is `git branch <name> <sha>`.
+6. If a deleted branch's slice plan still reads in-progress, update it and
+   the feature README to reflect the merge.
+
+## Safety rules (non-negotiable)
+
+- **Fails closed on a hollow keep-set.** The delete-set-empty case is
+  already guarded; the risk runs the other way. An empty or suspiciously
+  small keep-set — the branches confirmed protected, merged, or otherwise
+  ineligible — is what running from the wrong working directory produces,
+  and it makes every branch look orphaned. That state is a hard failure
+  raised before any report, confirmation prompt, or deletion, with no
+  override flag: an override is exactly what gets reached for at 2am.
+- **A failed `gh pr list` is missing data, not an all-clear.** If the call
+  errors, PR state for every branch is unknown, not "no open PRs" — a
+  branch an open PR would otherwise protect must never fall through the
+  merged-ancestor rule as a result of that failure.
+- Local only — never touch a remote branch from this skill; that's a
+  deliberate, separate action the founder drives themselves.
+- Never delete the default branch, the current branch, another protected
+  branch, or any branch with an open PR.
+- Never force-delete unmerged local work (`local-only` with unique commits)
+  — report it and let the founder decide per branch.
+- Safe delete (`git branch -d`) for git-merged branches; `-D` only for
+  PR-confirmed-merged or explicitly approved abandoned branches, SHA logged
+  first, re-verified at the moment of deletion.
+- Dry-run is the default. Nothing applies until the founder has seen the
+  report and confirmed.
+
+## When to run
+
+After PRs merge — straight after `safe-pr` reports one, or periodically.
+`safe-pr` opens the PR; this retires the branch once that PR is done.
