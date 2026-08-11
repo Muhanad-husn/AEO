@@ -1,0 +1,43 @@
+# Template: Python unit tests with pytest.
+# Customise: Python version, dependency install (requirements.txt / pyproject / poetry), and the test command.
+#
+# PROJECT IN A SUBDIRECTORY? If the app is NOT at the repo root, set `defaults.run.working-directory` to the
+# app dir (affects every `run:` step) and point `cache-dependency-path` at that dir's lockfile/requirements
+# (resolved from the REPO ROOT). If the app IS at the repo root, delete the `defaults:` block and the
+# `cache-dependency-path:` line.
+#
+# Verify action versions in GitHub Actions repositories (e.g., github.com/actions/setup-python/releases) before committing.
+name: Unit
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+defaults:
+  run:
+    working-directory: .            # <-- app dir from repo root, e.g. services/api (delete this block if repo root)
+
+jobs:
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"     # set to the project's supported version
+          cache: pip
+          cache-dependency-path: requirements.txt   # <-- repo-root-relative, e.g. services/api/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # ^ Replace the single line above with the ONE that matches the project:
+          #     pip install -e ".[test]"
+          #     poetry install --with dev
+
+      - name: Run unit tests
+        run: pytest -q
