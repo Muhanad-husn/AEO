@@ -21,14 +21,19 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "^Bash$",
+        "matcher": "^(Bash|Edit|Write|MultiEdit|NotebookEdit|Read|NotebookRead)$",
         "hooks": [
           {
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/sandbox-guard.mjs"],
             "timeout": 10
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "^Bash$",
+        "hooks": [
           {
             "type": "command",
             "command": "node",

@@ -1,8 +1,9 @@
 // AEO sandbox guard: production data is not reachable from a session, and a live long
 // job is not run over.
 //
-// PreToolUse on Bash. It decides from stdin rather than from an `if:` filter, because
-// `if:` fails open on an unparseable command and is never the security boundary (C-04).
+// PreToolUse on Bash and on the tools that read or write a file directly. It decides from
+// stdin rather than from an `if:` filter, because `if:` fails open on an unparseable
+// command and is never the security boundary (C-04).
 //
 // WHY THIS EXISTS. Three real incidents, months apart, all invisible in CI because CI
 // has no data directory (L-03):
@@ -60,7 +61,7 @@ import { realpathSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { block, commandSegments, isPathInside, normalizeHookPath, operationDirs, runGate } from './lib.mjs';
+import { block, commandSegments, isPathInside, normalizeHookPath, operationDirs, runGate, toolFilePath } from './lib.mjs';
 import { projectAnchor, runInProgress } from './sentinel.mjs';
 import { resolveTestPlan } from './stack.mjs';
 
@@ -72,6 +73,24 @@ export const DATA_ROOT_ENV = 'AEO_DATA_ROOT';
 
 const NO_OVERRIDE =
   'There is no override flag. That is deliberate (L-05): an override is what you reach for at 2am.';
+
+/**
+ * The tools that name their target in the payload instead of inside a shell command, and
+ * which hooks.json's matcher for this gate must therefore list alongside Bash.
+ *
+ * A smoke test of the installed plugin found the hole this set closes. The matcher was
+ * `^Bash$`, so `cat <file inside production data>` was refused while a Write that CREATED
+ * a file inside the production data root was not gated at all, and a Read of a file inside
+ * it went through freely. Production data does not care which tool reached it.
+ *
+ * READS ARE IN SCOPE, by the same evidence the rest of this gate is built on: L-03's
+ * second incident is six test call-sites silently READING a live 49,674-entry index.
+ *
+ * Glob and Grep are not here. They name a pattern plus an optional root rather than a
+ * file, which is a wider surface than this fix, and a matcher wider than the set the gate
+ * actually judges reads as covered while it is not.
+ */
+const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'NotebookRead']);
 
 function note(message) {
   try {
@@ -318,6 +337,11 @@ function checkSeam(live, data, dataSource) {
 /** @param {object} payload */
 export function sandboxGuard(payload) {
   const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
+  const tool = typeof payload?.tool_name === 'string' ? payload.tool_name : '';
+  const fileTool = FILE_TOOLS.has(tool);
+
+  const walk = operationDirs(payload);
+  const dirs = walk.dirs.filter((d) => path.isAbsolute(d));
 
   // 1. A live long job (L-02). Read first and read cheaply: no git process, one readdir,
   //    and nothing else happens until a sentinel is actually present.
@@ -325,18 +349,23 @@ export function sandboxGuard(payload) {
   //    Every directory any command on this line runs in, not just the first: `cd
   //    elsewhere && npm test` still burns this machine while a job is live here, so a
   //    sentinel in either project is a sentinel worth honouring.
-  const walk = operationDirs(payload);
-  const dirs = walk.dirs.filter((d) => path.isAbsolute(d));
-  const anchors = [...new Set(dirs.map(projectAnchor).filter((a) => a !== null))];
-  for (const anchor of anchors) {
-    const { reason, notes } = runInProgress(anchor);
-    for (const line of notes) note(`sandbox-guard: ${line}`);
-    if (reason === null) continue;
-    const declared = resolveTestPlan({ toplevel: anchor, files: [] })
-      .units.map((u) => u.command)
-      .filter((c) => Array.isArray(c));
-    const invoked = invokesDeclaredSuite(command, declared);
-    if (invoked !== null) block(`\`${invoked}\` will not run: ${reason}\n${NO_OVERRIDE}`);
+  //
+  //    BASH ONLY. This rule blocks a command that INVOKES the project's declared test
+  //    command, and a file tool invokes nothing, so it can never match. Skipping it
+  //    outright rather than letting it not-match also keeps the sentinel walk off the
+  //    path of every Read and Edit in the session.
+  if (!fileTool) {
+    const anchors = [...new Set(dirs.map(projectAnchor).filter((a) => a !== null))];
+    for (const anchor of anchors) {
+      const { reason, notes } = runInProgress(anchor);
+      for (const line of notes) note(`sandbox-guard: ${line}`);
+      if (reason === null) continue;
+      const declared = resolveTestPlan({ toplevel: anchor, files: [] })
+        .units.map((u) => u.command)
+        .filter((c) => Array.isArray(c));
+      const invoked = invokesDeclaredSuite(command, declared);
+      if (invoked !== null) block(`\`${invoked}\` will not run: ${reason}\n${NO_OVERRIDE}`);
+    }
   }
 
   // 2. The seam (L-03). Everything below needs a declared production data root; without
@@ -348,7 +377,7 @@ export function sandboxGuard(payload) {
   if (live.root === null) {
     block(
       `${LIVE_DATA_ROOT_ENV} is set to ${JSON.stringify(live.raw)}, which is not an absolute path, so the ` +
-        `sandbox guard cannot tell production data from a sandbox and refuses every command. Set it to the ` +
+        `sandbox guard cannot tell production data from a sandbox and refuses every call. Set it to the ` +
         `absolute path of the production data directory, or unset it. ${NO_OVERRIDE}`,
     );
   }
@@ -377,11 +406,22 @@ export function sandboxGuard(payload) {
 
   // 4. Every command on the line gets its own seam, because a prefix assignment binds to
   //    the one command it prefixes.
-  for (const { data, dataSource } of seams) {
-    checkSeam(live, data, dataSource);
+  //
+  //    BASH ONLY, AND DELIBERATELY. This rule exists because a gate cannot see inside a
+  //    child process: it refuses when a child would resolve its data through its own
+  //    defaults, since the guard has no way to check afterwards. A file tool spawns no
+  //    child and passes nothing on. Its target is the single path in the payload, which
+  //    rule 5 reads and judges directly, so the rule's own stated rationale does not
+  //    reach it. Applying it anyway would also make the block unfixable from inside the
+  //    session: what this rule tells you to do is set AEO_DATA_ROOT in
+  //    .claude/settings.json, and writing that file is an Edit.
+  if (!fileTool) {
+    for (const { data, dataSource } of seams) {
+      checkSeam(live, data, dataSource);
+    }
   }
 
-  // 5. A command that names production data outright, whatever the environment says.
+  // 5. A call that names production data outright, whatever the environment says.
   //
   // ONE DIRECTION ONLY: a named path INSIDE the production root blocks; one that
   // CONTAINS it does not. `rm -rf D:/` names an ancestor of production data and is
@@ -392,19 +432,28 @@ export function sandboxGuard(payload) {
   // the seam, which the sweeper reads to decide where to sweep.
   const operationDir = dirs[0] ?? null;
   const liveReal = realise(live.root);
-  for (const candidate of pathCandidates(shellTokens(command))) {
+  // A file tool names exactly one location and names it plainly. A Bash command names as
+  // many as its tokens do, and which of them is a path has to be guessed at.
+  const candidates = fileTool
+    ? [toolFilePath(payload)].filter((p) => p !== null)
+    : pathCandidates(shellTokens(command));
+  for (const candidate of candidates) {
     const named = normalizeHookPath(candidate);
     // A relative token with no directory to resolve against names no location, so there
     // is nothing to test. The environment rule above already governs where the child
     // resolves its own relative paths.
     const resolved = path.isAbsolute(named) ? named : operationDir && path.resolve(operationDir, named);
     if (!resolved) continue;
-    if (isPathInside(liveReal, realise(resolved))) {
-      block(
-        `this command names ${JSON.stringify(candidate)}, which resolves to ${realise(resolved)}, inside the ` +
-          `production data root ${live.root}. A run pointed at production data is refused. ${NO_OVERRIDE}`,
-      );
-    }
+    if (!isPathInside(liveReal, realise(resolved))) continue;
+    block(
+      fileTool
+        ? `this ${tool} targets ${JSON.stringify(candidate)}, which resolves to ${realise(resolved)}, inside the ` +
+            `production data root ${live.root}. Production data is not reachable from a session, reads included: ` +
+            `six test call-sites silently reading a live 49,674-entry index is one of the three incidents this ` +
+            `gate exists for (L-03). ${NO_OVERRIDE}`
+        : `this command names ${JSON.stringify(candidate)}, which resolves to ${realise(resolved)}, inside the ` +
+            `production data root ${live.root}. A run pointed at production data is refused. ${NO_OVERRIDE}`,
+    );
   }
 
   // 6. The directory the command runs IN. pathCandidates skips a token with no separator
@@ -414,6 +463,14 @@ export function sandboxGuard(payload) {
   //    session whose cwd already sits inside it and types no `cd`, and the Bash tool
   //    persists its working directory between calls, so one `cd corpus` reaches both. The
   //    directory is the claim, and the guard already resolved it.
+  //
+  //    BASH ONLY, for the reason the rule is stated in: it covers the paths a command
+  //    names relatively and the guard therefore cannot see. A file tool names one target
+  //    and rule 5 has already judged it, resolved against this same directory when it was
+  //    relative. Running this rule as well would refuse a Write to an absolute path
+  //    OUTSIDE production data purely because the session happened to be sitting inside
+  //    it, and no production data is behind that refusal.
+  if (fileTool) return;
   for (const dir of dirs) {
     if (isPathInside(liveReal, realise(dir))) {
       block(

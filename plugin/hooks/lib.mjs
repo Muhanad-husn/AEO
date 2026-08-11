@@ -283,6 +283,27 @@ export function isAnyAeoRole(payload) {
 }
 
 // ---------------------------------------------------------------------------
+// The target a file tool names
+// ---------------------------------------------------------------------------
+
+/**
+ * The path a file tool's payload names, trimmed, or null when it names none.
+ *
+ * Edit, Write, MultiEdit and Read all name their target `file_path`; NotebookEdit and
+ * NotebookRead name it `notebook_path`. Reading only the first field makes a gate shrug
+ * at every notebook. MultiEdit's `edits` entries carry old/new text and no path of their
+ * own, so the single `file_path` is the whole answer for it too.
+ *
+ * Two gates read this. V-13 is what happens when two gates each derive the same thing.
+ */
+export function toolFilePath(payload) {
+  const raw = payload?.tool_input?.file_path ?? payload?.tool_input?.notebook_path;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+// ---------------------------------------------------------------------------
 // Identity matching (V-12)
 // ---------------------------------------------------------------------------
 

@@ -138,6 +138,26 @@ const bash = (command, cwd, extra = {}) => ({
   ...extra,
 });
 
+/**
+ * A file-tool payload, in the shape each tool really sends. Edit, Write, MultiEdit and
+ * Read name their target `file_path`; NotebookEdit and NotebookRead name it
+ * `notebook_path`. MultiEdit carries its edits beside the one path, not a path per edit.
+ */
+const fileCall = (tool, target, cwd, extra = {}) => {
+  const key = tool.startsWith('Notebook') ? 'notebook_path' : 'file_path';
+  const body =
+    tool === 'MultiEdit'
+      ? { [key]: target, edits: [{ old_string: 'a', new_string: 'b' }] }
+      : tool === 'Write'
+        ? { [key]: target, content: 'x\n' }
+        : tool === 'Edit'
+          ? { [key]: target, old_string: 'a', new_string: 'b' }
+          : { [key]: target };
+  return { session_id: 'test-session', hook_event_name: 'PreToolUse', cwd, tool_name: tool, tool_input: body, ...extra };
+};
+
+const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'NotebookRead'];
+
 function assertBlockedBecause(result, pattern, message) {
   assert.equal(result.status, 2, `${message}: expected exit 2, got ${result.status}\n${result.stderr}`);
   assert.match(result.stderr, /^BLOCKED: /m, `${message}: no BLOCKED line on stderr`);
@@ -155,7 +175,8 @@ const NO_SEAM = /sets no AEO_DATA_ROOT/;
 const SEAM_OVERLAPS = /One contains the other, so this run is pointed at production data/;
 const SEAM_RELATIVE = /is not an absolute\s+path\./;
 const LIVE_RELATIVE = /AEO_LIVE_DATA_ROOT is set to .*which is not an absolute path/;
-const NAMES_LIVE_DATA = /which resolves to .*inside the\s+production data root/;
+const NAMES_LIVE_DATA = /this command names .*which resolves to .*inside the\s+production data root/;
+const TARGETS_LIVE_DATA = /targets .*which resolves to .*inside the\s+production data root/;
 const OPERATES_IN = /this command operates in .*inside the production data root/;
 const LIVE_RUN = /a long job is running and this would execute code alongside it/;
 const SENTINEL_UNREADABLE = /sentinel is present but unreadable/;
@@ -503,6 +524,185 @@ describe('the operation directory', () => {
       ['ls', path.dirname(live)],
     ]) {
       assertAllowed(guard({ payload: bash(command, cwd), env }), `${command} in ${cwd}`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The file tools
+// ---------------------------------------------------------------------------
+//
+// A smoke test of the installed plugin proved the hole these cases close. The gate was
+// matched on `^Bash$` alone, so `cat <file inside production data>` was refused while a
+// Write that CREATED a file inside the production data root was not gated at all, and a
+// Read of a file inside it went through freely. Production data does not care which tool
+// reached it, and reads are in scope by the gate's own evidence: L-03's second incident
+// is six test call-sites silently READING a live 49,674-entry index.
+//
+// The three rules that stay Bash-only have their own cases below, because each is a
+// deliberate decision and a silent change of mind in either direction is the expensive
+// kind.
+
+describe('the file tools', () => {
+  test('every file tool blocks on a target inside production data', () => {
+    const { live, sandbox } = roots();
+    const cwd = tempDir();
+    const target = path.join(live, 'corpus', 'guard-probe.txt');
+    for (const tool of FILE_TOOLS) {
+      assertBlockedBecause(
+        guard({ payload: fileCall(tool, target, cwd), env: { [LIVE]: live, [DATA]: sandbox } }),
+        TARGETS_LIVE_DATA,
+        `${tool} into production data`,
+      );
+    }
+  });
+
+  // The probe's exact shape: a Write that CREATES a file that is not there yet, which is
+  // the case a containment check over an existing path would miss.
+  test('a Write creating a new file inside production data blocks', () => {
+    const { live, sandbox } = roots();
+    const target = path.join(live, 'corpus', 'guard-probe.txt');
+    assert.equal(existsSync(target), false, 'the probe target must not exist for this case to mean anything');
+    assertBlockedBecause(
+      guard({ payload: fileCall('Write', target, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
+      TARGETS_LIVE_DATA,
+      'Write of a file that does not exist yet',
+    );
+  });
+
+  test('a Read of a file inside production data blocks, and names it', () => {
+    const { live, sandbox } = roots();
+    const target = path.join(live, 'index', 'entries.jsonl');
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, '{}\n');
+    const r = guard({ payload: fileCall('Read', target, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } });
+    assertBlockedBecause(r, TARGETS_LIVE_DATA, 'Read inside production data');
+    assert.match(r.stderr, /49,674-entry index/, 'the block does not say why a read is in scope');
+    assert.match(r.stderr, /There is no override flag/, 'the block does not end with the no-override sentence');
+  });
+
+  test('every file tool allows a target outside production data', () => {
+    const { live, sandbox } = roots();
+    const cwd = tempDir();
+    for (const tool of FILE_TOOLS) {
+      assertAllowed(
+        guard({ payload: fileCall(tool, path.join(sandbox, 'notes.md'), cwd), env: { [LIVE]: live, [DATA]: sandbox } }),
+        `${tool} outside production data`,
+      );
+    }
+  });
+
+  test('with no production data root declared the guard is silent for every file tool', () => {
+    const { live, sandbox } = roots();
+    const cwd = tempDir();
+    for (const tool of FILE_TOOLS) {
+      for (const env of [{}, { [LIVE]: '' }, { [DATA]: sandbox }]) {
+        assertAllowed(
+          guard({ payload: fileCall(tool, path.join(live, 'corpus', 'x.txt'), cwd), env }),
+          `${tool} with env ${JSON.stringify(env)}`,
+        );
+      }
+    }
+  });
+
+  test('a relative target resolves against the session directory', () => {
+    const { live, sandbox } = roots();
+    assertBlockedBecause(
+      guard({ payload: fileCall('Write', 'corpus/x.txt', live), env: { [LIVE]: live, [DATA]: sandbox } }),
+      TARGETS_LIVE_DATA,
+      'relative target, session sitting in production data',
+    );
+    assertAllowed(
+      guard({ payload: fileCall('Write', 'corpus/x.txt', sandbox), env: { [LIVE]: live, [DATA]: sandbox } }),
+      'relative target, session sitting in the sandbox',
+    );
+  });
+
+  test('a target reaching production data through a link is caught', (t) => {
+    const { base, live, sandbox } = roots();
+    const alias = path.join(base, 'shortcut');
+    try {
+      symlinkSync(live, alias, 'junction');
+    } catch {
+      return t.skip('this platform would not create a directory link');
+    }
+    assertBlockedBecause(
+      guard({ payload: fileCall('Write', path.join(alias, 'corpus', 'x.txt'), tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
+      TARGETS_LIVE_DATA,
+      'a file tool naming production data through a link',
+    );
+  });
+
+  test('a file-tool payload that names no target allows', () => {
+    const { live, sandbox } = roots();
+    const env = { [LIVE]: live, [DATA]: sandbox };
+    for (const tool_input of [undefined, null, {}, { file_path: '' }, { file_path: 42 }]) {
+      const payload = fileCall('Write', 'x.txt', tempDir());
+      if (tool_input === undefined) delete payload.tool_input;
+      else payload.tool_input = tool_input;
+      assertAllowed(guard({ payload, env }), `Write with tool_input ${JSON.stringify(tool_input)}`);
+    }
+  });
+
+  // The three Bash-only rules, each pinned in both directions. Each block message tells
+  // the reader to edit .claude/settings.json, so a gate that also refused the Edit would
+  // be unfixable from inside the session.
+  test('the seam rule does not hold a file tool, and still holds Bash', () => {
+    const { live, sandbox } = roots();
+    const repo = makeRepo();
+    assertAllowed(
+      guard({ payload: fileCall('Edit', path.join(sandbox, 'settings.json'), repo), env: { [LIVE]: live } }),
+      'an Edit outside production data with no seam declared',
+    );
+    assertBlockedBecause(guard({ payload: bash('ls', repo), env: { [LIVE]: live } }), NO_SEAM, 'the Bash control');
+  });
+
+  test('the sentinel does not hold a file tool, and still holds Bash', () => {
+    const repo = makeRepo();
+    raise(repo);
+    assertAllowed(guard({ payload: fileCall('Write', path.join(repo, 'a.js'), repo) }), 'a Write during a live run');
+    assertBlockedBecause(guard({ payload: bash('npm test', repo) }), LIVE_RUN, 'the Bash control');
+  });
+
+  test('the operation-directory rule does not hold a file tool writing outside', () => {
+    const { live, sandbox } = roots();
+    // The session sits inside production data, and the target is absolute and elsewhere.
+    // Rule 6 exists for the relative paths a command names and the guard cannot see; a
+    // file tool names exactly one target and the case above already judges it.
+    assertAllowed(
+      guard({ payload: fileCall('Write', path.join(sandbox, 'notes.md'), live), env: { [LIVE]: live, [DATA]: sandbox } }),
+      'absolute target outside, session cwd inside production data',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash('ls', live), env: { [LIVE]: live, [DATA]: sandbox } }),
+      OPERATES_IN,
+      'the Bash control',
+    );
+  });
+
+  // Glob and Grep are deliberately out of scope: they name a pattern plus an optional
+  // root, which is a wider surface than this fix. Pinned so their absence is a decision
+  // on the record rather than something nobody noticed.
+  test('Glob and Grep are not gated, and that is on the record', () => {
+    const { live, sandbox } = roots();
+    for (const tool of ['Glob', 'Grep']) {
+      const payload = { hook_event_name: 'PreToolUse', cwd: tempDir(), tool_name: tool, tool_input: { pattern: '**/*', path: live } };
+      assertAllowed(guard({ payload, env: { [LIVE]: live, [DATA]: sandbox } }), tool);
+    }
+  });
+
+  // Every identity, the orchestrator included. There is no identity test in this gate and
+  // the file tools do not introduce one.
+  test('every identity is subject to the file-tool rule', () => {
+    const { live, sandbox } = roots();
+    const target = path.join(live, 'corpus', 'x.txt');
+    for (const agent_type of [undefined, 'aeo:builder', 'aeo:reviewer', 'builder', 'Explore']) {
+      const extra = agent_type === undefined ? {} : { agent_type };
+      assertBlockedBecause(
+        guard({ payload: fileCall('Write', target, tempDir(), extra), env: { [LIVE]: live, [DATA]: sandbox } }),
+        TARGETS_LIVE_DATA,
+        `Write, ${agent_type}`,
+      );
     }
   });
 });
@@ -1133,6 +1333,20 @@ describe('hooks.json registration', () => {
       ours[0].matcher === undefined || ours[0].matcher === '*' || ours[0].matcher === '' || /Bash/.test(ours[0].matcher),
       `sandbox-guard must be matched on Bash; found ${JSON.stringify(ours[0].matcher)}`,
     );
+    // The tools the gate judges must all reach it. A gate the matcher never invokes is
+    // not a gate: the file tools were absent here while the guard's own header said
+    // production data is not reachable from a session, and a Write into the production
+    // root passed with no block at all.
+    const matcher = ours[0].matcher;
+    for (const tool of ['Bash', ...FILE_TOOLS]) {
+      assert.equal(new RegExp(matcher).test(tool), true, `${tool} never reaches the sandbox guard`);
+    }
+    // V-12, and the reason the matcher is anchored: BashOutput is not Bash, and a
+    // pattern loose enough to catch it would fire the gate on payloads it cannot judge.
+    for (const tool of ['BashOutput', 'Glob', 'Grep', 'Task', 'WebFetch']) {
+      assert.equal(new RegExp(matcher).test(tool), false, `${tool} reaches a gate that does not judge it`);
+    }
+
     for (const s of strings(ours[0])) {
       assert.doesNotMatch(s, /\|\||&&/, `a shell fallback converts every block into a pass: ${s}`);
     }

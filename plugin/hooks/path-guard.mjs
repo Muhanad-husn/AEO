@@ -73,7 +73,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-import { block, gitToplevel, isAnyAeoRole, isPathInside, normalizeHookPath, runGate } from './lib.mjs';
+import { block, gitToplevel, isAnyAeoRole, isPathInside, normalizeHookPath, runGate, toolFilePath } from './lib.mjs';
 
 const HARNESS_DIRNAME = '.claude';
 
@@ -144,15 +144,13 @@ await runGate({
     if (!FENCED_TOOLS.has(tool)) return;
     if (!isAnyAeoRole(payload)) return; // main session and non-AEO agents pass (C-02)
 
-    // Edit, Write and MultiEdit all name their target `file_path`; NotebookEdit names
-    // it `notebook_path`. Reading only the first would make this gate shrug at a
-    // notebook write into `.claude/`.
-    const rawPath = payload?.tool_input?.file_path ?? payload?.tool_input?.notebook_path;
+    // Which field carries the target is lib.mjs's to know, because the sandbox guard
+    // reads the same field set and V-13 is two gates deriving one thing twice.
+    const named = toolFilePath(payload);
     // No target named: there is nothing to fence against, so this passes rather than
     // blocks. Mirrors the PS original (`if (-not $filePath) { exit 0 }`) and this
     // gate's own allow-by-default posture. It is not review-jail's deny-by-default.
-    if (typeof rawPath !== 'string' || rawPath.trim() === '') return;
-    const named = rawPath.trim();
+    if (named === null) return;
 
     const full = resolveFullPath(named, payload);
     const ancestor = nearestExistingAncestor(path.dirname(full));
