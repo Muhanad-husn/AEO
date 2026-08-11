@@ -74,16 +74,28 @@ says so.
 ## Safety rules (non-negotiable)
 
 - **Fails closed on a hollow keep-set.** The delete-set-empty case is
-  already guarded; the risk runs the other way. An empty or suspiciously
-  small keep-set — the branches confirmed protected, merged, or otherwise
-  ineligible — is what running from the wrong working directory produces,
-  and it makes every branch look orphaned. That state is a hard failure
-  raised before any report, confirmation prompt, or deletion, with no
-  override flag: an override is exactly what gets reached for at 2am.
-- **A failed `gh pr list` is missing data, not an all-clear.** If the call
-  errors, PR state for every branch is unknown, not "no open PRs" — a
-  branch an open PR would otherwise protect must never fall through the
-  merged-ancestor rule as a result of that failure.
+  already guarded; the risk runs the other way. The keep-set is the
+  branches kept for a substantive reason — an open PR, unmerged local
+  work, commits beyond a merged PR. Branches protected by name don't
+  count: the base and the current branch are protected in every
+  repository, so counting them would make the check pass everywhere and
+  assert nothing. When that set is empty and branches are nonetheless
+  queued for deletion, the classifier has not shown it can tell the two
+  apart, which is what running from the wrong repository or against a
+  base containing all work looks like. Apply mode refuses, before the
+  recovery log and before any deletion, with no override flag: an
+  override is exactly what gets reached for at 2am. The recourse is
+  `git branch -d <name>` per branch — the same work without the blast
+  radius. Dry-run still prints the table, because that is how you see
+  the problem.
+- **A failed `gh pr list` is missing data, not an all-clear.** If the
+  call errors, or returns nothing usable, PR state for every branch is
+  unknown rather than "no open PRs" — and a branch an open PR would
+  otherwise protect must never fall through the merged-ancestor rule as
+  a result. Apply mode refuses outright, since the open-PR-always-wins
+  guarantee cannot be honoured on data that was never retrieved. The
+  report distinguishes three states and never collapses them: available,
+  failed, and gh-not-installed.
 - Local only — never touch a remote branch from this skill; that's a
   deliberate, separate action the founder drives themselves.
 - Never delete the default branch, the current branch, another protected

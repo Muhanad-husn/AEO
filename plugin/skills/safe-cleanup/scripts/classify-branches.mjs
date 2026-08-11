@@ -15,14 +15,18 @@
  *     this defeats branch-name reuse and post-merge commits.
  *   - Force-delete (`-D`) is re-verified at delete time; recovery SHAs are logged to a file BEFORE
  *     any deletion, and deletion aborts if that log cannot be written.
+ *   - A failed PR query is missing data, not "no PRs": apply mode refuses rather than delete
+ *     under a guarantee it can no longer honour.
+ *   - Apply mode refuses when every evaluated branch came out deletable — nothing kept on
+ *     evidence is what a wrong repository or an all-containing base looks like. No override flag.
  *
  * Cross-platform (Windows/macOS/Linux). Requires Node 18+ and git. Uses `gh` if available to detect
  * squash/rebase-merged and abandoned (closed-unmerged) PRs; degrades safely without it.
  *
  * Usage:
- *   node ${CLAUDE_SKILL_DIR}/scripts/classify-branches.mjs
- *   node ${CLAUDE_SKILL_DIR}/scripts/classify-branches.mjs --apply --yes --delete-merged
- *   node ${CLAUDE_SKILL_DIR}/scripts/classify-branches.mjs --apply --yes --delete-merged --delete-abandoned
+ *   node ${CLAUDE_PLUGIN_ROOT}/skills/safe-cleanup/scripts/classify-branches.mjs
+ *   node ${CLAUDE_PLUGIN_ROOT}/skills/safe-cleanup/scripts/classify-branches.mjs --apply --yes --delete-merged
+ *   node ${CLAUDE_PLUGIN_ROOT}/skills/safe-cleanup/scripts/classify-branches.mjs --apply --yes --delete-merged --delete-abandoned
  *
  * Flags:
  *   --base <branch>     base branch to compare against (auto-detected if omitted)
@@ -119,18 +123,32 @@ function main() {
   try { execFileSync('gh', ['auth', 'status'], { stdio: 'ignore' }); ghAuthed = true; } catch { ghAuthed = false; }
   const prCapable = hasRemote && ghAuthed;
 
+  // A failed PR query is missing data, never an all-clear (L-08: a zero over data you
+  // did not manage to read means "not measured", not "none found").
+  //
+  // gh() returns null on any failure and the old loop swallowed it, so a network blip, an
+  // expired token or a rate limit left prByBranch empty while the report still announced
+  // "gh + remote available". Every branch then classified with no PR data at all, and the
+  // script's first stated guarantee — an open PR always wins, even over an ancestor —
+  // silently stopped holding. A branch with an open PR fell through to the ancestor rule,
+  // came out "merged", and --delete-merged deleted it.
   const prByBranch = {};
   let prTruncated = false;
+  let prQueryFailed = false;
   if (prCapable) {
     const out = gh(['pr', 'list', '--state', 'all', '--json', 'number,state,headRefName,url,mergedAt', '--limit', '500']);
-    if (out) {
+    if (out === null) prQueryFailed = true;
+    else {
       try {
         const list = JSON.parse(out);
         if (list.length >= 500) prTruncated = true;
         for (const pr of list) (prByBranch[pr.headRefName] ||= []).push(pr);
-      } catch { /* ignore */ }
+      } catch { prQueryFailed = true; } // includes the empty-output case
     }
   }
+  // What the rest of the run may assume it knows. Distinct from prCapable, which only
+  // says the tools were there.
+  const prKnown = prCapable && !prQueryFailed;
 
   const raw = git(['for-each-ref', '--format=%(refname:short)\t%(objectname)\t%(committerdate:unix)', 'refs/heads']) || '';
   const branches = raw.split('\n').filter(Boolean).map(l => {
@@ -163,7 +181,7 @@ function main() {
     } else if (closedPr) {
       status = 'abandoned'; delFlag = '-D'; reason = `PR #${closedPr.number} closed unmerged; ${unique} commit(s) not in ${base}`;
     } else {
-      status = 'local-only'; reason = `${unique} commit(s) not in ${base}${prCapable ? ', no PR' : ', PR state unknown (gh/remote unavailable)'}`;
+      status = 'local-only'; reason = `${unique} commit(s) not in ${base}${prKnown ? ', no PR' : ', PR state unknown (PR data not retrieved)'}`;
     }
     rows.push({ ...b, status, delFlag, unique, ageDays, pr: prs[0]?.number ?? null, reason });
   }
@@ -172,7 +190,13 @@ function main() {
   const self = process.argv[1];
   const fullCmd = `node "${self}"`;
   console.log(`Branch cleanup report — base "${base}", current "${current}"`);
-  console.log(`PR detection: ${prCapable ? 'gh + remote available' : 'UNAVAILABLE (squash-merged / abandoned cannot be detected; only ancestor-merged branches are eligible)'}`);
+  console.log(`PR detection: ${
+    prKnown
+      ? 'gh + remote available'
+      : prQueryFailed
+        ? 'FAILED (gh and a remote are present, but the PR query returned nothing usable — PR state is UNKNOWN for every branch, not empty)'
+        : 'UNAVAILABLE (squash-merged / abandoned cannot be detected; only ancestor-merged branches are eligible)'
+  }`);
   if (prTruncated) console.log('NOTE: PR list hit the 500 query limit — older PRs may be missing; affected branches fall back to "local-only" (kept).');
   console.log('');
   const pad = (s, n) => String(s).padEnd(n);
@@ -206,8 +230,59 @@ function main() {
 
   // Apply mode.
   if (!yes) { console.error('\nREFUSING: --apply requires --yes as an explicit go-ahead. Nothing deleted.'); process.exit(2); }
+
+  // The PR query failed, so "no open PR on this branch" is a thing we did not learn
+  // rather than a thing we checked. The open-PR-always-wins guarantee cannot be honoured
+  // on data we do not have, and the branches it protects are exactly the ones still being
+  // worked on. Refuse the whole run rather than delete under a guarantee that is not
+  // holding. Dry-run still reports, because that is how the operator sees this.
+  if (prQueryFailed) {
+    console.error(
+      '\nREFUSING: the PR query failed, so PR state is unknown for every branch — not empty.\n' +
+      '  Deleting now would apply the ancestor-merged rule to branches whose open PR would\n' +
+      '  otherwise protect them. Fix gh (check `gh auth status` and connectivity) and re-run.\n' +
+      '  Nothing deleted.',
+    );
+    process.exit(4);
+  }
+
   if (!prCapable && deleteAbandoned) console.warn('WARNING: gh/remote unavailable — "abandoned" branches could not be evaluated, so none will be deleted under --delete-abandoned.');
   if (!toDelete.length) { console.log('\nNothing selected for deletion (pass --delete-merged and/or --delete-abandoned). Nothing deleted.'); return; }
+
+  // L-05: fail closed on a hollow keep-set, before the recovery log and before any
+  // deletion, with no override flag.
+  //
+  // The delete-set-empty case above is already guarded and is not the risk. The risk runs
+  // the other way: a classifier that put every branch it actually evaluated into the
+  // delete pile has not demonstrated it can tell the two apart. That is what a wrong
+  // working directory or a base branch containing all work produces, and it is L-05's
+  // shape exactly — an empty keep-set makes every artifact look orphaned, and `--apply
+  // --yes` would then have deleted the lot.
+  //
+  // Kept-on-evidence means the classifier positively decided to keep a branch for a
+  // substantive reason. Protected-by-name branches are excluded deliberately: base and
+  // current are protected in every repository, so counting them would make this check
+  // pass everywhere and assert nothing. That is L-08's "a count-based preflight is not a
+  // coverage check" — the count has to be over the thing being tested.
+  //
+  // There is no threshold and no tunable here, only a categorical zero, because a tuned
+  // fraction is the over-engineering tripwire and would be a number nobody could defend.
+  // And there is no override flag: an override is what gets reached for at 2am. The
+  // recourse is to delete the branches by name with `git branch -d`, which is the same
+  // work without the blast radius.
+  const keptOnEvidence = rows.filter(r => ['open-pr', 'ahead-of-merged-pr', 'local-only'].includes(r.status));
+  if (!keptOnEvidence.length) {
+    console.error(
+      `\nREFUSING: every branch this run evaluated came out deletable (${toDelete.length} selected, 0 kept on evidence).\n` +
+      '  Nothing was kept for a substantive reason — no open PR, no unmerged local work, no\n' +
+      '  commits beyond a merged PR. That is what running from the wrong repository, or against\n' +
+      `  a base branch that already contains everything, looks like. Base was "${base}".\n` +
+      '  Check those two things. If the classification is genuinely right, delete the branches\n' +
+      '  by name with `git branch -d <name>`. There is no override flag, and that is deliberate.\n' +
+      '  Nothing deleted.',
+    );
+    process.exit(5);
+  }
 
   // Recovery log is mandatory when deleting — write it (and abort if we cannot).
   const logPath = typeof args.log === 'string' ? args.log : path.join(repoRoot, '.tdd-branch-cleanup.log');

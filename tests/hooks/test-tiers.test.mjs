@@ -24,7 +24,11 @@ import assert from 'node:assert/strict';
 import { resolveTestPlan } from '../../plugin/hooks/stack.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
-const TESTS_DIR = path.join(repoRoot, 'tests', 'hooks');
+// The whole tree, not just tests/hooks. The first test file written outside that one
+// directory — tests/skills/, for the skill tree's one executable — was accounted for by
+// nothing, which is the exact failure this file exists to catch. A guard scoped to one
+// directory stops guarding the moment a second one appears.
+const TESTS_ROOT = path.join(repoRoot, 'tests');
 
 const scripts = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).scripts ?? {};
 
@@ -38,9 +42,17 @@ function filesNamedBy(script) {
 
 const fast = filesNamedBy(scripts.test);
 const integration = filesNamedBy(scripts['test:integration']);
-const onDisk = readdirSync(TESTS_DIR)
-  .filter((name) => name.endsWith('.test.mjs'))
-  .sort();
+/** Every `.test.mjs` basename anywhere under tests/. */
+function testFilesUnder(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) out.push(...testFilesUnder(path.join(dir, entry.name)));
+    else if (entry.name.endsWith('.test.mjs')) out.push(entry.name);
+  }
+  return out;
+}
+
+const onDisk = testFilesUnder(TESTS_ROOT).sort();
 
 describe('every test file is in exactly one tier', () => {
   test('the two tiers together account for every file on disk', () => {
@@ -48,7 +60,7 @@ describe('every test file is in exactly one tier', () => {
     assert.deepEqual(
       union,
       onDisk,
-      `tests/hooks holds ${onDisk.length} test file(s) and the two npm scripts name ${union.length}. ` +
+      `tests/ holds ${onDisk.length} test file(s) and the two npm scripts name ${union.length}. ` +
         `A file in neither tier never runs. Add it to "test" (fast) or "test:integration".`,
     );
   });
