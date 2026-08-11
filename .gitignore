@@ -7,6 +7,12 @@
 # every worktree can see them, and they are machine state rather than work product.
 /.aeo/
 
+# safe-cleanup's recovery log. Written to the repo root before any deletion so a wrong
+# call can be undone from the SHAs; rewritten on every run. It is machine state for the
+# operator, not work product, and left tracked it makes the tree dirty after every
+# cleanup — which a commit gate would then refuse to cross.
+/.tdd-branch-cleanup.log
+
 # Python
 __pycache__/
 *.py[cod]
