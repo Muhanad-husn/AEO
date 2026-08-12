@@ -4,6 +4,11 @@ Settled decisions governing the migration, with rationale and expected impact â€
 required by fixed principle 3. A decision here is binding until explicitly revisited.
 Newest first.
 
+Decisions the plugin's own shipped prose depends on are carried a second time, in
+`plugin/DECISIONS.md`, so an installed session can resolve a citation without this
+tree. The two move together: revise a decision here and revise its shipped entry in
+the same change.
+
 Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 [`EVIDENCE.md`](EVIDENCE.md), **EN-*n*** for the founder's proposed enhancements
 (below), **DEC-*n*** for the vendored skill's own decisions, quoted only.

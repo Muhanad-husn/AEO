@@ -97,7 +97,8 @@ existing labels before creating any.
   issue.
 - Dependencies are explicit. `sprint-start` picks by them.
 - One slice per issue. An issue that needs "and" is two issues.
-- GitHub issues are the record. Nothing here duplicates them by hand.
+- GitHub issues are the record; nothing here duplicates them by hand
+  ([D5](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)).
 - A draft with no Files block is undeclared, not safe. `independence.mjs`
   refuses it; the backlog table must show it as not parallel-safe with
   the reason, not paper over it with a guess.

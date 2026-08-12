@@ -15,7 +15,7 @@ The generic monitor is the substrate and its words are yours: UNKNOWN, DONE, EXI
 
 Read the log, do not change it. Every record carries exactly six fields: timestamp, job, unit, status, duration, detail. That envelope is fixed, and an overlay derives from those fields rather than adding to them. Whatever a job needs to say that the first five do not carry goes in `detail`, in the job's own text, and the overlay parses it there. An overlay that wants a seventh key has become a second log format.
 
-Anything an overlay writes lands in the project repository, beside the run it describes. Never the plugin's own directory: that path is replaced on every plugin update, so state written there is state you have chosen to lose.
+Anything an overlay writes lands in the project repository, beside the run it describes. Never the plugin's own directory: that path is replaced on every plugin update, so state written there is state you have chosen to lose ([D12](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)).
 
 Report what you cannot see as unknown, and name what could not be read. Absent instrumentation, an unreadable process, a signal with no history yet: each is silence, and silence is not the same fact as an idle job. A monitor built for a different shape of run once reported a healthy four-hour job as idle for its whole duration, and had no word in its output to say it was guessing. There is no idle.
 

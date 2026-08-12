@@ -54,8 +54,9 @@ both short.
    locally too or the PR waits for CI green before approval is requested.
    The full suite is CI's job either way, and where a step has to establish
    that some commit was green it cites CI's run id, SHA and conclusion
-   rather than re-running that tier locally. An edit to a pre-existing test
-   or spec gets one explanatory line in the PR body. A BLOCKED report on
+   rather than re-running that tier locally
+   ([D24](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). An edit to a pre-existing
+   test or spec gets one explanatory line in the PR body. A BLOCKED report on
    a contested design question goes to the founder with the options, a
    recommendation, and what each costs; the session stops there.
 

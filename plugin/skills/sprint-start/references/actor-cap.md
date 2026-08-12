@@ -1,5 +1,8 @@
 # The development-actor cap
 
+The lane this number governs, and why it is a founder parameter rather than a
+tuned one, is [D11](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md).
+
 **Development actors: 4**
 
 That line is the plugin's only statement of the number. Everything that needs

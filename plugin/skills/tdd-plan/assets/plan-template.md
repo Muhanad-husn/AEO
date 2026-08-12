@@ -107,7 +107,7 @@ Seed for the inner red-green-refactor cycles. This is a **living list** — `red
 ## Definition of done
 
 - [ ] Acceptance/e2e test written, seen to fail for the right reason, now GREEN.
-- [ ] All seeded unit behaviours covered; fast tier green locally, CI green for the rest.
+- [ ] All seeded unit behaviours covered; fast tier green locally, CI green for the rest ([D17](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)).
 - [ ] Refactor pass complete (no duplication, clear names) with the bar green.
 - [ ] Slice's tests run in CI (`tdd-ci`).
 - [ ] Evidence collected and PR opened into `main` (`safe-pr`).
