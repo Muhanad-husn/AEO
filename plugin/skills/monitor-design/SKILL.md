@@ -1,6 +1,6 @@
 ---
 name: monitor-design
-description: Design a job-specific monitoring overlay for one long-running job — a custom progress view, dashboard, or derived reading such as spend so far, pipeline stage, or shards left, computed from that job's run log on top of the generic monitor. Use when asked to build, design, or add monitoring for a particular job, or when units, rate and the stall verdict do not answer what someone needs to know about it. Do not use to check on a run in progress: "is it still working", "how far along is it" and "did it stall" are answered by running the generic run monitor directly.
+description: "Design a job-specific monitoring overlay for one long-running job — a custom progress view, dashboard, or derived reading such as spend so far, pipeline stage, or shards left, computed from that job's run log on top of the generic monitor. Use when asked to build, design, or add monitoring for a particular job, or when units, rate and the stall verdict do not answer what someone needs to know about it. Do not use to check on a run in progress: \"is it still working\", \"how far along is it\" and \"did it stall\" are answered by running the generic run monitor directly."
 ---
 
 # Monitor design — job-specific overlays
