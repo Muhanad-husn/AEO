@@ -108,7 +108,7 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
 
    Never force-push.
 7. Open the PR against the repo's default branch, resolved from repository
-   evidence the same way the merge gate resolves it — never hardcoded:
+   evidence the same way the merge gate resolves it, never hardcoded ([D16](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)):
 
    ```
    gh pr create --base <default-branch> --head feat/<feature-slug>/<NN-slice-slug> --title "feat(<feature-slug>): <slice goal> [slice NN]" --body-file PR_BODY.md

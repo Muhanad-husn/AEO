@@ -71,16 +71,24 @@ const IGNORED_AGENT_FRONTMATTER_KEYS = ['hooks', 'mcpServers', 'permissionMode']
 // appear in tdd-ci's own CI templates. What's dead is the literal Axial tool invocation.
 const AXIAL_TOKENS = ['llm.py', 'cli.py', 'uv run', 'find-docs', 'ctx7'];
 
-// docs/ does not ship with the plugin. A bare decision id in a Markdown instruction is a
-// dangling reference for an installer who has no docs/ tree to resolve it against — a
-// SKILL.md or agent .md is read by that installed session. Scoped to .md by file KIND,
-// not by location: a .mjs comment is source, read by whoever maintains the script, and
+// docs/ does not ship with the plugin, so an id in a Markdown instruction is resolvable for
+// an installed session only where the plugin ships the decision itself. It does, for the
+// decisions its own prose depends on, in DECISIONS.md at the plugin root. An id that
+// resolves to an entry there is a citation. An id that resolves to nothing is dangling, and
+// dangling still fails, which is the whole of the rule this replaces. Scoped to .md by file
+// KIND, not by location: a .mjs comment is source, read by whoever maintains the script, and
 // every citation in this codebase's .mjs comments is followed by a sentence stating the
 // lesson itself, so nothing there depends on fetching the doc. That is a property of the
 // file, not of which directory it happens to sit under.
 // Every identifier scheme this repo uses (see docs/DECISIONS.md's own header): D-n,
 // DEC-n, EN-n, L-nn, C-nn, V-nn.
 const DECISION_ID_RE = /\b(?:D\d{1,3}|DEC-\d{1,3}|EN-\d{1,3}|L-\d{1,2}|C-\d{1,2}|V-\d{1,2})\b/g;
+
+// The shipped decisions file, flat at the plugin root beside VENDORED.md. It sits outside
+// skills/ and agents/, so scanUnit never reaches it and it needs no exemption from the rule
+// it makes resolvable. One entry per decision, keyed by the id in its heading.
+const SHIPPED_DECISIONS_FILE = 'DECISIONS.md';
+const DECISION_HEADING_RE = /^#{1,6}[ \t]+(D\d{1,3}|DEC-\d{1,3}|EN-\d{1,3}|L-\d{1,2}|C-\d{1,2}|V-\d{1,2})\b/;
 
 const CLAUDE_PLUGIN_ROOT_RE = /\$\{CLAUDE_PLUGIN_ROOT\}([^\s"'`)]*)/g;
 
@@ -181,6 +189,18 @@ function findSkillDirs(pluginRoot) {
 
 function findAgentFiles(pluginRoot) {
   return listFiles(path.join(pluginRoot, 'agents'), '.md');
+}
+
+/** The set of decision ids the plugin ships an entry for. Empty when it ships no file. */
+function readShippedDecisionIds(pluginRoot) {
+  const text = safeRead(path.join(pluginRoot, SHIPPED_DECISIONS_FILE));
+  const ids = new Set();
+  if (text === null) return ids;
+  for (const line of text.split(/\r?\n/)) {
+    const m = DECISION_HEADING_RE.exec(line);
+    if (m) ids.add(m[1]);
+  }
+  return ids;
 }
 
 // ---------------------------------------------------------------------------
@@ -448,13 +468,20 @@ function checkHooksJson(pluginRoot, results) {
 
 // ---------------------------------------------------------------------------
 // Cross-cutting text scans, run once per skill directory and once per agent file:
-// no Axial-product reference (V-09), no bare decision id in a Markdown file, every
-// ${CLAUDE_PLUGIN_ROOT} path resolves. Scoped to skills/ and agents/ only.
+// no Axial-product reference (V-09), every decision id cited in a Markdown file resolves
+// to a shipped entry, every ${CLAUDE_PLUGIN_ROOT} path resolves. Scoped to skills/ and
+// agents/ only.
 // ---------------------------------------------------------------------------
 
-function scanUnit(unitLabel, files, pluginRoot, results) {
+/**
+ * @param {Set<string>} shippedIds Decision ids the plugin ships an entry for.
+ * @param {Map<string, string[]>} cited Accumulator, id -> the places citing it. The
+ *   reverse check needs every unit's citations, so it is filled here and read once after
+ *   every unit has been scanned.
+ */
+function scanUnit(unitLabel, files, pluginRoot, results, shippedIds, cited) {
   const axialHits = [];
-  const decisionHits = [];
+  const danglingHits = [];
   const pathChecks = [];
 
   for (const file of files) {
@@ -470,7 +497,10 @@ function scanUnit(unitLabel, files, pluginRoot, results) {
       }
       if (isMarkdown) {
         for (const m of line.matchAll(DECISION_ID_RE)) {
-          decisionHits.push(`${rel}:${idx + 1}: ${m[0]} — ${line.trim().slice(0, 120)}`);
+          const id = m[0];
+          if (!cited.has(id)) cited.set(id, []);
+          cited.get(id).push(`${rel}:${idx + 1}`);
+          if (!shippedIds.has(id)) danglingHits.push(`${rel}:${idx + 1}: ${id} — ${line.trim().slice(0, 120)}`);
         }
       }
       for (const m of line.matchAll(CLAUDE_PLUGIN_ROOT_RE)) {
@@ -490,9 +520,9 @@ function scanUnit(unitLabel, files, pluginRoot, results) {
 
   add(
     results,
-    `no Markdown file under ${unitLabel} cites a bare decision id (docs/ does not ship with the plugin, so a .md instruction pointing at one is dangling for an installer; a .mjs comment is source for whoever maintains the script, not an installer-facing instruction, and is out of scope by design)`,
-    decisionHits.length === 0,
-    decisionHits.length === 0 ? 'none found' : decisionHits.join(' | '),
+    `every decision id cited in Markdown under ${unitLabel} resolves to an entry in ${SHIPPED_DECISIONS_FILE} (docs/ does not ship with the plugin, so an id with no shipped entry is dangling for an installer; a .mjs comment is source for whoever maintains the script, not an installer-facing instruction, and is out of scope by design)`,
+    danglingHits.length === 0,
+    danglingHits.length === 0 ? 'none dangling' : danglingHits.join(' | '),
   );
 
   const badPaths = pathChecks.filter((c) => !c.exists);
@@ -530,14 +560,33 @@ export function gradePlugin(pluginRoot) {
   checkRoleStructure(pluginRoot, agentFiles, results);
   checkHooksJson(pluginRoot, results);
 
+  const shippedIds = readShippedDecisionIds(pluginRoot);
+  const cited = new Map();
+
   const skillsDir = path.join(pluginRoot, 'skills');
   for (const name of skillDirs) {
-    scanUnit(`skills/${name}`, walk(path.join(skillsDir, name)), pluginRoot, results);
+    scanUnit(`skills/${name}`, walk(path.join(skillsDir, name)), pluginRoot, results, shippedIds, cited);
   }
   const agentsDir = path.join(pluginRoot, 'agents');
   for (const fname of agentFiles) {
-    scanUnit(`agents/${fname}`, [path.join(agentsDir, fname)], pluginRoot, results);
+    scanUnit(`agents/${fname}`, [path.join(agentsDir, fname)], pluginRoot, results, shippedIds, cited);
   }
+
+  // The reverse of the resolution rule, and the thing that keeps the shipped file honest.
+  // Without it the file has no upper bound: every decision the repository ever records
+  // could be copied in, and it would grade the same. What earns an entry its place is a
+  // shipped instruction that cites it.
+  const orphans = [...shippedIds].filter((id) => !cited.has(id));
+  add(
+    results,
+    `every entry in ${SHIPPED_DECISIONS_FILE} is cited by at least one Markdown file under skills/ or agents/ (an entry nothing cites is the shipped file growing into a copy of the repository's decision log)`,
+    orphans.length === 0,
+    shippedIds.size === 0
+      ? `no ${SHIPPED_DECISIONS_FILE} at the plugin root (nothing to check)`
+      : orphans.length === 0
+        ? `checked ${shippedIds.size}: all cited`
+        : `cited by nothing: ${orphans.join(', ')}`,
+  );
 
   const passed = results.filter((e) => e.passed).length;
   const total = results.length;

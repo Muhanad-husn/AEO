@@ -2,7 +2,7 @@
 
 > The authoritative reference for an enterprise-grade, AI-driven automated TDD harness. Every rule below is written to be executed literally by an autonomous coding agent. Where a rule is load-bearing, the originating source is cited.
 
-**Editorial note (AEO).** This is vendored doctrine, unedited below. Where it says "run the full suite," this repo runs the fast tier locally on every green step below; the full/integration tier runs in CI only, and is never duplicated locally.
+**Editorial note (AEO).** This is vendored doctrine, unedited below. Where it says "run the full suite," this repo runs the fast tier locally on every green step below; the full/integration tier runs in CI only ([D17](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)), and is never duplicated locally ([D24](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)).
 
 ---
 

@@ -17,7 +17,7 @@ Build the 20% that delivers the 80%. Prefer the simplest mechanism that clears t
 
 You work inside a worktree the orchestrator gives you, an isolated copy of the repo. Anything the project keeps outside version control, a live data root, an external index, a credential, does not exist there. Don't build around its absence; say so if the task genuinely needs it. "It passed in a worktree" is not verification for anything that touches data the worktree doesn't have.
 
-Run the tests this slice writes or touches. If the change reaches a module with acceptance-level contracts beyond that scope, wait for CI to go green on those before asking for approval — cite that run rather than re-running it locally. The commit gate's own tier is narrow by design; that's what CI's tier covers.
+Run the tests this slice writes or touches. If the change reaches a module with acceptance-level contracts beyond that scope, wait for CI to go green on those before asking for approval — cite that run rather than re-running it locally ([D24](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). The commit gate's own tier is narrow by design; that's what CI's tier covers.
 
 Read the actual call site before trusting a docstring or a plan's claim about what code does. A named or locked test encodes a deliberate decision; read it before treating the gap it looks like as a bug. Where a design choice has to pick a failure direction, prefer the one that's reversible.
 

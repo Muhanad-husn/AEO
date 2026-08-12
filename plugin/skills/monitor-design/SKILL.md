@@ -106,6 +106,5 @@ silent.
 - The generic monitor's status words are the only liveness vocabulary. There is
   no idle.
 - Anything the overlay writes lands in the project repository's `logs/` tree,
-  never the plugin's own directory: that path is replaced on every plugin
-  update.
+  never the plugin's own directory ([D12](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)).
 - A negative or unreadable signal is reported as unknown, with the reason named.

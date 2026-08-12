@@ -7,9 +7,8 @@ disable-model-invocation: true
 # Verify — entry point
 
 An operator lane, not a reflex. Verification runs when the rubric says it runs,
-and most changes do not reach it. That restraint is the design: an independent
-verifier on every change roughly doubles agent cost and applies full ceremony to
-typo fixes.
+and most changes do not reach it. That restraint is the design, and its reason is
+in [D4](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md).
 
 ## 1. Classify
 

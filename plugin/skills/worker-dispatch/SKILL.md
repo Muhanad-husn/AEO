@@ -5,7 +5,8 @@ description: Fan a bounded mechanical task out across operation workers — many
 
 # Worker dispatch — operation workers
 
-Two lanes write to a repository, and they are not the same thing.
+Two lanes write to a repository, and they are not the same thing. The third,
+read-only fan-out, writes nothing and is unbounded ([D11](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)).
 
 | Lane | How many | Isolation | Gates |
 | --- | --- | --- | --- |

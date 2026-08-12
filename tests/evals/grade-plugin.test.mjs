@@ -396,7 +396,8 @@ describe('hooks.json', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Cross-cutting scans: Axial references (V-09), bare decision ids, CLAUDE_PLUGIN_ROOT paths
+// Cross-cutting scans: Axial references (V-09), decision-id resolution, CLAUDE_PLUGIN_ROOT
+// paths
 // ---------------------------------------------------------------------------
 
 describe('cross-cutting text scans', () => {
@@ -414,14 +415,14 @@ describe('cross-cutting text scans', () => {
     assert.equal(passedFor(report, 'no file under skills/fix references the Axial source product')[0].passed, true);
   });
 
-  test('a skill\'s SKILL.md (.md) citing a bare decision id fails that skill\'s check', () => {
+  test('a skill\'s SKILL.md (.md) citing an id the plugin ships no entry for fails that skill\'s check', () => {
     const root = makeGoldenPluginRoot();
     write(root, 'skills/status/SKILL.md', skillFrontmatter('status', { lane: true }).replace(
       'Fixture body.',
       'No port source (EN-7, D5 in docs/DECISIONS.md).',
     ));
     const report = gradePlugin(root);
-    const check = passedFor(report, 'under skills/status cites a bare decision id')[0];
+    const check = passedFor(report, 'cited in Markdown under skills/status resolves')[0];
     assert.equal(check.passed, false);
     assert.match(check.evidence, /EN-7/);
     assert.match(check.evidence, /D5/);
@@ -432,14 +433,14 @@ describe('cross-cutting text scans', () => {
   // whoever maintains the script. Both directions, on the same identifier, so the
   // distinction is pinned rather than assumed.
   describe('the decision-id rule is scoped to Markdown, not to a directory', () => {
-    test('a .md file citing D17 fails the check', () => {
+    test('a .md file citing an unshipped D17 fails the check', () => {
       const root = makeGoldenPluginRoot();
       write(root, 'skills/fix/SKILL.md', skillFrontmatter('fix', { lane: true }).replace(
         'Fixture body.',
         'See D17 in docs/DECISIONS.md.',
       ));
       const report = gradePlugin(root);
-      const check = passedFor(report, 'under skills/fix cites a bare decision id')[0];
+      const check = passedFor(report, 'cited in Markdown under skills/fix resolves')[0];
       assert.equal(check.passed, false);
       assert.match(check.evidence, /D17/);
     });
@@ -448,8 +449,58 @@ describe('cross-cutting text scans', () => {
       const root = makeGoldenPluginRoot();
       write(root, 'skills/safe-cleanup/scripts/note.mjs', '// D17: the fix landed here, stated for whoever reads this comment next.\n');
       const report = gradePlugin(root);
-      const check = passedFor(report, 'under skills/safe-cleanup cites a bare decision id')[0];
+      const check = passedFor(report, 'cited in Markdown under skills/safe-cleanup resolves')[0];
       assert.equal(check.passed, true, check.evidence);
+    });
+  });
+
+  // The shipped decisions file, and the two directions that make it worth having. An id
+  // that resolves is a citation an installed session can follow; an id that resolves to
+  // nothing is the dangling reference the original prohibition existed to stop, and it
+  // still fails. The third case is the file's own bound: an entry nothing cites is how a
+  // curated subset turns back into a copy of the whole decision log.
+  describe('citations resolve against the shipped decisions file', () => {
+    const shipped = (...entries) => entries.map((e) => `## ${e}\n\nThe rule, and the reason it exists.\n`).join('\n');
+
+    test('a cited id that resolves to a shipped entry passes', () => {
+      const root = makeGoldenPluginRoot();
+      write(root, 'DECISIONS.md', shipped('D17 — Two test tiers'));
+      write(root, 'skills/fix/SKILL.md', skillFrontmatter('fix', { lane: true }).replace(
+        'Fixture body.',
+        'The fast tier is the commit gate\'s (D17).',
+      ));
+      const report = gradePlugin(root);
+      assert.equal(passedFor(report, 'cited in Markdown under skills/fix resolves')[0].passed, true);
+      assert.equal(passedFor(report, 'every entry in DECISIONS.md is cited')[0].passed, true);
+    });
+
+    test('a cited id with no shipped entry still fails, even when the file exists', () => {
+      const root = makeGoldenPluginRoot();
+      write(root, 'DECISIONS.md', shipped('D17 — Two test tiers'));
+      write(root, 'skills/fix/SKILL.md', skillFrontmatter('fix', { lane: true }).replace(
+        'Fixture body.',
+        'The fast tier is the commit gate\'s (D17).\n\nThe branch point is cited (D24).',
+      ));
+      const report = gradePlugin(root);
+      const check = passedFor(report, 'cited in Markdown under skills/fix resolves')[0];
+      assert.equal(check.passed, false);
+      assert.match(check.evidence, /D24/);
+      // The resolvable one is not reported alongside it.
+      assert.doesNotMatch(check.evidence, /D17/);
+    });
+
+    test('an entry no shipped file cites fails the reverse check', () => {
+      const root = makeGoldenPluginRoot();
+      write(root, 'DECISIONS.md', shipped('D17 — Two test tiers', 'D11 — Concurrency lanes'));
+      write(root, 'skills/fix/SKILL.md', skillFrontmatter('fix', { lane: true }).replace(
+        'Fixture body.',
+        'The fast tier is the commit gate\'s (D17).',
+      ));
+      const report = gradePlugin(root);
+      const check = passedFor(report, 'every entry in DECISIONS.md is cited')[0];
+      assert.equal(check.passed, false);
+      assert.match(check.evidence, /D11/);
+      assert.doesNotMatch(check.evidence, /D17/);
     });
   });
 

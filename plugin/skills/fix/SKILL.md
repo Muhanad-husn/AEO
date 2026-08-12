@@ -31,9 +31,9 @@ gates.
    existing suite is the oracle. It runs the fast tier locally, and if
    the fix touches a module with outer acceptance contracts, the PR waits
    for CI green on those before approval is requested — that run is
-   cited, not repeated locally. If the fix moves behaviour the spec
-   describes, the builder updates the spec in the same branch. No
-   test-author relay and no reviewer stage.
+   cited, not repeated locally ([D24](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). If the fix
+   moves behaviour the spec describes, the builder updates the spec in
+   the same branch. No test-author relay and no reviewer stage.
 
 4. **Stay in the lane.** A BLOCKED report on scope creep stops the
    session and routes to `sprint-start`.
