@@ -101,9 +101,10 @@ while leaving 60% of the cores idle, and the merge-order conflict rate is **1 in
 concurrent pairs. The measurement's own recommendation is that nothing needs changing —
 serialising the gates would make the founder wait longer.
 
-Next is **Phase 6** of [docs/PLAN.md](docs/PLAN.md), unless the founder confirms the
-deferral discussed on 2026-08-12 — Phase 6 waits until the plugin has been used, and
-Phase 7 runs first. That is not recorded in `docs/` and so is not yet in force here.
+Next is **Phase 7** of [docs/PLAN.md](docs/PLAN.md) — package the plugin and prove it
+with a dry run on a stack that is not Python. **Phase 6 is deferred until the plugin has
+been used**, by founder decision confirmed 2026-08-12; it tunes the scaffolder and the
+skill descriptions, and Phase 7's dry run is what produces the usage that tuning needs.
 
 Four findings overturn things the vendored skill states as settled. They are cheap to
 miss and expensive to discover late:
