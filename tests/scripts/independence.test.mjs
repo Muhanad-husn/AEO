@@ -1,4 +1,4 @@
-// Tests for plugin/scripts/independence.mjs — the parallel-safety check (P5.1).
+// Tests for plugin/scripts/independence.mjs, the parallel-safety check (P5.1).
 //
 //   node --test tests/scripts/independence.test.mjs
 //
@@ -7,7 +7,7 @@
 // in a worker thread (`independence()`), which is the same file with the same argv, the same
 // filesystem and the same exit code, and costs a fraction of a child process. The last block
 // spawns it for real over a whole conflicting pair, so the claim that the worker is a
-// faithful stand-in is paid for rather than assumed — the same split as runlog.test.mjs.
+// faithful stand-in is paid for rather than assumed, the same split as runlog.test.mjs.
 //
 // The script never reads the working directory, so unlike runlog.test.mjs nothing here has to
 // chdir or build a project anchor. Every fixture is a markdown file in a scratch directory.
@@ -16,6 +16,11 @@
 // created yet". It asserts the colliding path is absent from the repository first, because a
 // check that only catches collisions on files already on disk is precisely the check that
 // passed the pair in L-04.
+//
+// THE SECOND THING IT GUARDS is the set of wrong spellings that used to parse into a value
+// matching nothing, and so returned a confident `parallel-safe`. Those live in "a value in a
+// wrong spelling" below. Every one of them runs against L-04's own colliding pair, so what is
+// asserted is that the collision is still found, not merely that the input is disliked.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -231,6 +236,18 @@ describe('path comparison', () => {
     assert.equal(r.status, 0, r.stdout);
   });
 
+  test('one slice naming a path twice in two cases keeps one path and does not collide with itself', async () => {
+    const a = slice('slice: 13', 'creates: plugin/scripts/Widget.mjs', 'creates: plugin/scripts/widget.mjs');
+    const b = slice('slice: 14', 'creates: plugin/scripts/other.mjs');
+    const r = await independence([a, b]);
+    assert.equal(r.status, 0, r.stdout);
+    assert.equal(
+      (r.stdout.match(/plugin\/scripts\/[Ww]idget\.mjs/g) ?? []).length,
+      1,
+      'one path in two cases was kept twice, which is not how the comparison treats it',
+    );
+  });
+
   test('a slice that both edits and creates one path is refused', async () => {
     const a = slice('slice: 13', 'edits: plugin/scripts/a.mjs', 'creates: plugin/scripts/a.mjs');
     const b = slice('slice: 14', 'creates: plugin/scripts/b.mjs');
@@ -238,6 +255,94 @@ describe('path comparison', () => {
     assert.equal(r.status, 1);
     assert.match(r.stdout, /malformed\s+slice 13 both edits and creates plugin\/scripts\/a\.mjs/);
   });
+});
+
+// ---------------------------------------------------------------------------
+// A value in a wrong spelling
+//
+// Every case here is L-04's own pair: two slices creating one path that exists nowhere yet.
+// The only variable is how the path or the dependency is written. Each of these once parsed
+// into a value that matched nothing and produced `parallel-safe`, exit 0, which is the L-04
+// failure reproduced inside the check built to prevent it. The assertion is therefore that
+// the collision is still found, not merely that the input is disliked.
+// ---------------------------------------------------------------------------
+
+describe('a value in a wrong spelling never buys a green verdict', () => {
+  const PLANNED = 'plugin/scripts/spelling-not-created-yet.mjs';
+
+  /** L-04's pair: no shared edited file, no dependency, one shared planned new path. */
+  async function pairWith(spelling) {
+    const a = slice('slice: 13', 'edits: docs/PLAN.md', `creates: ${spelling}`);
+    const b = slice('slice: 14', 'edits: docs/DECISIONS.md', `creates: ${PLANNED}`);
+    return await independence([a, b]);
+  }
+
+  test('the pair is a real collision when the path is written bare', async () => {
+    assert.equal(existsSync(path.join(repoRoot, PLANNED)), false);
+    const r = await pairWith(PLANNED);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /create-create\s+slices 13 and 14 both create/);
+  });
+
+  for (const [label, spelling] of [
+    ['a trailing note', `${PLANNED}  # the new module`],
+    ['backticks, the habit in a GitHub issue body', `\`${PLANNED}\``],
+    ['double quotes', `"${PLANNED}"`],
+    ['bold emphasis', `**${PLANNED}**`],
+    ['a leading list marker', `- ${PLANNED}`],
+  ]) {
+    test(`a path wrapped in ${label} is refused rather than parsed into a path matching nothing`, async () => {
+      const r = await pairWith(spelling);
+      assert.equal(r.status, 1, `\`creates: ${spelling}\` produced a green verdict on a colliding pair`);
+      assert.match(r.stdout, /malformed\s+.*is not a bare path/);
+    });
+  }
+
+  /** The same pair, disjoint on paths, colliding only through the dependency. */
+  async function dependentPair(spelling) {
+    const a = slice('slice: 13', 'creates: plugin/scripts/a.mjs');
+    const b = slice('slice: 14', 'creates: plugin/scripts/b.mjs', `depends-on: ${spelling}`);
+    return await independence([a, b]);
+  }
+
+  test('a depends-on with a trailing note is refused, not downgraded to "outside the set"', async () => {
+    const r = await dependentPair('13 (the independence check)');
+    assert.equal(r.status, 1, 'a dependency with a trailing note was silently read as pointing outside the set');
+    assert.match(r.stdout, /malformed\s+.*is not a bare slice id/);
+  });
+
+  test('a depends-on written as prose is refused', async () => {
+    const r = await dependentPair('issue 13');
+    assert.equal(r.status, 1, '`depends-on: issue 13` was silently read as pointing outside the set');
+    assert.match(r.stdout, /malformed\s+.*is not a bare slice id/);
+  });
+
+  test('a depends-on with leading zeros resolves to the slice it names', async () => {
+    const r = await dependentPair('013');
+    assert.equal(r.status, 1, '`depends-on: 013` did not resolve to slice 13');
+    assert.match(r.stdout, /dependency\s+slice 14 depends on slice 13/);
+    assert.doesNotMatch(r.stdout, /malformed/, 'a numeric id with leading zeros is a spelling, not an error');
+  });
+
+  test('a slice id with leading zeros is the same slice as the plain form', async () => {
+    const a = slice('slice: 013', 'creates: plugin/scripts/a.mjs');
+    const b = slice('slice: 13', 'creates: plugin/scripts/b.mjs');
+    const r = await independence([a, b]);
+    assert.equal(r.status, 1, '`slice: 013` and `slice: 13` were treated as two different slices');
+    assert.match(r.stderr, /both declare slice 13/);
+  });
+
+  for (const spelling of ['(none)', 'nothing', 'TBA', 'unknown', 'N/A - see below', 'none']) {
+    test(`\`creates: ${spelling}\` does not count as a declared path`, async () => {
+      const a = slice('slice: 13', `creates: ${spelling}`);
+      const b = slice('slice: 14', 'creates: plugin/scripts/b.mjs');
+      const r = await independence([a, b]);
+      assert.equal(r.status, 1, `\`creates: ${spelling}\` was accepted as a declared path`);
+      assert.match(r.stdout, /malformed\s+.*(is a placeholder|is not a bare path)/);
+      // And the slice is still reported as having declared nothing usable.
+      assert.match(r.stdout, /undeclared\s+slice 13 declares no paths/);
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -406,7 +511,7 @@ describe('the report', () => {
 // The same script, as a real child process
 //
 // Everything above runs independence.mjs in a worker thread. This block runs it the way a
-// planner does — `node independence.mjs a.md b.md` — over the safe case and over L-04's own
+// planner does, `node independence.mjs a.md b.md`, over the safe case and over L-04's own
 // case, so the claim that the worker is a faithful stand-in is paid for. If a case above ever
 // passes while the matching case here fails, the worker is the thing that is wrong.
 // ---------------------------------------------------------------------------
