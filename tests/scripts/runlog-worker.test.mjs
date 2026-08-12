@@ -27,7 +27,7 @@
 // the process boundary" is a claim and an end-to-end call is what pays for it.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
@@ -157,21 +157,28 @@ describe('scopes do not collide', () => {
   });
 
   // The regression test for the review finding. `workerScope` accepts all of these as
-  // single directory names, and it is right to: they differ as strings. What folds them
-  // is the FILESYSTEM — Windows compares case-insensitively and drops trailing spaces and
-  // dots — and `--path` used to ask `existsSync`, which answers yes for every one of them
-  // and handed each a path inside whichever spelling claimed first. Two honest workers,
-  // ordinary ids, one directory, no warning.
+  // single directory names, and it is right to: they differ as strings. Two separate
+  // things folded them anyway, and each needed its own fix.
   //
-  // Both tests below hold on every platform, which is why neither asserts "W1 is
-  // refused": on a case-sensitive filesystem `W1` is a different name and claiming it is
-  // correct. What must never happen anywhere is reaching a directory claimed under a
-  // different id, and that is what is asserted. Measured on Windows/NTFS, for the record,
-  // because the behaviour is not what either the case-folding story or the
-  // trailing-space-stripping story predicts: `W1` and `W1 ` are refused EEXIST by case
-  // folding, while `w1 `, ` w1` and `w1.` are created as genuinely distinct directories —
-  // Node reaches the filesystem through extended-length paths, which bypass the Win32
-  // trailing-space rule — and `w1\t` is refused EINVAL as an illegal name.
+  //   - `requiredFlag` TRIMMED, so `w1 `, ` w1` and `w1\t` were already `w1` before any
+  //     of the scoping code ran. Not near-misses — the same id, which is why an
+  //     exact-name lookup does nothing for them: the trimmed id matches the listing
+  //     exactly, because it IS the other id.
+  //   - NTFS folds CASE, so `W1` opens `w1`. `--path` used to ask `existsSync`, which
+  //     answers yes and handed the loser of the claim a path inside the winner's
+  //     directory. Two honest workers, ordinary ids, one directory, no warning.
+  //
+  // Measured, because the intuitive story is wrong about everything else: trailing space,
+  // leading space and trailing dot are NOT folded by the filesystem. Node reaches it
+  // through extended-length paths, which bypass the Win32 rule, so `w1 `, ` w1` and `w1.`
+  // become genuinely distinct directories. They are refused anyway, by a rule further up,
+  // because the path they print does not survive a shell round trip — see the two
+  // read-back tests below.
+  //
+  // Both tests here hold on every platform, which is why neither asserts "W1 is refused":
+  // on a case-sensitive filesystem `W1` is a different name and claiming it is correct.
+  // What must never happen anywhere is reaching a directory claimed under a different id,
+  // and that is what is asserted.
   const NEAR_MISSES = ['W1', 'w1 ', ' w1', 'W1 ', 'w1.', 'w1\t'];
 
   test('--path never resolves into a directory claimed under a different spelling', async () => {
@@ -210,28 +217,45 @@ describe('scopes do not collide', () => {
       } else {
         assert.match(
           r.stderr,
-          /already claimed|must not begin or end with whitespace|could not create/i,
+          /already claimed|whitespace or end with a dot|could not create/i,
           `${JSON.stringify(other)} failed for the wrong reason: ${r.stderr}`,
         );
       }
     }
   });
 
-  test('an id with outer whitespace is refused rather than trimmed into another id', async () => {
-    // The rule exists because the printed path has to survive being read back. `w1 ` is a
-    // usable directory name on this filesystem, but `scope=$(...)` and `.trim()` both hand
-    // it back as `w1`'s path — so accepting it would put the collision one layer out,
-    // where nothing checks. A refusal never merges two ids; a trim would.
-    const { anchor, dir } = await openedRun('outer-space');
+  test('an id that does not survive being read back is refused rather than folded', async () => {
+    // These are all usable directory names on this filesystem — that is the point. `w1 `
+    // comes back from `scope=$(...)` or `.trim()` as `w1`'s path, and `w1.` names `w1`'s
+    // directory to every Win32 caller: cmd.exe and PowerShell both drop the trailing dot,
+    // so a worker shelling out with `w1.`'s scope writes into `w1`. This repo's primary
+    // shell is PowerShell and the lane's premise is that workers shell out. Accepting
+    // either would move the collision one layer out, where nothing checks. A refusal
+    // merges nothing; a trim would.
+    const { anchor, dir } = await openedRun('unreadable-back');
     const held = await claim(anchor, dir, 'w1');
     writeFileSync(path.join(held, 'result.md'), 'w1 wrote this', 'utf8');
 
-    for (const id of ['w1 ', ' w1', 'w1\t', '\tw1', 'w2 ']) {
+    for (const id of ['w1 ', ' w1', 'w1\t', '\tw1', 'w2 ', 'w1.', 'w2.', 'w1. ']) {
       const r = await runlog(['worker', '--dir', dir, '--worker', id], { cwd: anchor });
       assert.notEqual(r.status, 0, `${JSON.stringify(id)} was accepted`);
-      assert.match(r.stderr, /whitespace/i, `${JSON.stringify(id)} failed for the wrong reason: ${r.stderr}`);
+      assert.match(
+        r.stderr,
+        /whitespace or end with a dot/i,
+        `${JSON.stringify(id)} failed for the wrong reason: ${r.stderr}`,
+      );
     }
     assert.equal(readFileSync(path.join(held, 'result.md'), 'utf8'), 'w1 wrote this');
+  });
+
+  test('an interior dot or space is fine — only the edges are refused', async () => {
+    // The positive control for the rule above. A refusal quietly widened into "no dots"
+    // would reject `w.1`, which is the id the whole no-sanitiser argument turns on.
+    const { anchor, dir } = await openedRun('interior');
+    const a = await claim(anchor, dir, 'w.1');
+    const b = await claim(anchor, dir, 'w 1');
+    const c = await claim(anchor, dir, 'w1');
+    assert.equal(new Set([a, b, c]).size, 3, `${[a, b, c].join(' | ')} are not three distinct paths`);
   });
 
   test('a case-folded id is refused where the filesystem folds case, and names the holder as spelled on disk', async () => {
@@ -261,6 +285,34 @@ describe('scopes do not collide', () => {
     const { anchor, dir } = await openedRun('placement');
     const scope = await claim(anchor, dir, 'w1');
     assert.ok(scope.startsWith(dir + path.sep), `${scope} is not under ${dir}`);
+  });
+
+  test('--dir is not trimmed, so a run directory with a trailing space is its own run', async () => {
+    // The reviewer's case. Two run directories differing only by a trailing space are two
+    // different runs; a trimmed `--dir` claims in the wrong one and the worker's output
+    // lands in a run nobody is reading. `open` never emits such a path — uniqueLogDir
+    // builds names from an already-trimmed --job — so this needs a run directory made by
+    // hand, which is exactly how an externally-created or restored run arrives.
+    const anchor = makeAnchor();
+    const logs = path.join(anchor, 'logs');
+    const plain = path.join(logs, '2026-08-12-x');
+    const spaced = `${plain} `;
+    for (const d of [plain, spaced]) {
+      mkdirSync(d, { recursive: true });
+      writeFileSync(path.join(d, 'run.jsonl'), '', 'utf8');
+    }
+    // Both exist as separate directories, or the fixture is not testing what it claims.
+    assert.equal(readdirSync(logs).length, 2, `the two run directories collapsed: ${readdirSync(logs).join(' | ')}`);
+
+    const r = await runlog(['worker', '--dir', spaced, '--worker', 'w1'], { cwd: anchor });
+    assert.equal(r.status, 0, r.stderr);
+    const scope = r.stdout.replace(/\r?\n$/, '');
+    assert.ok(scope.startsWith(`${spaced}${path.sep}`), `${JSON.stringify(scope)} is not under ${JSON.stringify(spaced)}`);
+    assert.equal(
+      existsSync(path.join(plain, 'workers')),
+      false,
+      'the claim was made against the trimmed path and wrote into the other run',
+    );
   });
 
   test('a directory the run log never opened is refused', async () => {
