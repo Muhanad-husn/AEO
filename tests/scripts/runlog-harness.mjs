@@ -33,10 +33,10 @@
 //
 // THE GUARD. Every invocation, and the end of the file, checks that no new directory has
 // appeared under the `logs/` this repository actually writes to. It watches TWO paths,
-// because they are not always the same one: from a linked worktree, projectAnchor()
-// resolves through `.git` to the MAIN checkout, so a leak escaping a worktree lands in the
-// main checkout's logs and a guard watching only the worktree sees nothing. That is how
-// this leak stayed invisible.
+// because they are not always the same one: from a linked worktree `runlog open` now
+// writes to the worktree's own logs (#36) while projectAnchor() still resolves through
+// `.git` to the MAIN checkout, and both are places a leak can land. Watching only one is
+// how this leak stayed invisible.
 
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
