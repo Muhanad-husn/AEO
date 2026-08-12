@@ -528,23 +528,39 @@ function countOccurrences(haystack, needle) {
   }
 }
 
+// `worktreeSuffix` resolves `heldBy` with `path.resolve`, which is a no-op only when the
+// path is already absolute — and "absolute" is platform-defined. A Windows drive path is
+// absolute on Windows and relative everywhere else, so on Linux `path.resolve` used to
+// prepend the test runner's own cwd and the `includes` check below missed for a reason
+// none of these tests were about. `HELD_BY` is built per platform so it is genuinely
+// absolute wherever the suite runs, which is the one mechanism this whole block now uses
+// — no fixture here is skipped, each is just asked the question its own platform can
+// actually answer.
+const HELD_BY = process.platform === 'win32' ? 'D:/aeo-testbed/wt-cp4' : '/aeo-testbed/wt-cp4';
+
 describe('worktreeSuffix — the appended text does not duplicate what git already said', () => {
   test('git already naming the path, spelled the same way, suppresses the suffix', () => {
-    const cause = "error: cannot delete branch 'feat/held' used by worktree at 'D:/aeo-testbed/wt-cp4'";
-    assert.equal(worktreeSuffix(cause, 'D:/aeo-testbed/wt-cp4'), '');
+    const cause = `error: cannot delete branch 'feat/held' used by worktree at '${HELD_BY}'`;
+    assert.equal(worktreeSuffix(cause, HELD_BY), '');
   });
 
   test('git naming the path with a different separator still suppresses the suffix', () => {
-    const cause = "error: cannot delete branch 'feat/held' used by worktree at 'D:\\aeo-testbed\\wt-cp4'";
-    assert.equal(worktreeSuffix(cause, 'D:/aeo-testbed/wt-cp4'), '');
+    const cause = `error: cannot delete branch 'feat/held' used by worktree at '${HELD_BY.replace(/\//g, '\\')}'`;
+    assert.equal(worktreeSuffix(cause, HELD_BY), '');
   });
 
-  test('git naming the path in a different case still suppresses the suffix', (t) => {
-    if (process.platform !== 'win32') {
-      return t.skip('case-insensitive comparison is a Windows rule; elsewhere the paths genuinely differ');
+  test('git naming the path in a different case suppresses the suffix only where the filesystem is case-insensitive', () => {
+    // Case-insensitive comparison is a Windows rule, not a portability gap, so this asserts
+    // the real answer on both platforms instead of skipping one of them: on Windows the
+    // differently-cased path is the same location and the suffix stays suppressed; on
+    // Linux it is a genuinely different string and the suffix must still be appended.
+    const cause = `error: cannot delete branch 'feat/held' used by worktree at '${HELD_BY.toUpperCase()}'`;
+    const suffix = worktreeSuffix(cause, HELD_BY);
+    if (process.platform === 'win32') {
+      assert.equal(suffix, '', 'Windows paths compare case-insensitively');
+    } else {
+      assert.notEqual(suffix, '', 'elsewhere the differently-cased path is a different string');
     }
-    const cause = "error: cannot delete branch 'feat/held' used by worktree at 'D:/AEO-TESTBED/WT-CP4'";
-    assert.equal(worktreeSuffix(cause, 'D:/aeo-testbed/wt-cp4'), '');
   });
 
   test('git NOT naming the path appends it, exactly once, to the FAILED line', () => {
@@ -552,11 +568,10 @@ describe('worktreeSuffix — the appended text does not duplicate what git alrea
     // always includes it for a worktree-held branch, so this is the only way to reach the
     // branch of the fix that appends the suffix.
     const cause = "error: cannot lock ref 'refs/heads/feat/held': unable to resolve reference";
-    const heldBy = 'D:/aeo-testbed/wt-cp4';
-    const suffix = worktreeSuffix(cause, heldBy);
+    const suffix = worktreeSuffix(cause, HELD_BY);
     assert.notEqual(suffix, '', 'the path is genuinely absent from cause, so it must be appended');
     const failedLine = `FAILED feat/held (git branch -d refused: ${cause}${suffix} — left intact)`;
-    assert.equal(countOccurrences(failedLine, heldBy), 1, `expected the path exactly once:\n${failedLine}`);
+    assert.equal(countOccurrences(failedLine, HELD_BY), 1, `expected the path exactly once:\n${failedLine}`);
   });
 
   test('no worktree holds the branch: no suffix at all', () => {
