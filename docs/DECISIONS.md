@@ -486,6 +486,16 @@ interface, and the tests are runtime-agnostic in intent.
 
 ### D9 — Skills only; no `commands/` directory
 
+> **Counts amended; the decision is unchanged.** `skills/` only, and the operator
+> lanes still carry `disable-model-invocation: true`. The inventory below is Phase 0's.
+> The plugin now ships **fourteen skills** and **seven operator lanes**: Phase 3 added
+> `monitor-design`, which triggers on description and is deliberately not a lane; Phase
+> 4 added the `verify` lane, the seventh, deterministic like the other six because the
+> risk rubric decides whether a verification runs, not a phrase in a message; Phase 5
+> added `worker-dispatch`, which triggers on description. `evals/grade-plugin.mjs`
+> grades both numbers — `EXPECTED_SKILL_COUNT` and `OPERATOR_LANES` — and records where
+> each part of the count comes from. That is the copy to read when they move again.
+
 **Problem.** The plan specified six commands plus five skills, split by who invokes
 them. Current Claude Code has merged commands into skills (C-03), so the split rests
 on a distinction the platform no longer draws. The reversal was written into the

@@ -110,7 +110,7 @@ Seed for the inner red-green-refactor cycles. This is a **living list** — `red
 - [ ] All seeded unit behaviours covered; fast tier green locally, CI green for the rest ([D17](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)).
 - [ ] Refactor pass complete (no duplication, clear names) with the bar green.
 - [ ] Slice's tests run in CI (`tdd-ci`).
-- [ ] Evidence collected and PR opened into `main` (`safe-pr`).
+- [ ] Evidence collected and PR opened into the repository's default branch, resolved not assumed ([D16](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)) (`safe-pr`).
 
 ## Status / progress log
 
