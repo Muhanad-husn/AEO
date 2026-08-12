@@ -252,9 +252,18 @@ is reported stalled; a slow-but-working job is not; an uninstrumented job report
 - **The verifier gets a positive control before it is trusted** (L-10): plant known defects
   and confirm they are caught. A judge shown a pre-fill rubber-stamps it, and LLM judges are
   systematically generous toward confident prose.
+- **Carried from Checkpoint 3:** `safe-cleanup` reports `FAILED <branch> (git branch -D
+  refused — left intact)` and stops there. The refusal is correct and the message is
+  useless: it names neither the cause nor where to look. Six branches survived a live
+  cleanup because stale worktrees held them checked out, and the diagnosis took a
+  `git worktree list` nothing in the output suggested. Report the reason git gave, and
+  where the branch is held. This is L-08 in the failure path rather than the data path —
+  a signal that says something went wrong without saying what is the same defect as a
+  zero that means "not measured".
 
 **Verify:** a PR whose evidence does not support its claim is caught at stage 0; an attempt
-to embed production data in evidence is blocked; the planted-defect control is caught.
+to embed production data in evidence is blocked; the planted-defect control is caught; a
+branch held by a worktree fails cleanup with the worktree named.
 **⛔ CHECKPOINT 4.**
 
 ## Phase 5 — Write concurrency
