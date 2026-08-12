@@ -16,77 +16,26 @@
 // commit is not, which is why both halves are asserted in the same test rather than the
 // sentinel case being written as "it blocks".
 //
-// HOW IT RUNS. Same shape as tests/scripts/runlog.test.mjs: runlog.mjs is a CLI, so it is
-// exercised as a script that reads argv and the working directory, in a worker thread
-// rather than a child process (about 42ms against about 277ms on this machine). The
-// runner and the anchor helper are copied rather than shared: they are twenty lines of
-// test scaffolding, and the thing that actually must not drift — the path resolution
-// itself — lives in one function in runlog.mjs and is imported by nobody twice.
+// HOW IT RUNS. Same shape as tests/scripts/runlog.test.mjs, and now through the same
+// runner: runlog-harness.mjs, whose header carries the reasoning. This file used to hold
+// its own copy of that runner, declared as a tripwire and justified as "test scaffolding,
+// not resolution logic". The scaffolding was what reached the operator's live logs (issue
+// #21), so the copy is gone and the harness is shared.
 //
-// The last block spawns a real child process once, because "nothing here is sensitive to
-// the process boundary" is a claim and an end-to-end call is what pays for it.
+// The last block forces a real child process for every call in one end-to-end sequence,
+// because "nothing here is sensitive to the process boundary" is a claim and a real
+// process is what pays for it. Everywhere else, `open` is a child already — the harness
+// sends every call that could resolve a project root through one — and the worker-thread
+// calls are those carrying `--dir`.
 
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Worker } from 'node:worker_threads';
-import test, { after, describe } from 'node:test';
+import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { runInProgress, sentinelDir } from '../../plugin/hooks/sentinel.mjs';
-
-const repoRoot = path.resolve(import.meta.dirname, '..', '..');
-const RUNLOG = path.join(repoRoot, 'plugin', 'scripts', 'runlog.mjs');
-
-const scratch = [];
-after(() => {
-  for (const dir of scratch) {
-    try {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    } catch {
-      /* the OS reclaims it */
-    }
-  }
-});
-
-function tempDir(prefix = 'aeo-worker-') {
-  const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
-  scratch.push(dir);
-  return dir;
-}
-
-/** A directory `projectAnchor` resolves to without touching git — `.aeo/runs` is enough. */
-function makeAnchor() {
-  const dir = tempDir('aeo-worker-anchor-');
-  mkdirSync(path.join(dir, '.aeo', 'runs'), { recursive: true });
-  return dir;
-}
-
-/** Run runlog.mjs in a worker thread. Same argv, same cwd, same exit code and streams. */
-async function runlog(args, { cwd } = {}) {
-  const previous = process.cwd();
-  if (cwd) process.chdir(cwd);
-  try {
-    // Awaited inside the try: the worker reads process.cwd() while it runs, so the
-    // directory has to stay changed until it has exited.
-    return await new Promise((resolve) => {
-      const worker = new Worker(RUNLOG, { argv: args, stdout: true, stderr: true });
-      let stdout = '';
-      let stderr = '';
-      worker.stdout.on('data', (chunk) => {
-        stdout += chunk;
-      });
-      worker.stderr.on('data', (chunk) => {
-        stderr += chunk;
-      });
-      worker.on('error', (err) => resolve({ status: 1, stdout, stderr: `${stderr}${err}` }));
-      worker.on('exit', (status) => resolve({ status, stdout, stderr }));
-    });
-  } finally {
-    process.chdir(previous);
-  }
-}
+import { makeAnchor, runlog, spawnRunlog } from './runlog-harness.mjs';
 
 /** An opened run, and the anchor it lives under. */
 async function openedRun(job = 'workers') {
@@ -488,30 +437,31 @@ describe('a worker run started while a sentinel is live', () => {
 describe('as a child process, the way a dispatched worker invokes it', () => {
   test('open, claim two scopes, resolve a path in one, refuse a path out of it', async () => {
     const anchor = makeAnchor();
-    const spawnRunlog = (args) =>
-      spawnSync(process.execPath, [RUNLOG, ...args], { encoding: 'utf8', cwd: anchor, windowsHide: true });
+    const spawn = (args) => spawnRunlog(args, { cwd: anchor });
 
-    const opened = spawnRunlog(['open', '--job', 'child', '--date', '2026-08-12']);
+    const opened = spawn(['open', '--job', 'child', '--date', '2026-08-12']);
     assert.equal(opened.status, 0, opened.stderr);
     const dir = opened.stdout.trim();
 
-    const one = spawnRunlog(['worker', '--dir', dir, '--worker', 'w1']);
-    const two = spawnRunlog(['worker', '--dir', dir, '--worker', 'w2']);
+    const one = spawn(['worker', '--dir', dir, '--worker', 'w1']);
+    const two = spawn(['worker', '--dir', dir, '--worker', 'w2']);
     assert.equal(one.status, 0, one.stderr);
     assert.equal(two.status, 0, two.stderr);
     assert.notEqual(one.stdout.trim(), two.stdout.trim());
 
-    const good = spawnRunlog(['worker', '--dir', dir, '--worker', 'w1', '--path', 'report.md']);
+    const good = spawn(['worker', '--dir', dir, '--worker', 'w1', '--path', 'report.md']);
     assert.equal(good.status, 0, good.stderr);
     assert.equal(good.stdout.trim(), path.join(one.stdout.trim(), 'report.md'));
 
-    const bad = spawnRunlog(['worker', '--dir', dir, '--worker', 'w1', '--path', path.join('..', 'w2', 'report.md')]);
+    const bad = spawn(['worker', '--dir', dir, '--worker', 'w1', '--path', path.join('..', 'w2', 'report.md')]);
     assert.notEqual(bad.status, 0);
     assert.match(bad.stderr, /outside/i);
   });
 
   test('the usage line names the worker subcommand', () => {
-    const r = spawnSync(process.execPath, [RUNLOG, 'nonsense'], { encoding: 'utf8', windowsHide: true });
+    // A fixture working directory even for a call that resolves nothing: no invocation in
+    // these files runs against this repository, so there is no case to reason about.
+    const r = spawnRunlog(['nonsense'], { cwd: makeAnchor() });
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /worker/);
   });

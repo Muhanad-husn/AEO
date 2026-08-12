@@ -323,10 +323,18 @@ function requireOpenedDir(dir) {
 
 const [action, ...rest] = process.argv.slice(2);
 
+// Where the root-walk starts. AEO_RUNLOG_CWD is L-03's environment-variable seam: the
+// tests run this script in worker threads, which share the process's working directory
+// and cannot chdir, so the fixture directory arrives per worker through the one channel a
+// worker can carry alone. It moves only the starting point — the walk, the refusal when
+// no root is found, and everything after them are unchanged — and when it is unset or
+// empty, behaviour is exactly `process.cwd()`.
+const startDir = process.env.AEO_RUNLOG_CWD || process.cwd();
+
 if (action === 'open') {
   const job = requiredLabelFlag(rest, 'job');
   const date = dateFlag(rest);
-  const anchor = projectAnchor(process.cwd());
+  const anchor = projectAnchor(startDir);
   if (anchor === null) {
     fail('runlog must be run inside a repository; no project root was found above the working directory.');
   }

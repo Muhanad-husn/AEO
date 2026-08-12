@@ -6,97 +6,30 @@
 // exercised as a script that reads argv and the working directory, writes files, and
 // exits with a status — never by importing a function it does not export.
 //
-// TWO WAYS TO RUN IT, AND WHY. Most cases below run the script in a worker thread
-// (`runlog()`), which loads the same file, gives it the same argv, the same working
-// directory and the same filesystem, and reports the same stdout, stderr and exit code.
-// A worker costs about 42ms on this machine against about 277ms for a child process, and
-// this file makes roughly forty calls, so the choice is worth ~10s of the fast tier.
+// HOW IT IS INVOKED lives in one place, runlog-harness.mjs, shared with
+// tests/scripts/runlog-worker.test.mjs. Read its header for why a call that resolves a
+// project root runs as a child process with its own working directory, why nothing here
+// calls process.chdir(), and what the leak guard watches. The short version: the previous
+// harness selected a fixture by mutating the whole process's working directory, and 34 run
+// directories landed in the operator's real logs (issue #21, L-03).
 //
-// The last describe block runs the script as a real child process, the way a lane
-// actually invokes it: a full open -> record -> close cycle, and a usage failure. Nothing
-// in runlog.mjs is sensitive to the process boundary — it reads argv and cwd and writes
-// files — but "nothing is sensitive to it" is a claim, and the end-to-end block is what
-// pays for it. See tests/hooks/sandbox-session.test.mjs for the opposite case: there the
-// boundary *is* the behaviour, and every case there spawns.
+// Every fixture anchors the project root through `.aeo/runs` (makeAnchor) rather than
+// `git init`, so this stays in the fast `npm test` lane — no subprocess git, no repository
+// fixture.
 //
-// Every fixture anchors the project root through `.aeo/runs` (see makeAnchor below)
-// rather than `git init`, so this stays in the fast `npm test` lane — no subprocess git,
-// no repository fixture.
-//
-// WORKING DIRECTORY. A worker shares the process's working directory, so `runlog()`
-// chdirs around each call and restores afterwards. That is safe because node:test runs
-// the cases in a file one at a time; do not add `concurrency: true` to this file without
-// dealing with that first.
+// The last describe block forces a child process for every call in a full open -> record
+// -> close cycle. Most calls above it run in a worker thread, which is what makes the file
+// fast, and "the worker is a faithful stand-in for a real process" is a claim rather than
+// an observation — the end-to-end block is what pays for it. See
+// tests/hooks/sandbox-session.test.mjs for the opposite case: there the boundary *is* the
+// behaviour, and every case there spawns.
 
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import os from 'node:os';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { Worker } from 'node:worker_threads';
-import test, { after, describe } from 'node:test';
+import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-const repoRoot = path.resolve(import.meta.dirname, '..', '..');
-const RUNLOG = path.join(repoRoot, 'plugin', 'scripts', 'runlog.mjs');
-
-const scratch = [];
-after(() => {
-  for (const dir of scratch) {
-    try {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    } catch {
-      /* the OS reclaims it */
-    }
-  }
-});
-
-function tempDir(prefix = 'aeo-runlog-') {
-  const dir = mkdtempSync(path.join(os.tmpdir(), prefix));
-  scratch.push(dir);
-  return dir;
-}
-
-/**
- * A directory `projectAnchor` (hooks/sentinel.mjs) resolves to without touching git: it
- * looks for `.aeo/runs` before it looks for `.git`. Using that instead of `git init` is
- * what keeps this file out of the git-touching integration lane.
- */
-function makeAnchor() {
-  const dir = tempDir('aeo-runlog-anchor-');
-  mkdirSync(path.join(dir, '.aeo', 'runs'), { recursive: true });
-  return dir;
-}
-
-/** Run runlog.mjs in a worker thread. Same argv, same cwd, same exit code and streams. */
-async function runlog(args, { cwd } = {}) {
-  const previous = process.cwd();
-  if (cwd) process.chdir(cwd);
-  try {
-    // Awaited inside the try, not returned from it: the worker reads process.cwd() while
-    // it runs, so the directory has to stay changed until it has exited.
-    return await new Promise((resolve) => {
-      const worker = new Worker(RUNLOG, { argv: args, stdout: true, stderr: true });
-      let stdout = '';
-      let stderr = '';
-      worker.stdout.on('data', (chunk) => {
-        stdout += chunk;
-      });
-      worker.stderr.on('data', (chunk) => {
-        stderr += chunk;
-      });
-      worker.on('error', (err) => resolve({ status: 1, stdout, stderr: `${stderr}${err}` }));
-      worker.on('exit', (status) => resolve({ status, stdout, stderr }));
-    });
-  } finally {
-    process.chdir(previous);
-  }
-}
-
-/** Run runlog.mjs as a real child process, the way a lane invokes it. */
-function spawnRunlog(args, { cwd } = {}) {
-  const r = spawnSync(process.execPath, [RUNLOG, ...args], { encoding: 'utf8', cwd, windowsHide: true });
-  return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
-}
+import { leaksSince, makeAnchor, runlog, snapshotLogDirs, spawnRunlog, tempDir } from './runlog-harness.mjs';
 
 function readLines(file) {
   const text = readFileSync(file, 'utf8');
@@ -424,5 +357,50 @@ describe('as a real child process', () => {
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /usage/);
     assert.equal(r.stdout, '');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The leak guard itself
+//
+// The guard runs after every invocation in both runlog test files and once more when the
+// file finishes, and its whole job is to be loud about something that was silent for
+// hours. A guard nobody has seen fire is a guard nobody knows works, so its comparison is
+// exercised here against a directory standing in for `logs/` — a snapshot, a directory
+// created behind its back, and the name coming back out.
+// ---------------------------------------------------------------------------
+
+describe('the guard that catches a run directory landing in this repository', () => {
+  test('a directory created after the snapshot is reported by name', () => {
+    const logs = tempDir('aeo-runlog-watched-');
+    mkdirSync(path.join(logs, '2026-01-01-already-here'));
+    const before = snapshotLogDirs([logs]);
+    assert.deepEqual(leaksSince(before), [], 'a directory present at snapshot time is not a leak');
+
+    const leaked = path.join(logs, '2026-08-12-x');
+    mkdirSync(leaked);
+    assert.deepEqual(leaksSince(before), [leaked]);
+  });
+
+  test('it watches every directory it was given, not just the first', () => {
+    // In a linked worktree the checkout's logs and the resolved project root's logs are
+    // two different directories, and the leak lands in the second one.
+    const own = tempDir('aeo-runlog-watched-own-');
+    const anchor = tempDir('aeo-runlog-watched-anchor-');
+    const before = snapshotLogDirs([own, anchor]);
+    const leaked = path.join(anchor, '2026-08-12-x');
+    mkdirSync(leaked);
+    assert.deepEqual(leaksSince(before), [leaked]);
+  });
+
+  test('a directory that does not exist yet reads as empty rather than throwing', () => {
+    // `logs/` need not exist in a fresh checkout, and a guard that crashes on that is a
+    // guard someone removes.
+    const missing = path.join(tempDir('aeo-runlog-watched-missing-'), 'logs');
+    const before = snapshotLogDirs([missing]);
+    assert.deepEqual(leaksSince(before), []);
+    mkdirSync(missing, { recursive: true });
+    mkdirSync(path.join(missing, '2026-08-12-x'));
+    assert.deepEqual(leaksSince(before), [path.join(missing, '2026-08-12-x')]);
   });
 });
