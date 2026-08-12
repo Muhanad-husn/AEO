@@ -28,6 +28,11 @@ If you ever see that line, treat the session as ungated until it's fixed.
 
 ## Install
 
+`Muhanad-husn/AEO` is currently a **private** repository. The commands below
+need collaborator access — without it, `marketplace add` fails at the clone
+step with a permission error, not a helpful one. Ask the owner to add you as
+a collaborator before you try.
+
 From inside a Claude Code session:
 
 ```
@@ -44,6 +49,19 @@ claude plugin install aeo@aeo
 
 Both add this repository as a marketplace named `aeo` and install the `aeo`
 plugin it publishes.
+
+## Uninstall
+
+```
+claude plugin uninstall aeo@aeo
+claude plugin marketplace remove aeo
+```
+
+This removes the plugin and the marketplace registration, but not the
+installed copy Claude Code keeps at `~/.claude/plugins/cache/`. That cache
+is Claude Code's, not this plugin's, and uninstall doesn't reach it. Run
+`claude plugin prune` afterward to clear it — that also clears any other
+orphaned plugin caches Claude Code is holding, not just this one.
 
 ## The lanes
 
@@ -92,6 +110,11 @@ actions; the sixth never blocks anything — it reports.
 | `path-guard` | A role subagent editing the harness's own `.claude/` configuration. |
 | `review-jail` | The reviewer or verifier role calling any tool but a `Read` of its own staged evidence packet. |
 | `session-status` | Nothing — it never blocks. It reports which of the above are actually wired and the project's live state, at the start of every session. |
+
+`claude plugin details` reports **2 hooks** — that counts the event types
+these scripts are wired to (`SessionStart`, `PreToolUse`), not the six
+scripts themselves. Both numbers are correct; they're counting different
+things.
 
 ## Who merges
 
