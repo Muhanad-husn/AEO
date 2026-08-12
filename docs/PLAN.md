@@ -286,7 +286,10 @@ gets silently bypassed. Read-only fan-out already shipped in Phase 2.
 **Verify:** four issues run to four PRs concurrently with every gate firing correctly; the
 independence check catches a deliberately conflicting pair, including one that collides
 only on files neither had created yet.
-**⛔ CHECKPOINT 5.**
+**⛔ CHECKPOINT 5.** Closed 2026-08-12 —
+[`logs/2026-08-12-checkpoint-5-verification/summary.md`](../logs/2026-08-12-checkpoint-5-verification/summary.md).
+Both clauses ran live against the testbed; both of [D11](DECISIONS.md)'s quantities are
+measured in #17, which recommends changing nothing.
 
 ## Phase 6 — Scaffolder and tracker
 
