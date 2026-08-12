@@ -42,7 +42,7 @@ const SCRIPT = path.resolve(
 // Importing the script is only safe because it guards `main()` behind an
 // invoked-as-a-script check. Without that guard this import would classify branches in
 // whatever repository the runner is sitting in — which is this one.
-const { mergedAtRecordedHead } = await import(pathToFileURL(SCRIPT).href);
+const { mergedAtRecordedHead, worktreeSuffix } = await import(pathToFileURL(SCRIPT).href);
 
 const scratch = [];
 after(() => {
@@ -498,5 +498,88 @@ describe('the pre-existing safety guarantees still hold', () => {
     const source = readFileSync(SCRIPT, 'utf8');
     assert.doesNotMatch(source, /CLAUDE_SKILL_DIR/);
     assert.match(source, /\$\{CLAUDE_PLUGIN_ROOT\}\/skills\/safe-cleanup\/scripts\/classify-branches\.mjs/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// issue #10, defect 2 — the worktree path printed twice
+// ---------------------------------------------------------------------------
+//
+// `FAILED` used to append `— checked out in worktree <path>` unconditionally, so whenever
+// git's own stderr already named the worktree (which, for a "used by worktree" failure, it
+// always does) the path printed twice. The fix appends only when git's own message does
+// not already carry the RESOLVED path.
+//
+// No real `git branch -d` failure on a worktree-held branch omits the path from its
+// stderr — git always names it — so the "git does not name it" case cannot be driven from
+// a live git process. It is pinned directly against the exported decision function
+// instead, for the same reason mergedAtRecordedHead above is pinned directly rather than
+// through a shimmed `gh`: the CLI cannot be steered into the state being tested.
+
+function countOccurrences(haystack, needle) {
+  if (needle === '') return 0;
+  let count = 0;
+  let from = 0;
+  for (;;) {
+    const at = haystack.indexOf(needle, from);
+    if (at === -1) return count;
+    count += 1;
+    from = at + needle.length;
+  }
+}
+
+describe('worktreeSuffix — the appended text does not duplicate what git already said', () => {
+  test('git already naming the path, spelled the same way, suppresses the suffix', () => {
+    const cause = "error: cannot delete branch 'feat/held' used by worktree at 'D:/aeo-testbed/wt-cp4'";
+    assert.equal(worktreeSuffix(cause, 'D:/aeo-testbed/wt-cp4'), '');
+  });
+
+  test('git naming the path with a different separator still suppresses the suffix', () => {
+    const cause = "error: cannot delete branch 'feat/held' used by worktree at 'D:\\aeo-testbed\\wt-cp4'";
+    assert.equal(worktreeSuffix(cause, 'D:/aeo-testbed/wt-cp4'), '');
+  });
+
+  test('git naming the path in a different case still suppresses the suffix', (t) => {
+    if (process.platform !== 'win32') {
+      return t.skip('case-insensitive comparison is a Windows rule; elsewhere the paths genuinely differ');
+    }
+    const cause = "error: cannot delete branch 'feat/held' used by worktree at 'D:/AEO-TESTBED/WT-CP4'";
+    assert.equal(worktreeSuffix(cause, 'D:/aeo-testbed/wt-cp4'), '');
+  });
+
+  test('git NOT naming the path appends it, exactly once, to the FAILED line', () => {
+    // A stand-in for "a git failure whose stderr does not carry the path" — real git
+    // always includes it for a worktree-held branch, so this is the only way to reach the
+    // branch of the fix that appends the suffix.
+    const cause = "error: cannot lock ref 'refs/heads/feat/held': unable to resolve reference";
+    const heldBy = 'D:/aeo-testbed/wt-cp4';
+    const suffix = worktreeSuffix(cause, heldBy);
+    assert.notEqual(suffix, '', 'the path is genuinely absent from cause, so it must be appended');
+    const failedLine = `FAILED feat/held (git branch -d refused: ${cause}${suffix} — left intact)`;
+    assert.equal(countOccurrences(failedLine, heldBy), 1, `expected the path exactly once:\n${failedLine}`);
+  });
+
+  test('no worktree holds the branch: no suffix at all', () => {
+    assert.equal(worktreeSuffix('fatal: unable to lock ref', null), '');
+  });
+});
+
+describe('a refused delete names the resolved worktree path exactly once', () => {
+  test('the real "used by worktree" failure does not duplicate the path git already gave', () => {
+    const dir = makeRepo({ branches: [{ name: 'feat/held' }, { name: 'feat/wip', ahead: true }] });
+    const wtDir = path.join(tempDir(), 'wt-held');
+    git(dir, ['worktree', 'add', '-q', wtDir, 'feat/held']);
+    const expectedPath = worktreePathFor(dir, 'feat/held');
+    assert.ok(expectedPath, 'test setup: the new worktree must map back to feat/held');
+
+    const r = run(dir, ['--apply', '--yes', '--delete-merged']);
+    assert.equal(r.status, 0, r.stderr);
+    const failedLine = r.stdout.split('\n').find((l) => l.includes('FAILED feat/held'));
+    assert.ok(failedLine, `expected a FAILED line for feat/held:\n${r.stdout}`);
+    assert.equal(
+      countOccurrences(failedLine, expectedPath),
+      1,
+      `the worktree path must appear exactly once:\n${failedLine}`,
+    );
   });
 });

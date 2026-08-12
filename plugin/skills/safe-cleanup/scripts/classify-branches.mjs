@@ -90,6 +90,35 @@ function firstLine(text) {
   return (text || '').split('\n').map(l => l.trim()).filter(Boolean)[0] || '';
 }
 
+// Forward slashes, and on Windows lower case. Not a full canonicalisation — `text` is
+// prose, not a path, so it cannot be handed to `path.resolve` — but it is enough to tell
+// whether git's own message already names the same location our own resolution names,
+// despite the two differing in separator or case.
+function normalizeForPathCompare(text) {
+  let s = String(text ?? '').replace(/\\/g, '/');
+  if (process.platform === 'win32') s = s.toLowerCase();
+  return s;
+}
+
+/**
+ * The text to append to a FAILED line naming the worktree holding a branch — empty when
+ * git's own failure message already carries that location.
+ *
+ * `heldBy` is compared RESOLVED, not as a raw substring: `path.resolve` first, then
+ * normalized for separator and case. Without the resolve, `worktreeHoldingBranch`'s answer
+ * and the path git prints can be the same location spelled two ways — a trailing
+ * separator, a relative fragment — and a naive `includes` would then append a duplicate
+ * anyway. Exported so the "git does not name it" case can be pinned directly: no real git
+ * failure on a worktree-held branch omits the path, so there is no way to drive that case
+ * from the CLI, only by handing this function a cause string that lacks it.
+ */
+export function worktreeSuffix(cause, heldBy) {
+  if (!heldBy) return '';
+  const resolved = normalizeForPathCompare(path.resolve(heldBy));
+  const alreadyNamed = normalizeForPathCompare(cause).includes(resolved);
+  return alreadyNamed ? '' : ` — checked out in worktree ${heldBy}`;
+}
+
 // Maps a branch name to the absolute path of the worktree that has it checked out, or
 // null if no worktree does — including when `git worktree list` itself fails or returns
 // nothing parseable, so a diagnostic failure here never masks the underlying git error.
@@ -395,7 +424,7 @@ function main() {
     else {
       const cause = firstLine(del.stderr) || '(git gave no reason on stderr)';
       const heldBy = worktreeHoldingBranch(r.name);
-      const where = heldBy ? ` — checked out in worktree ${heldBy}` : '';
+      const where = worktreeSuffix(cause, heldBy);
       console.log(`  FAILED ${r.name} (git branch ${r.delFlag} refused: ${cause}${where} — left intact)`);
       skipped++;
     }

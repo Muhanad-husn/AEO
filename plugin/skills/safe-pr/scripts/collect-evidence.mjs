@@ -309,9 +309,9 @@ function main() {
   const destRel = path.join('docs', 'tdd-evidence', feature, slice);
   const destAbs = path.join(repoRoot, destRel);
   refuseProductionPaths([destAbs], liveRoot, 'evidence folder');
-  fs.mkdirSync(destAbs, { recursive: true });
 
-  // Decide modality (uses the resolved report/results dirs).
+  // Decide modality (uses the resolved report/results dirs). Read-only — safe before the
+  // folder exists, since a fresh run's destAbs is not there yet and existsSync just says so.
   const reportAbs = path.isAbsolute(reportDir) ? reportDir : path.join(repoRoot, reportDir);
   const resultsAbs = path.isAbsolute(resultsDir) ? resultsDir : path.join(repoRoot, resultsDir);
   const sourceHasPw = fs.existsSync(reportAbs) || fs.existsSync(resultsAbs);
@@ -320,16 +320,23 @@ function main() {
   const type = explicitType
     || (hasPwArtifacts ? 'web' : ((transcriptInputs.length || transcriptDir || hasTopLevelTranscripts(destAbs)) ? 'generic' : 'web'));
 
-  // ---- COPY PHASE (skipped in --body-only) ----
+  // Every source the copy would read, each tree's entries included: a source directory
+  // outside production data can still hold a link into it. Checked BEFORE the evidence
+  // folder is created: a refusal that has to undo its own mkdir is a refusal with a
+  // partial-failure mode, so the check comes first and the folder is never touched on a
+  // refused run.
   if (!bodyOnly) {
-    // Every source the copy would read, each tree's entries included: a source directory
-    // outside production data can still hold a link into it.
     const sources = [];
     for (const srcAbs of [reportAbs, resultsAbs]) if (fs.existsSync(srcAbs)) sources.push(srcAbs, ...walk(srcAbs));
     sources.push(...transcriptInputs);
     if (transcriptDirAbs) sources.push(transcriptDirAbs, ...walk(transcriptDirAbs));
     refuseProductionPaths(sources, liveRoot, 'evidence source');
+  }
 
+  fs.mkdirSync(destAbs, { recursive: true });
+
+  // ---- COPY PHASE (skipped in --body-only) ----
+  if (!bodyOnly) {
     const copied = [];
     for (const [srcAbs, name] of [[reportAbs, 'playwright-report'], [resultsAbs, 'test-results']]) {
       if (fs.existsSync(srcAbs)) {

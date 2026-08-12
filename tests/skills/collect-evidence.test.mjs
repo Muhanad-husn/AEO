@@ -266,3 +266,40 @@ describe('the declaration', () => {
     assertRefused(result, [live], 'production data with every existing flag set');
   });
 });
+
+// ---------------------------------------------------------------------------
+// the folder residue (issue #10, defect 1)
+// ---------------------------------------------------------------------------
+//
+// The refusal used to fire on a source AFTER the evidence folder had already been
+// mkdir'd, so a refused run left `docs/tdd-evidence/<feature>/<slice>/` behind, empty.
+// The fix checks every source before the mkdir rather than cleaning up afterwards — a
+// refusal that has to undo its own side effect is a refusal with a partial-failure mode.
+// Both cases below matter: a fix that never creates the folder at all would pass a test
+// that only checked the refused run.
+
+describe('the evidence folder itself', () => {
+  test('a refused run leaves no directory behind that did not exist before it started', () => {
+    const { repo, live } = world();
+    const source = path.join(live, 'customers.txt');
+    // A fresh repo has no `docs/` at all, so its absence after the run is the whole claim:
+    // nothing under it, including the empty leaf folder, was ever created.
+    assert.ok(!existsSync(path.join(repo, 'docs')), 'test setup: the repo must start with no docs/');
+    const result = collect(['--transcript', source, '--copy-only'], { cwd: repo, env: { [LIVE]: live } });
+    assertRefused(result, [source, live], 'a refused run');
+    assert.ok(
+      !existsSync(path.join(repo, 'docs')),
+      'the refusal must leave no docs/ directory behind, not even the empty evidence folder',
+    );
+  });
+
+  test('a successful run still creates the folder it is supposed to', () => {
+    const { repo, live } = world();
+    const source = path.join(tempDir(), 'test-run.txt');
+    writeFileSync(source, 'ok 1 - the suite passed\n');
+    assert.ok(!existsSync(evidenceDir(repo)), 'test setup: the evidence folder must not pre-exist');
+    const result = collect(['--transcript', source, '--copy-only'], { cwd: repo, env: { [LIVE]: live } });
+    assertCollected(result, 'a run with nothing to refuse');
+    assert.ok(existsSync(evidenceDir(repo)), 'a non-refused run must still create the evidence folder');
+  });
+});
