@@ -398,6 +398,66 @@ describe('a merged PR that recorded this exact head releases the branch', () => 
   });
 });
 
+// ---------------------------------------------------------------------------
+// P4.4 — a refused delete names the cause git gave, and the worktree holding
+// the branch when one does
+// ---------------------------------------------------------------------------
+
+/** What the script itself would resolve `git worktree list --porcelain` to for `branch`. */
+function worktreePathFor(dir, branch) {
+  const out = git(dir, ['worktree', 'list', '--porcelain']);
+  let current = null;
+  for (const line of out.split('\n')) {
+    if (line.startsWith('worktree ')) current = line.slice('worktree '.length).trim();
+    else if (line.trim() === `branch refs/heads/${branch}`) return current;
+  }
+  return null;
+}
+
+describe('a refused delete reports why, and where, instead of a generic message', () => {
+  test('a branch held by a second worktree fails with that worktree named', () => {
+    const dir = makeRepo({ branches: [{ name: 'feat/held' }, { name: 'feat/wip', ahead: true }] });
+    const wtDir = path.join(tempDir(), 'wt-held');
+    git(dir, ['worktree', 'add', '-q', wtDir, 'feat/held']);
+    const expectedPath = worktreePathFor(dir, 'feat/held');
+    assert.ok(expectedPath, 'test setup: the new worktree must map back to feat/held');
+
+    const r = run(dir, ['--apply', '--yes', '--delete-merged']);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /FAILED feat\/held \(git branch -d refused: /);
+    // git's own reason is present, not a paraphrase of it.
+    assert.match(r.stdout, /cannot delete branch 'feat\/held'/);
+    // and the worktree is named, resolved the same way the script resolves it.
+    assert.ok(r.stdout.includes(expectedPath), `expected worktree path in:\n${r.stdout}`);
+    assert.match(r.stdout, /left intact/);
+    assert.ok(branchesIn(dir).includes('feat/held'), 'the branch must survive the refused delete');
+  });
+
+  test('a failure from another cause reports git\'s stderr and does not claim a worktree', () => {
+    // A ref-lock file reproduces a real, deterministic `git branch -d` failure that has
+    // nothing to do with worktrees: git refuses because the ref is (apparently) locked by
+    // another process.
+    const dir = makeRepo({ branches: [{ name: 'locked' }, { name: 'feat/wip', ahead: true }] });
+    writeFileSync(path.join(dir, '.git', 'refs', 'heads', 'locked.lock'), '');
+
+    const r = run(dir, ['--apply', '--yes', '--delete-merged']);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /FAILED locked \(git branch -d refused: /);
+    assert.match(r.stdout, /cannot lock ref 'refs\/heads\/locked'/);
+    assert.doesNotMatch(r.stdout, /checked out in worktree/);
+    assert.match(r.stdout, /left intact/);
+    assert.ok(branchesIn(dir).includes('locked'), 'the branch must survive the refused delete');
+  });
+
+  test('the success path message is unchanged', () => {
+    const dir = makeRepo({ branches: [{ name: 'feat/merged' }, { name: 'feat/wip', ahead: true }] });
+    const r = run(dir, ['--apply', '--yes', '--delete-merged']);
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /delete feat\/merged {2}\(git branch -d\)/);
+    assert.doesNotMatch(r.stdout, /FAILED/);
+  });
+});
+
 describe('the pre-existing safety guarantees still hold', () => {
   test('--apply without --yes refuses, before either new guard is consulted', () => {
     const dir = makeRepo({ branches: [{ name: 'feat/merged' }, { name: 'feat/wip', ahead: true }] });
