@@ -13,9 +13,14 @@
 // does not cover this file.
 //
 // THE PROBLEM WITH A NAIVE REPLAY. This history is squash-merged and the branches are
-// deleted, so the original concurrent tips no longer exist. `main` is linear, so the merge
-// base of any two commits on it is just the older one, and asking git to merge them is
-// trivially clean. That question is not the one D11 asks.
+// deleted, so the original concurrent tips no longer exist. `main`'s FIRST-PARENT LINE is a
+// chain, so the merge base of two adjacent commits on it is just the older one, and asking
+// git to merge them is trivially clean. That question is not the one D11 asks.
+//
+// `main` ITSELF IS NOT A CHAIN — it carries real merge commits, and the census walk below
+// says so again where it acts on it. The distinction is the whole reason --first-parent is
+// load-bearing, and reading this paragraph as "main is linear" is exactly the mistake that
+// made the first pass of this census wrong.
 //
 // THE QUESTION ACTUALLY ASKED, per adjacent pair (A, then B, with P = A's parent):
 //
