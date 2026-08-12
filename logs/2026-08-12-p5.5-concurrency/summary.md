@@ -33,6 +33,14 @@ Stated first, because none of these numbers is a property of the code.
 | Also running | measurement 2's git plumbing overlapped rounds 2 through 5 |
 | Isolation | four plain directory copies of this worktree, `source/`, `.git` and `node_modules` excluded, `git init` in each. **Not** git worktrees |
 
+**The three skips are the whole of `tests/hooks/runtime-fallback.test.mjs`**, whose three
+cases share one condition: no POSIX `sh` on PATH. This harness spawns `npm test` through
+`cmd` (`shell: true` on `npm.cmd`), where there is none. The same command from Git Bash
+reports 362 pass and 0 skipped, so the measured unit here is 359 tests of real work rather
+than the 362 a founder gets. **It changes nothing about the ratio** — every trial, serial
+and concurrent alike, ran the same 359 through the same shell, and the ratio is a
+comparison between those trials.
+
 **No quiet window ever appeared**, so every number below is a loaded-machine number and
 the load each trial ran under is stored in that trial's record. `npm test` cost 46s here
 against the 29s [fix #8](../2026-08-12-fix-8-fast-tier/summary.md) measured on a quiet
