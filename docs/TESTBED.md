@@ -58,6 +58,12 @@ feature branch is what exposes a lane that resolves the default branch correctly
 and then branches from `HEAD` anyway. A repository whose `main` is current cannot
 tell those two apart.
 
+`cp4/stage-0-mismatch` is a second kept fixture, from Checkpoint 4. It carries a
+real change (`runningTotal` gains an `options.max` cap), a plainly stated claim in
+`PR_BODY.md`, and green test evidence that never exercises the cap. Green, real,
+and about a different thing than the claim — the shape the reviewer's stage 0
+exists to catch. Reproducing it costs more than keeping it.
+
 ## Rules
 
 - **It is a fixture, not a mirror.** Nothing from `D:\AEO` is ever pushed there.

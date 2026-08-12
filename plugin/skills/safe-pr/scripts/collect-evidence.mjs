@@ -49,6 +49,8 @@
  *   - Copied text artifacts (transcripts included) are scanned for likely secrets; a match prints
  *     a loud "SECRETS SUSPECTED" report (file + pattern only, never the value) so the human reviews
  *     BEFORE committing.
+ *   - Anything resolving inside the declared production data root (AEO_LIVE_DATA_ROOT) is REFUSED,
+ *     not warned about, with no override flag. See "The production data refusal" below.
  *   - --out is never silently clobbered: if the target exists, output goes to <name>.generated.md
  *     unless --force is given.
  */
@@ -56,6 +58,9 @@
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+
+import { isPathInside, normalizeHookPath, realpathDeep } from '../../../hooks/lib.mjs';
+import { LIVE_DATA_ROOT_ENV } from '../../../hooks/sandbox-guard.mjs';
 
 function parseArgs(argv) {
   const args = {};
@@ -159,6 +164,97 @@ function scanForSecrets(files) {
   return hits;
 }
 
+// ---------------------------------------------------------------------------
+// The production data refusal (EN-16)
+// ---------------------------------------------------------------------------
+//
+// Everything this script touches is one commit away from being published: evidence is
+// copied into the repository, committed, pushed, and embedded in a pull request body.
+// P1.5's sandbox guard stops a session reaching production data. This stops production
+// data leaving by the other end of the same pipeline, and both read ONE declaration of
+// where that data is — L-03's environment-variable seam, AEO_LIVE_DATA_ROOT — so the two
+// can never disagree about what they are protecting.
+//
+// REFUSE, NEVER WARN, AND NO OVERRIDE FLAG (L-05). A warning here is advice printed
+// beside data that has already been copied, and advice is what cost 19,000 documents.
+//
+// Paths are compared RESOLVED, through symlinks, junctions and `..`, because a link into
+// production data defeats a string comparison and defeats the guarantee with it.
+
+const NO_OVERRIDE =
+  'There is no override flag. That is deliberate (L-05): an override is what you reach for at 2am.';
+
+function refuse(lines) {
+  console.error('\n============ PRODUCTION DATA IN EVIDENCE — REFUSED ============');
+  for (const line of lines) console.error(line);
+  console.error(NO_OVERRIDE);
+  console.error('==============================================================\n');
+  process.exit(1);
+}
+
+/**
+ * The declared production data root, fully resolved, or null when none is declared.
+ *
+ * UNSET IS A LOUD SKIP. It is not a refusal and it is not silence. A project with no
+ * production data directory declares nothing, which is the normal and correct state for
+ * most repositories; refusing every run there would make the collector unusable and get
+ * it deleted, and a guard that is deleted protects nothing. Skipping quietly is the
+ * fail-open case this check exists to prevent, so the skip is announced on stderr and
+ * again in the summary, where the operator and the safe-pr skill both read. That is the
+ * same answer P1.5's guard and sandbox-session already give for the same variable, so all
+ * three behave alike.
+ *
+ * SET BUT NOT ABSOLUTE IS A REFUSAL. That is a misconfiguration rather than an absence:
+ * a relative root resolves against whatever directory this process happens to run in, so
+ * the check would be comparing against a place nobody named.
+ */
+function productionDataRoot(env = process.env) {
+  const raw = typeof env[LIVE_DATA_ROOT_ENV] === 'string' ? env[LIVE_DATA_ROOT_ENV].trim() : '';
+  if (raw === '') {
+    console.warn(
+      `WARN: ${LIVE_DATA_ROOT_ENV} is unset, so this project declares no production data root and the ` +
+      'production-data check DID NOT RUN — only the secret scan is protecting this evidence. Declare the ' +
+      'production data root to make the check real.');
+    return null;
+  }
+  const declared = normalizeHookPath(raw);
+  if (!path.isAbsolute(declared)) {
+    refuse([
+      `${LIVE_DATA_ROOT_ENV} is ${JSON.stringify(raw)}, which is not an absolute path.`,
+      'A relative root resolves against whatever directory this process happens to run in, so the collector',
+      'cannot tell whether an evidence path sits inside production data. Set it to an absolute path, or unset',
+      'it if this project has no production data.',
+    ]);
+  }
+  return realpathDeep(declared);
+}
+
+/**
+ * Refuse every candidate resolving inside the production data root.
+ *
+ * Called on the sources before the copy and on the evidence folder after it, and both
+ * calls carry their own weight. Before: copying out of production data is already the
+ * read L-03 exists to stop. After: `fs.cpSync` copies a symlink AS a symlink, `walk`
+ * reports it as an ordinary file, and the body phase then reads through it — so a link is
+ * how production content reaches a pull request without a byte of it being copied.
+ */
+function refuseProductionPaths(candidates, liveRoot, what) {
+  if (liveRoot === null) return;
+  for (const candidate of candidates) {
+    const resolved = realpathDeep(path.resolve(candidate));
+    if (!isPathInside(liveRoot, resolved)) continue;
+    refuse([
+      // Printed raw, not JSON-quoted: on Windows every separator doubles and the reader
+      // is a person deciding what to delete.
+      `${what}: ${candidate}`,
+      `resolves to: ${resolved}`,
+      `which is inside the production data root ${liveRoot} (${LIVE_DATA_ROOT_ENV}).`,
+      'Evidence is committed, pushed and embedded in a pull request body, so a path resolving into production',
+      'data is one commit away from publishing it. Collect evidence produced by a sandboxed run instead.',
+    ]);
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   const feature = args.feature;
@@ -183,9 +279,14 @@ function main() {
     process.exit(1);
   }
 
+  // Read before anything is copied or created: a root that is set but unusable stops the
+  // run here rather than after the collector has already touched the filesystem.
+  const liveRoot = productionDataRoot();
+
   const explicitType = normalizeType(args.type);
-  const transcriptInputs = asList(args.transcript);
+  const transcriptInputs = asList(args.transcript).map(t => (path.isAbsolute(t) ? t : path.join(process.cwd(), t)));
   const transcriptDir = typeof args['transcript-dir'] === 'string' ? args['transcript-dir'] : null;
+  const transcriptDirAbs = transcriptDir && (path.isAbsolute(transcriptDir) ? transcriptDir : path.join(process.cwd(), transcriptDir));
 
   const repoRoot = sh('git rev-parse --show-toplevel') || process.cwd();
   const branch = sh('git rev-parse --abbrev-ref HEAD');
@@ -207,6 +308,7 @@ function main() {
 
   const destRel = path.join('docs', 'tdd-evidence', feature, slice);
   const destAbs = path.join(repoRoot, destRel);
+  refuseProductionPaths([destAbs], liveRoot, 'evidence folder');
   fs.mkdirSync(destAbs, { recursive: true });
 
   // Decide modality (uses the resolved report/results dirs).
@@ -220,6 +322,14 @@ function main() {
 
   // ---- COPY PHASE (skipped in --body-only) ----
   if (!bodyOnly) {
+    // Every source the copy would read, each tree's entries included: a source directory
+    // outside production data can still hold a link into it.
+    const sources = [];
+    for (const srcAbs of [reportAbs, resultsAbs]) if (fs.existsSync(srcAbs)) sources.push(srcAbs, ...walk(srcAbs));
+    sources.push(...transcriptInputs);
+    if (transcriptDirAbs) sources.push(transcriptDirAbs, ...walk(transcriptDirAbs));
+    refuseProductionPaths(sources, liveRoot, 'evidence source');
+
     const copied = [];
     for (const [srcAbs, name] of [[reportAbs, 'playwright-report'], [resultsAbs, 'test-results']]) {
       if (fs.existsSync(srcAbs)) {
@@ -238,10 +348,9 @@ function main() {
       const dst = path.join(destAbs, path.basename(srcAbs));
       if (path.resolve(srcAbs) !== path.resolve(dst)) fs.cpSync(srcAbs, dst);
     };
-    for (const t of transcriptInputs) addTranscript(path.isAbsolute(t) ? t : path.join(process.cwd(), t));
-    if (transcriptDir) {
-      const dirAbs = path.isAbsolute(transcriptDir) ? transcriptDir : path.join(process.cwd(), transcriptDir);
-      for (const f of walk(dirAbs)) addTranscript(f);
+    for (const t of transcriptInputs) addTranscript(t);
+    if (transcriptDirAbs) {
+      for (const f of walk(transcriptDirAbs)) addTranscript(f);
     }
 
     // Drop raw traces (.zip) and HAR captures (.har) from the committed copy unless asked to keep them.
@@ -263,6 +372,7 @@ function main() {
   const transcriptFiles = topLevelTranscripts(destAbs);
   const droppedSensitive = files.filter(f => /\.(zip|har)$/i.test(f) && !isTrace(f)).length; // informational only
 
+  refuseProductionPaths(files, liveRoot, 'evidence file');
   const secretHits = scanForSecrets(files);
 
   const rawUrl = (rel) => repo && ref ? `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/${ref}/${rel}` : rel;
@@ -384,6 +494,7 @@ function main() {
   }
   console.log(`transcripts     : ${transcriptFiles.length}${type !== 'web' && transcriptFiles.length === 0 ? '  <-- WARNING: a non-web slice needs at least one transcript' : ''}`);
   console.log(`secrets         : ${secretHits.length ? secretHits.length + ' SUSPECTED — see report above' : 'none detected (still skim the evidence)'}`);
+  console.log(`production data : ${liveRoot ? `nothing resolves inside ${liveRoot}` : `NOT CHECKED — ${LIVE_DATA_ROOT_ENV} is unset (see the warning above)`}`);
   console.log(`commit          : ${sha ? sha.slice(0, 12) : '(unknown)'}`);
   console.log(`repo            : ${repo ? repo.owner + '/' + repo.repo : '(no github.com remote)'}`);
   if (copyOnly) {

@@ -60,8 +60,8 @@ it is not this one. Read it before running any lane end to end.
 
 ## Current stage
 
-Phases 0 through 3 complete. The gates exist, in Node, wired through
-`hooks/hooks.json`. Four agent charters and eleven of twelve skills carry real
+Phases 0 through 4 complete. The gates exist, in Node, wired through
+`hooks/hooks.json`. Five agent charters and twelve of thirteen skills carry real
 content; `status` is still a stub and lands in Phase 6.
 
 Phase 3 added the observability layer: `runlog.mjs` writes the fixed six-field
@@ -69,14 +69,24 @@ record, `run-monitor.mjs` answers "is this thing still working" from a plain
 terminal, and the `monitor-designer` agent with its `monitor-design` skill covers
 job-specific overlays only.
 
+Phase 4 added verification. The reviewer asks **stage 0 — does the evidence
+demonstrate the claim?** before it asks anything about the spec. The `verifier`
+agent and its `verify` lane cover what has no oracle, triggered by
+[D4](docs/DECISIONS.md)'s risk rubric, which exists in exactly one copy and has a
+test that fails on a second. The evidence collector refuses anything resolving
+inside `AEO_LIVE_DATA_ROOT`, with no override flag. `safe-cleanup` now names both
+git's reason and the worktree holding a branch it could not delete.
+
 Both halves of Checkpoint 2's verify line have run against the testbed — the local
 gates and the GitHub path from issue to open pull request. The record is in
 [logs/2026-08-11-phase-2-verification/summary.md](logs/2026-08-11-phase-2-verification/summary.md).
 Checkpoint 3's four cases have run live against real processes; the record is in
 [logs/2026-08-11-phase-3-observability/summary.md](logs/2026-08-11-phase-3-observability/summary.md).
+Checkpoint 4's four clauses are in
+[logs/2026-08-12-checkpoint-4-verification/summary.md](logs/2026-08-12-checkpoint-4-verification/summary.md)
+— three live against the testbed, one cited from P4.2 and labelled as cited.
 
-Next is **Phase 4** of [docs/PLAN.md](docs/PLAN.md). Dogfooding is unblocked: the
-stubs that made D21's constraint bite are filled.
+Next is **Phase 5** of [docs/PLAN.md](docs/PLAN.md).
 
 Four findings overturn things the vendored skill states as settled. They are cheap to
 miss and expensive to discover late:

@@ -31,6 +31,12 @@
 // under review. That constraint belongs to the dispatch, not to this file, but it is
 // created here and it is stated here so the next reader does not have to infer it.
 //
+// TWO ROLES, ONE JAIL. The verifier is sealed by the same gate. Its product is the same
+// guarantee -- a verdict about the evidence it was handed rather than about the branch it
+// went and read -- and its packet is staged in the same place by the same convention, so a
+// second gate would be a second copy of this reasoning with its own way of going stale.
+// The role is read off the payload rather than hardcoded into the messages.
+//
 // The gate never blocks anyone else. isAeoRole is anchored because agent_type is not a
 // subagent flag (C-02): a main session launched with --agent carries it too, and a
 // plugin subagent reports the namespaced `aeo:reviewer`, never a bare `reviewer`.
@@ -45,10 +51,10 @@ import path from 'node:path';
 
 import { block, isAeoRole, isPathInside, normalizeHookPath, runGate } from './lib.mjs';
 
-/** The role this gate jails. Anchored by isAeoRole to `aeo:reviewer` exactly. */
-const JAILED_ROLE = 'reviewer';
+/** The roles this gate jails. Each anchored by isAeoRole to `aeo:<role>` exactly. */
+const JAILED_ROLES = ['reviewer', 'verifier'];
 
-/** The only tool a jailed reviewer may call. Exact, case-sensitive. */
+/** The only tool a jailed role may call. Exact, case-sensitive. */
 const ALLOWED_TOOL = 'Read';
 
 /**
@@ -113,8 +119,8 @@ function realise(p) {
   }
 }
 
-const CHARTER = (root) =>
-  `You are the AEO reviewer and you are sealed off from the repository by design (L-01), ` +
+const CHARTER = (role, root) =>
+  `You are the AEO ${role} and you are sealed off from the repository by design (L-01), ` +
   `so that your verdict is about the evidence you were given rather than about the branch ` +
   `you went and read. The only call available to you is Read of a file under ${root}. ` +
   `If the packet does not contain what you need to judge the claim, say exactly that in ` +
@@ -123,7 +129,8 @@ const CHARTER = (root) =>
 await runGate({
   name: 'review-jail',
   run: (payload) => {
-    if (!isAeoRole(payload, JAILED_ROLE)) return;
+    const role = JAILED_ROLES.find((candidate) => isAeoRole(payload, candidate));
+    if (role === undefined) return;
 
     // Compared exactly, never trimmed or lowercased. Trimming would let ` Read ` through,
     // and every normalisation applied here is a widening of the one hole this gate has.
@@ -139,17 +146,17 @@ await runGate({
         `${PACKET_DIR_ENV} is set to a relative path, which names no staged location, so ` +
           `the review-jail cannot tell a staged read from an escape and blocks everything, ` +
           `${tool} included. Set it to an absolute path outside the repository, or unset it ` +
-          `to use the default. ${CHARTER('the packet directory')}`,
+          `to use the default. ${CHARTER(role, 'the packet directory')}`,
       );
     }
 
     if (!allowed) {
-      block(`${tool} is not available to the reviewer role. ${CHARTER(root)}`);
+      block(`${tool} is not available to the ${role} role. ${CHARTER(role, root)}`);
     }
 
     const requested = payload?.tool_input?.file_path;
     if (typeof requested !== 'string' || requested.trim() === '') {
-      block(`Read without a readable file_path. ${CHARTER(root)}`);
+      block(`Read without a readable file_path. ${CHARTER(role, root)}`);
     }
 
     const named = normalizeHookPath(requested.trim());
@@ -160,7 +167,7 @@ await runGate({
         block(
           `Read of the relative path ${named}, which the review-jail cannot resolve to a ` +
             `location, so it cannot tell whether it is staged. Name the file by its ` +
-            `absolute path. ${CHARTER(root)}`,
+            `absolute path. ${CHARTER(role, root)}`,
         );
       }
       target = path.resolve(base, target);
@@ -169,7 +176,7 @@ await runGate({
     if (!isPathInside(realise(root), realise(target))) {
       block(
         `Read of ${named}, which is outside the staged review packet` +
-          `${source === 'convention' ? '' : ` (${PACKET_DIR_ENV})`}. ${CHARTER(root)}`,
+          `${source === 'convention' ? '' : ` (${PACKET_DIR_ENV})`}. ${CHARTER(role, root)}`,
       );
     }
   },

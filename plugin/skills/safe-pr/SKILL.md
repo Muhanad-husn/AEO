@@ -70,6 +70,13 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    anchored `.gitignore` pattern (e.g. `sandbox/web-adder/test-results/`) or
    a `!docs/tdd-evidence/**` exception, so it doesn't also swallow the
    committed copies.
+
+   The collector refuses, rather than warns about, any path resolving inside
+   the production data root declared in `AEO_LIVE_DATA_ROOT`, links and `..`
+   resolved first. There is no override flag: re-run the tests through
+   `sandbox-session.mjs` and collect that evidence instead. Where the
+   variable is unset the check cannot run and the summary says
+   `production data : NOT CHECKED` — a gap, not a pass.
 4. Commit the cleaned evidence:
 
    ```
@@ -88,8 +95,12 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    Fill the remaining `<placeholders>`: description, what changed, how to
    review, the unit summary, risk notes, the plan path. Be honest about
    anything partial. `PR_BODY.md` is git-ignored — it isn't committed.
-6. Show the founder the title, body, and branch, and get explicit
-   confirmation — this is outward-facing. Then push:
+6. Take the row for this change from
+   `${CLAUDE_PLUGIN_ROOT}/skills/verify/references/risk-rubric.md`, the only copy
+   of the rubric and the one the `verify` lane reads. On a row that asks for
+   verification, run `verify` first and attach its findings as advisory; they
+   never block. Then show the founder the title, body, and branch, and get
+   explicit confirmation — this is outward-facing. Then push:
 
    ```
    git push -u origin feat/<feature-slug>/<NN-slice-slug>
@@ -117,6 +128,8 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
 - Base is always the repo's default branch, unless the founder says
   otherwise.
 - Open the PR only on green, with evidence attached.
+- Never collect evidence from production data. The collector enforces this
+  and cannot be talked out of it; do not try to route around the refusal.
 - No secrets, tokens, or large binaries beyond the necessary evidence.
 - This skill prepares and opens the PR. It never merges — that waits for
   founder approval, whether the attempt comes from this skill or any other

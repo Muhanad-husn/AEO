@@ -32,15 +32,18 @@ import { pathToFileURL } from 'node:url';
 // ---------------------------------------------------------------------------
 
 // PLAN P0.1 opened with "eleven skill stubs" and P0.3 with a "roster reduced to three".
-// Phase 3 adds one of each: the monitor-design skill and the monitor-designer agent. These
-// are the current inventory, not the Phase 0 inventory, and the expectation text below says
-// where each half of the number comes from so the citation stays honest as the plugin grows.
-const EXPECTED_SKILL_COUNT = 12;
-const EXPECTED_AGENT_COUNT = 4;
+// Phase 3 added one of each: the monitor-design skill and the monitor-designer agent. Phase
+// 4 adds one of each again: the verify lane and the verifier. These are the current
+// inventory, not the Phase 0 inventory, and the expectation text below says where each part
+// of the number comes from so the citation stays honest as the plugin grows.
+const EXPECTED_SKILL_COUNT = 13;
+const EXPECTED_AGENT_COUNT = 5;
 
-// The six operator lanes (PLAN Phase 0): deterministic, user-invoked only. Unchanged by
-// Phase 3 — monitor-design triggers on description and is deliberately not a seventh lane.
-const OPERATOR_LANES = new Set(['sprint-plan', 'sprint-start', 'fix', 'review', 'triage', 'status']);
+// The operator lanes: deterministic, user-invoked only. PLAN Phase 0's six, plus Phase 4's
+// verify. Phase 3's monitor-design triggers on description and is deliberately not one of
+// these. verify is one, because whether a verification runs is decided by the risk rubric
+// at a known point in the workflow, not by a phrase in somebody's message.
+const OPERATOR_LANES = new Set(['sprint-plan', 'sprint-start', 'fix', 'review', 'triage', 'status', 'verify']);
 
 const MODEL_ALIASES = ['haiku', 'sonnet', 'opus']; // EN-9: pinned by alias, not a raw model id
 const MODEL_TIER = { haiku: 0, sonnet: 1, opus: 2 };
@@ -233,14 +236,14 @@ function checkInventory(pluginRoot, results) {
 
   add(
     results,
-    `the plugin ships exactly ${EXPECTED_SKILL_COUNT} skills (docs/PLAN.md Phase 0's eleven, plus Phase 3's monitor-design)`,
+    `the plugin ships exactly ${EXPECTED_SKILL_COUNT} skills (docs/PLAN.md Phase 0's eleven, plus Phase 3's monitor-design and Phase 4's verify)`,
     skillDirs.length === EXPECTED_SKILL_COUNT,
     `found ${skillDirs.length}: ${skillDirs.join(', ') || '(none)'}`,
   );
 
   add(
     results,
-    `the plugin ships exactly ${EXPECTED_AGENT_COUNT} agents (docs/PLAN.md P0.3's three, plus Phase 3's monitor-designer)`,
+    `the plugin ships exactly ${EXPECTED_AGENT_COUNT} agents (docs/PLAN.md P0.3's three, plus Phase 3's monitor-designer and Phase 4's verifier)`,
     agentFiles.length === EXPECTED_AGENT_COUNT,
     `found ${agentFiles.length}: ${agentFiles.join(', ') || '(none)'}`,
   );
@@ -349,6 +352,15 @@ function checkRoleStructure(pluginRoot, agentFiles, results) {
     'agents/reviewer.md tools: frontmatter is exactly Read (L-01: reviewer isolation from the repository is a hook, not a convention, and the dispatch call carries no tools it could hand over by mistake)',
     reviewerTools.length === 1 && reviewerTools[0] === 'Read',
     reviewer ? `tools: ${reviewerTools.join(', ') || '(none)'}` : 'agents/reviewer.md not found',
+  );
+
+  const verifier = readRole('verifier');
+  const verifierTools = splitTools(verifier?.fields.tools);
+  add(
+    results,
+    'agents/verifier.md tools: frontmatter is exactly Read (the verifier is jailed by the same hook as the reviewer, for the same reason: an agent holding file tools reads the repository whatever its charter says, and a verifier that has read the branch is no longer verifying the packet it was handed)',
+    verifierTools.length === 1 && verifierTools[0] === 'Read',
+    verifier ? `tools: ${verifierTools.join(', ') || '(none)'}` : 'agents/verifier.md not found',
   );
 
   const triage = readRole('triage');
