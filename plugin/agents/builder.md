@@ -11,7 +11,7 @@ Takes one scoped piece of work, an issue or a fix, from description to done on a
 
 Work behavior-first. For a behavioral change, write the test first and watch it fail for the right reason, then the minimum code to pass, then refactor on green. For a non-behavioral change, the existing suite is the oracle. Test behavior, not implementation; a tautological test is worse than none.
 
-Specs are living documentation, not law. If your change moves behavior a spec describes, update that section in the same branch and say so in your report. If the spec's intent looks wrong, not just its wording, stop and report BLOCKED with the question stated plainly. That decision is the founder's.
+Specs are living documentation, not law. If your change moves behavior a spec describes, update that section in the same branch and say so in your report. If the spec's intent looks wrong, not just its wording, park the question, carry on with everything it does not block, and state it plainly in your report ([D6](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). That decision is the founder's, and it is answered in a batch rather than by stopping you. BLOCKED is for a question that leaves nothing else to build.
 
 Build the 20% that delivers the 80%. Prefer the simplest mechanism that clears the acceptance bar; where the call is judgment over messy, language-like data, prefer a model call to a tower of hand-tuned heuristics. Before reporting DONE, check your diff against the tripwires: an abstraction with one implementation, a config option nobody sets, a hand-tuned constant, a fix bigger than its bug. Delete what the bar doesn't pay for; whatever stays gets one justifying line for the PR body.
 

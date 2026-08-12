@@ -79,7 +79,7 @@ Don't add a matrix reflexively — it multiplies cost. Use it when the project g
 
 ## 7. Branch protection (make checks required)
 
-So a PR can't merge while CI is red, make the jobs **required status checks** on `main`. Via the UI: Settings → Branches → add a rule for `main` → "Require status checks to pass before merging" → select the `unit` and `e2e` checks.
+So a PR can't merge while CI is red, make the jobs **required status checks** on the repository's default branch — resolved from repository evidence, never assumed to be `main` ([D16](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). Via the UI: Settings → Branches → add a rule for that branch → "Require status checks to pass before merging" → select the `unit` and `e2e` checks.
 
 Via the API — **confirm with the user first; this changes repo settings.** Pass the rules as a JSON body (portable across shells, and correctly typed — the nested booleans/arrays must not be sent as `-f` raw strings, which the API rejects). Write `protection.json`:
 
@@ -95,9 +95,9 @@ Via the API — **confirm with the user first; this changes repo settings.** Pas
 then apply, verify, and (if needed) undo:
 
 ```bash
-gh api -X PUT repos/{owner}/{repo}/branches/main/protection --input protection.json
-gh api repos/{owner}/{repo}/branches/main/protection --jq '.required_status_checks.contexts'   # read-back
-gh api -X DELETE repos/{owner}/{repo}/branches/main/protection                                   # undo
+gh api -X PUT repos/{owner}/{repo}/branches/<default-branch>/protection --input protection.json
+gh api repos/{owner}/{repo}/branches/<default-branch>/protection --jq '.required_status_checks.contexts'   # read-back
+gh api -X DELETE repos/{owner}/{repo}/branches/<default-branch>/protection                                   # undo
 ```
 
 `enforce_admins` is `false` here so a solo maintainer can't lock themselves out; set it to `true` only when the team wants admins held to the same gate. The example requires no approving reviews (`required_pull_request_reviews: null`) — add `{ "required_approving_review_count": 1 }` if the team wants mandatory review. Treat all of this as opt-in: it's an organisational policy decision, not something to apply unprompted.

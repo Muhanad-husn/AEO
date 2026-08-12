@@ -56,9 +56,12 @@ both short.
    that some commit was green it cites CI's run id, SHA and conclusion
    rather than re-running that tier locally
    ([D24](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). An edit to a pre-existing
-   test or spec gets one explanatory line in the PR body. A BLOCKED report on
-   a contested design question goes to the founder with the options, a
-   recommendation, and what each costs; the session stops there.
+   test or spec gets one explanatory line in the PR body. A contested spec
+   or design question does not stop the session: park it, carry on with
+   everything it does not block, and carry it into the wrap-up brief with
+   the options, a recommendation, and what each costs
+   ([D6](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). BLOCKED is for a question
+   that leaves nothing else to build.
 
 6. **Review when it's warranted.** The founder asks, or the change
    touches a shared, widely-depended-on module, core config, or
@@ -151,7 +154,9 @@ looks parallel.
 
 9. **Wrap-up naming every PR.** One line per actor: issue, PR link,
    state. Any actor that stopped BLOCKED is named with what it waits on.
-   The group is not done because most of it is.
+   Every actor's parked questions arrive here together, as one batch the
+   founder answers once — not N interruptions. The group is not done
+   because most of it is.
 
 ## Invariants
 

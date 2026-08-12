@@ -113,7 +113,7 @@ Never skip the red step. After writing a test, run it and read the failure:
 
 ## 7. Branching & commits
 
-- One branch per slice: `feat/<feature-slug>/<NN>-<slice-slug>`, cut from an up-to-date `main` (`git switch -c feat/... main`).
+- One branch per slice: `feat/<feature-slug>/<NN>-<slice-slug>`, cut from an up-to-date default branch — resolved from repository evidence, never hardcoded ([D16](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)): `git switch -c feat/... <default-branch>`.
 - Commit only on green, in small steps. Conventional Commits: `test:` when adding the failing test, `feat:` for the implementation that greens it, `refactor:` for cleanup, `ci:` for workflow changes.
 - Never commit a red bar. (Solo across sessions, you may *leave* a red test in the working tree as a resume marker — but don't commit it.)
 

@@ -35,6 +35,17 @@ parallel document kept by hand.
 view is wrong only until it is regenerated. A tracker somebody edits is wrong until
 somebody notices.
 
+## D6 — Spec questions are batched, not blocking
+
+**Rule.** An agent that hits a spec question parks it, carries on with everything the
+question does not block, and the parked questions are surfaced together in one
+briefing. Stopping is for a question that leaves nothing else to build.
+
+**Why.** Spec changes need founder approval, and sessions run in parallel. An agent
+that halts on the question turns every question into an interruption, and several
+agents halting serialize the whole fleet on one person. Batching keeps the approval
+requirement and drops the serialization: the founder answers a batch once.
+
 ## D11 — Three concurrency lanes, and the write-actor number lives in one file
 
 **Rule.** Read-only fan-out (review, research, verification, evidence checks) is
