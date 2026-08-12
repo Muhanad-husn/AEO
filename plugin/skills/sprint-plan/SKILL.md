@@ -45,17 +45,35 @@ disk first, then created through the GitHub issue tools.
    ## Acceptance criterion
    <the Given/When/Then from the slice plan; this becomes the locked outer test>
 
+   ## Files
+   ```aeo-independence
+   slice: <NN>-<slice-slug>
+   edits: <path>
+   creates: <path>
+   depends-on: <NN>-<slice-slug> of another slice in this batch, or the issue number from Depends on above; omit if none>
+   ```
+
    ## Out of scope
    <deferred items from the plan>
    ```
 
    `<plans>` and `<specs>` default to `plans/` and `specs/`. Use whatever
    the project already keeps its plans and specs under if that's already
-   established.
+   established. The Files block is carried over from the slice plan's own
+   Files section — copy it, don't re-derive it — in the exact format
+   `${CLAUDE_PLUGIN_ROOT}/scripts/independence.mjs` parses; that file's
+   header comment is the format's only definition.
 
 4. **The founder reviews the drafts.** Present the backlog as a table
-   (title, dependency, size) plus the draft files. File nothing until
-   it's approved.
+   (title, dependency, size, **parallel-safe group**) plus the draft
+   files. Compute the group column by running
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/independence.mjs" <draft1> <draft2> ...`
+   over the batch's draft files and reading its exit code — 0 means the
+   whole set can run together, 1 means it can't. On 1, its findings name
+   the exact colliding or dependent pair; split just that pair into
+   separate groups (or mark the dependent one sequential-after) and
+   re-run the rest to confirm before filling in the table. Never assert
+   the column by hand. File nothing until it's approved.
 
 5. **File on approval**, through the GitHub issue tools, with the
    `sub:<subproject-slug>` label plus any status labels. Back-fill each
@@ -80,3 +98,6 @@ existing labels before creating any.
 - Dependencies are explicit. `sprint-start` picks by them.
 - One slice per issue. An issue that needs "and" is two issues.
 - GitHub issues are the record. Nothing here duplicates them by hand.
+- A draft with no Files block is undeclared, not safe. `independence.mjs`
+  refuses it; the backlog table must show it as not parallel-safe with
+  the reason, not paper over it with a guess.

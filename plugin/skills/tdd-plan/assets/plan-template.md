@@ -79,6 +79,19 @@ And   <additional observable outcome, if any>
 - **e2e test type:** Playwright (browser, with screenshot + video evidence) | API/integration test
 - **e2e test file (planned):** <path, e.g. e2e/<feature>-<slice>.spec.ts>
 
+## Files (parallel-safety declaration)
+
+Every path this slice edits or creates, in the exact block
+`${CLAUDE_PLUGIN_ROOT}/scripts/independence.mjs` parses — read that file's
+header comment for the format, don't reconstruct it from this example.
+
+```aeo-independence
+slice: <NN>-<slice-slug>
+edits: <path>
+creates: <path>
+depends-on: <another slice's NN-slice-slug, or its filed issue number; omit if none>
+```
+
 ## Inner loop — initial unit test list
 
 Seed for the inner red-green-refactor cycles. This is a **living list** — `red-green-refactor` will add to it as design emerges. Order from simplest behaviour to most general.
@@ -94,7 +107,7 @@ Seed for the inner red-green-refactor cycles. This is a **living list** — `red
 ## Definition of done
 
 - [ ] Acceptance/e2e test written, seen to fail for the right reason, now GREEN.
-- [ ] All seeded unit behaviours covered; full suite passes locally.
+- [ ] All seeded unit behaviours covered; fast tier green locally, CI green for the rest.
 - [ ] Refactor pass complete (no duplication, clear names) with the bar green.
 - [ ] Slice's tests run in CI (`tdd-ci`).
 - [ ] Evidence collected and PR opened into `main` (`safe-pr`).
@@ -115,3 +128,4 @@ Seed for the inner red-green-refactor cycles. This is a **living list** — `red
 - **Out-of-scope is load-bearing.** Explicitly deferring things is what keeps the slice small and prevents gold-plating during development.
 - **One slice file per vertical slice.** If a file starts listing two unrelated behaviours, split it into two files and add a row to the README.
 - **Set the project directory.** If the app lives in a subfolder (a monorepo package, a `services/<x>` dir, a `sandbox/` smoke-test), record that path so `red-green-refactor`, `tdd-ci`, and `safe-pr` run install/test/build there and CI sets `working-directory` + `cache-dependency-path` correctly. Use `.` when the app is at the repo root. The git branch is always cut at the repo root regardless.
+- **Declare every path, even a guess.** The Files block is read by `independence.mjs` before any of this slice's files exist; an omitted path is exactly the failure mode it exists to catch. A slice with nothing in `edits` or `creates` reads as undeclared, not as safe.

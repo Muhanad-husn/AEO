@@ -49,11 +49,16 @@ skeleton, nine splitting patterns with a worked example — read
      the same file.
    - The fields that matter most: the acceptance criterion as a
      Given/When/Then that becomes the slice's failing outer test, the
-     seeded unit test list, and the files the slice expects to **create**
-     — not only the ones it edits. Two independently planned slices that
-     touch no common file can still collide if both silently create the
-     same new module; declaring intended new files is what makes
-     "disjoint" mean something before either exists.
+     seeded unit test list, and the paths the slice **edits** and
+     **creates** — not only the ones that already exist. Two
+     independently planned slices that touch no common file can still
+     collide if both silently create the same new module; declaring
+     intended new files is what makes "disjoint" mean something before
+     either exists. Record these paths as the Files section's
+     `aeo-independence` block — the exact format
+     `${CLAUDE_PLUGIN_ROOT}/scripts/independence.mjs` parses; that
+     file's header comment is the format's only definition, so read it
+     rather than guessing at the shape.
 7. Confirm and hand off. Show the founder the slice list — titles,
    one-line goals, the proposed first slice. Get sign-off before any code
    is written, then recommend `red-green-refactor` on slice `01`.
