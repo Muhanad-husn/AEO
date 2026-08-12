@@ -632,10 +632,20 @@ describe('executable configuration that happens to be documentation', () => {
 // ---------------------------------------------------------------------------
 
 describe('the budget is the whole commit\'s, never one per suite', () => {
-  // Each shim suite takes about two seconds. Per suite, a 3.4s budget clears both of
-  // them and the commit lands after roughly twice the budget the hook timeout allows.
-  const slow = () => shimDir({ npm: { exit: 0, sleepSeconds: 2 }, pytest: { exit: 0, sleepSeconds: 2 } });
-  const budget = { AEO_TEST_SUITE_BUDGET_MS: '3400' };
+  // THE MARGIN IS THE POINT, NOT THE NUMBERS. The budget has to sit above one shim suite
+  // and below two, and what fills the gap is process-spawn overhead the test does not
+  // control: node starting, the package manager resolving, the shim launching.
+  //
+  // At 2s sleeps against a 3.4s budget that gap was 1.4s, and on Windows spawn overhead
+  // crosses 1.4s often enough to fail this control roughly one run in three — idle, with
+  // nothing else on the machine. CI never saw it because a Linux runner spawns processes
+  // about ten times faster, which is exactly the shape of bug a green CI hides.
+  //
+  // 5s sleeps against an 8s budget give the pass case 3s of overhead before it breaks,
+  // and the block case is arithmetic rather than timing: two suites sleep 10s, which
+  // exceeds 8s whatever the overhead does, because a sleep is a floor.
+  const slow = () => shimDir({ npm: { exit: 0, sleepSeconds: 5 }, pytest: { exit: 0, sleepSeconds: 5 } });
+  const budget = { AEO_TEST_SUITE_BUDGET_MS: '8000' };
 
   test('two suites cannot each spend the full budget', () => {
     const dir = makeRepo({
