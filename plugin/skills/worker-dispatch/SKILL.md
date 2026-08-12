@@ -1,6 +1,6 @@
 ---
 name: worker-dispatch
-description: Fan a bounded mechanical task out across operation workers — many subagents writing into one checkout, in numbers the task sets, reaching exactly one commit. Use when a task divides into independent mechanical units and the question is how many workers, what each may write, and where the gates apply. Do not use for implementation work that needs its own branch and pull request; that is a development actor, one worktree each, capped at four.
+description: Fan a bounded mechanical task out across operation workers — many subagents writing into one checkout, in numbers the task sets, reaching exactly one commit. Use when a task divides into independent mechanical units and the question is how many workers, what each may write, and where the gates apply. Do not use for implementation work that needs its own branch and pull request; that is a development actor, one worktree each, and capped.
 ---
 
 # Worker dispatch — operation workers
@@ -9,7 +9,7 @@ Two lanes write to a repository, and they are not the same thing.
 
 | Lane | How many | Isolation | Gates |
 | --- | --- | --- | --- |
-| Development actor — implementation | four at once | one worktree, branch and pull request each | per actor |
+| Development actor — implementation | up to the actor cap, stated in `skills/sprint-start/references/actor-cap.md` | one worktree, branch and pull request each | per actor |
 | Operation worker — a bounded mechanical task | sized by the task | none | once, at the commit |
 
 This skill is the second row. A development actor takes an issue from a failing
