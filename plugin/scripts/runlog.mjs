@@ -86,16 +86,24 @@
 //
 // PROJECT ROOT, NEVER THE PLUGIN ROOT (D12). `${CLAUDE_PLUGIN_ROOT}` is ephemeral; it
 // changes on plugin update, so nothing is ever written there. `open` anchors to the
-// project repository the same way run-sentinel.mjs does — projectAnchor(), shared from
-// hooks/sentinel.mjs rather than re-derived here (V-13 is what happens when two files
-// each grow their own copy of the same resolution).
+// checkout it was called from — worktreeAnchor(), shared from hooks/sentinel.mjs rather
+// than re-derived here (V-13 is what happens when two files each grow their own copy of
+// the same resolution).
+//
+// THE WORKTREE, NOT THE MAIN CHECKOUT (#36). A run log and a sentinel want opposite
+// anchors. A sentinel is shared state: every worktree of a project must see one set of
+// them, so projectAnchor() walks a linked worktree's `.git` file back to the main
+// checkout. A run log is a work product and belongs under the branch that produced it, so
+// this walk stops at the worktree. Run from a worktree, the old anchoring wrote the run
+// directory into the main checkout on an unrelated branch — with four actors in four
+// worktrees (P5.3), four run logs landing outside their own pull requests.
 //
 // `worker` — THE RUN-SCOPED WRITE PATH (P5.4). Operation workers are bounded mechanical
 // tasks run in numbers the task sets, with no worktree and no branch: many of them write
 // into one checkout at once. What keeps that safe is that each has a write path belonging
 // to it alone, and `worker` is where that path comes from. It is a leaf on the resolution
 // that already exists rather than a third resolver: `open` found the project root through
-// projectAnchor() and named the run directory, and `worker` only adds
+// worktreeAnchor() and named the run directory, and `worker` only adds
 // `workers/<id>/` beneath it. Nothing here re-derives a root.
 //
 //   scope=$(node runlog.mjs worker --dir "$dir" --worker w1)     # claims it, prints it
@@ -153,7 +161,7 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { projectAnchor, sentinelId } from '../hooks/sentinel.mjs';
+import { sentinelId, worktreeAnchor } from '../hooks/sentinel.mjs';
 
 const USAGE = `usage:
   runlog open   --job <name> [--date <YYYY-MM-DD>]
@@ -334,7 +342,7 @@ const startDir = process.env.AEO_RUNLOG_CWD || process.cwd();
 if (action === 'open') {
   const job = requiredLabelFlag(rest, 'job');
   const date = dateFlag(rest);
-  const anchor = projectAnchor(startDir);
+  const anchor = worktreeAnchor(startDir);
   if (anchor === null) {
     fail('runlog must be run inside a repository; no project root was found above the working directory.');
   }

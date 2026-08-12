@@ -15,7 +15,14 @@
 //
 // Every fixture anchors the project root through `.aeo/runs` (makeAnchor) rather than
 // `git init`, so this stays in the fast `npm test` lane — no subprocess git, no repository
-// fixture.
+// fixture. The linked-worktree block below is the one exception, and it fabricates the
+// `.git` file by hand for the same reason.
+//
+// THE TWO ANCHORS ARE ASSERTED TOGETHER, in that block, against one fixture. `open` must
+// land in the worktree that called it (#36) and the sentinel must still resolve to the
+// main checkout (D12), and a change that quietly narrowed the second while fixing the
+// first would be the worse defect: sharing sentinels across worktrees is what stops one
+// actor's commit gate from running the suite alongside another actor's live job (L-02).
 //
 // The last describe block forces a child process for every call in a full open -> record
 // -> close cycle. Most calls above it run in a worker thread, which is what makes the file
@@ -24,11 +31,12 @@
 // tests/hooks/sandbox-session.test.mjs for the opposite case: there the boundary *is* the
 // behaviour, and every case there spawns.
 
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { projectAnchor } from '../../plugin/hooks/sentinel.mjs';
 import { leaksSince, makeAnchor, runlog, snapshotLogDirs, spawnRunlog, tempDir } from './runlog-harness.mjs';
 
 function readLines(file) {
@@ -119,6 +127,64 @@ describe('open', () => {
     const r = await runlog(['open', '--job', 'x'], { cwd: outside });
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /no project root/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// open from a linked worktree: the run log is a work product, the sentinel is shared
+// ---------------------------------------------------------------------------
+
+/**
+ * A linked worktree and the main checkout it points at, built without running git.
+ *
+ * A linked worktree IS its `.git` file — the one line naming
+ * `<main>/.git/worktrees/<name>` is all either resolver reads — so writing that file is
+ * the whole fixture, and it keeps this file in the fast lane with no subprocess git.
+ */
+function makeLinkedWorktree() {
+  const root = tempDir('aeo-runlog-worktree-');
+  const main = path.join(root, 'main');
+  const worktree = path.join(root, 'wt');
+  const gitdir = path.join(main, '.git', 'worktrees', 'wt');
+  mkdirSync(gitdir, { recursive: true });
+  mkdirSync(worktree, { recursive: true });
+  writeFileSync(path.join(worktree, '.git'), `gitdir: ${gitdir}\n`);
+  return { main, worktree };
+}
+
+describe('open from a linked worktree', () => {
+  test('the run log lands in the worktree that opened it, not the main checkout (#36)', async () => {
+    const { main, worktree } = makeLinkedWorktree();
+    const r = await runlog(['open', '--job', 'slice', '--date', '2026-05-06'], { cwd: worktree });
+    assert.equal(r.status, 0, r.stderr);
+    const dir = r.stdout.trim();
+    assert.ok(
+      dir.startsWith(path.join(worktree, 'logs')),
+      `${dir} is not under the worktree's own logs at ${path.join(worktree, 'logs')}`,
+    );
+    assert.equal(
+      existsSync(path.join(main, 'logs')),
+      false,
+      "the run log landed in the main checkout, on whatever branch that checkout has out, outside the worktree's own branch",
+    );
+  });
+
+  test('the sentinel still anchors to the main checkout from that same worktree (D12, L-02)', () => {
+    const { main, worktree } = makeLinkedWorktree();
+    assert.equal(
+      projectAnchor(worktree),
+      main,
+      'a linked worktree no longer shares the main checkout\'s sentinels, so one actor\'s commit gate can no longer see another actor\'s live run',
+    );
+  });
+
+  test('a plain checkout still anchors to itself for both', async () => {
+    const plain = tempDir('aeo-runlog-plain-');
+    mkdirSync(path.join(plain, '.git'), { recursive: true });
+    assert.equal(projectAnchor(plain), plain);
+    const r = await runlog(['open', '--job', 'plain', '--date', '2026-05-06'], { cwd: plain });
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(r.stdout.trim().startsWith(path.join(plain, 'logs')));
   });
 });
 

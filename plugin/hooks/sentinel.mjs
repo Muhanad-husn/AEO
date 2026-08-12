@@ -92,13 +92,14 @@ function linkedWorktreeMain(dotgit) {
 }
 
 /**
- * The directory a repository's sentinels are anchored to, or null.
+ * The nearest enclosing project root, and the `.git` that identified it if that is what
+ * did. Null when the walk reaches the filesystem root without finding either.
  *
- * The nearest ancestor that already holds `.aeo/runs` wins, so a project that put its
- * sentinels somewhere deliberate keeps them there. Otherwise the enclosing repository
- * root, resolved through the main checkout when this is a linked worktree.
+ * `dotgit` is null when `.aeo/runs` matched first, which is the seam the two exported
+ * anchors differ on: a project that put its sentinels somewhere deliberate is taken at its
+ * word and is never redirected anywhere.
  */
-export function projectAnchor(startDir) {
+function anchorWalk(startDir) {
   if (typeof startDir !== 'string' || startDir.trim() === '') return null;
   let dir;
   try {
@@ -107,13 +108,43 @@ export function projectAnchor(startDir) {
     return null;
   }
   for (;;) {
-    if (existsSync(path.join(dir, SENTINEL_DIRNAME))) return dir;
+    if (existsSync(path.join(dir, SENTINEL_DIRNAME))) return { dir, dotgit: null };
     const dotgit = path.join(dir, '.git');
-    if (existsSync(dotgit)) return linkedWorktreeMain(dotgit) ?? dir;
+    if (existsSync(dotgit)) return { dir, dotgit };
     const parent = path.dirname(dir);
     if (parent === dir) return null;
     dir = parent;
   }
+}
+
+/**
+ * The checkout `startDir` sits in — a linked worktree resolves to ITSELF — or null.
+ *
+ * The anchor for a work product: a run log belongs to the branch that produced it, which
+ * is the worktree's branch, not whatever the main checkout happens to have out (#36). Four
+ * concurrent actors in four worktrees otherwise write four run directories into one shared
+ * checkout, outside their own pull requests.
+ *
+ * A sibling of projectAnchor rather than a flag on it, because the two want opposite
+ * answers to the same question and a boolean at the call site would name neither. They
+ * share the walk, so there is still one root resolution here, not two (V-13).
+ */
+export function worktreeAnchor(startDir) {
+  return anchorWalk(startDir)?.dir ?? null;
+}
+
+/**
+ * The directory a repository's sentinels are anchored to, or null.
+ *
+ * The nearest ancestor that already holds `.aeo/runs` wins, so a project that put its
+ * sentinels somewhere deliberate keeps them there. Otherwise the enclosing repository
+ * root, resolved through the main checkout when this is a linked worktree.
+ */
+export function projectAnchor(startDir) {
+  const hit = anchorWalk(startDir);
+  if (hit === null) return null;
+  if (hit.dotgit === null) return hit.dir;
+  return linkedWorktreeMain(hit.dotgit) ?? hit.dir;
 }
 
 /**
