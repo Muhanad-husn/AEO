@@ -73,6 +73,38 @@ function gh(ghArgs) {
   catch { return null; }
 }
 
+// Like gitOk, but for the one call whose failure reason the operator needs to see:
+// deleting a branch. Captures stderr instead of discarding it.
+function gitBranchDelete(delFlag, name) {
+  try {
+    execFileSync('git', ['branch', delFlag, name], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    return { ok: true, stderr: '' };
+  } catch (e) {
+    return { ok: false, stderr: typeof e.stderr === 'string' ? e.stderr : '' };
+  }
+}
+
+// The first non-blank line of git's stderr. `git branch -D` failures are one line; the
+// ref-lock case appends a multi-line advisory nobody asked to see in a one-line report.
+function firstLine(text) {
+  return (text || '').split('\n').map(l => l.trim()).filter(Boolean)[0] || '';
+}
+
+// Maps a branch name to the absolute path of the worktree that has it checked out, or
+// null if no worktree does — including when `git worktree list` itself fails or returns
+// nothing parseable, so a diagnostic failure here never masks the underlying git error.
+function worktreeHoldingBranch(name) {
+  const out = git(['worktree', 'list', '--porcelain']);
+  if (!out) return null;
+  const target = `branch refs/heads/${name}`;
+  let current = null;
+  for (const line of out.split('\n')) {
+    if (line.startsWith('worktree ')) current = line.slice('worktree '.length).trim();
+    else if (line.trim() === target) return current;
+  }
+  return null;
+}
+
 // Count commits on `branch` that are NOT patch-present in `base` (git cherry '+' lines).
 // 0 => everything on the branch is already in the base (safe). null => couldn't determine.
 function cherryAhead(branch, base) {
@@ -358,9 +390,15 @@ function main() {
         if (ahead !== 0) { console.log(`  SKIP   ${r.name} (now has ${ahead == null ? 'undetermined' : ahead} commit(s) not in ${base} — refusing force-delete)`); skipped++; continue; }
       }
     }
-    const ok = gitOk(['branch', r.delFlag, r.name]);
-    if (ok) { console.log(`  delete ${r.name}  (git branch ${r.delFlag})`); deleted++; }
-    else { console.log(`  FAILED ${r.name} (git branch ${r.delFlag} refused — left intact)`); skipped++; }
+    const del = gitBranchDelete(r.delFlag, r.name);
+    if (del.ok) { console.log(`  delete ${r.name}  (git branch ${r.delFlag})`); deleted++; }
+    else {
+      const cause = firstLine(del.stderr) || '(git gave no reason on stderr)';
+      const heldBy = worktreeHoldingBranch(r.name);
+      const where = heldBy ? ` — checked out in worktree ${heldBy}` : '';
+      console.log(`  FAILED ${r.name} (git branch ${r.delFlag} refused: ${cause}${where} — left intact)`);
+      skipped++;
+    }
   }
   console.log(`\nDone. Deleted ${deleted} local branch(es), ${skipped} skipped/failed. Remote was NOT touched. Recovery log: ${logPath}`);
 }
