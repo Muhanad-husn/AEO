@@ -13,7 +13,7 @@
 // paths, and every case that has cost production something has a named test.
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
@@ -34,6 +34,7 @@ import {
   matchesGitSubcommand,
   normalizeHookPath,
   preflight,
+  realpathDeep,
   resolveOperationDir,
   resolveWorktree,
 } from '../../plugin/hooks/lib.mjs';
@@ -749,6 +750,47 @@ describe('isPathInside (V-12, path case)', () => {
     assert.equal(isPathInside(null, parent), false);
     assert.equal(isPathInside(parent, undefined), false);
     assert.equal(isPathInside('   ', '   '), false);
+  });
+});
+
+describe('realpathDeep', () => {
+  test('a path that exists comes back with its links resolved', (t) => {
+    const base = tempDir();
+    const real = path.join(base, 'real');
+    mkdirSync(real, { recursive: true });
+    try {
+      symlinkSync(real, path.join(base, 'alias'), 'junction');
+    } catch {
+      return t.skip('this platform would not create a directory link');
+    }
+    assert.equal(realpathDeep(path.join(base, 'alias')), realpathDeep(real));
+  });
+
+  test('a path under a link resolves through it', (t) => {
+    const base = tempDir();
+    const real = path.join(base, 'real');
+    mkdirSync(real, { recursive: true });
+    writeFileSync(path.join(real, 'x.txt'), 'x');
+    try {
+      symlinkSync(real, path.join(base, 'alias'), 'junction');
+    } catch {
+      return t.skip('this platform would not create a directory link');
+    }
+    assert.equal(realpathDeep(path.join(base, 'alias', 'x.txt')), path.join(realpathDeep(real), 'x.txt'));
+  });
+
+  // The reason for the deepest-ancestor loop. A plain realpath throws here, and a guard
+  // that could not judge a path until it existed would clear every write before the write.
+  test('a path that does not exist yet resolves to where it would be created', () => {
+    const base = realpathDeep(tempDir());
+    const missing = path.join(base, 'not', 'there', 'yet.txt');
+    assert.equal(realpathDeep(missing), missing);
+  });
+
+  test('a relative path and a `..` traversal are resolved', () => {
+    const cwd = realpathDeep(process.cwd());
+    assert.equal(realpathDeep('.'), cwd);
+    assert.equal(realpathDeep(path.join('a', '..', 'b')), path.join(cwd, 'b'));
   });
 });
 
