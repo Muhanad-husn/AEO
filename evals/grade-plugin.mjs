@@ -33,10 +33,13 @@ import { pathToFileURL } from 'node:url';
 
 // PLAN P0.1 opened with "eleven skill stubs" and P0.3 with a "roster reduced to three".
 // Phase 3 added one of each: the monitor-design skill and the monitor-designer agent. Phase
-// 4 adds one of each again: the verify lane and the verifier. These are the current
-// inventory, not the Phase 0 inventory, and the expectation text below says where each part
-// of the number comes from so the citation stays honest as the plugin grows.
-const EXPECTED_SKILL_COUNT = 13;
+// 4 adds one of each again: the verify lane and the verifier. Phase 5 adds a skill and no
+// agent: worker-dispatch is the operation-worker fan-out pattern, and it deliberately has no
+// charter of its own, because a worker's count and model tier are set by the task rather
+// than fixed by a role. These are the current inventory, not the Phase 0 inventory, and the
+// expectation text below says where each part of the number comes from so the citation stays
+// honest as the plugin grows.
+const EXPECTED_SKILL_COUNT = 14;
 const EXPECTED_AGENT_COUNT = 5;
 
 // The operator lanes: deterministic, user-invoked only. PLAN Phase 0's six, plus Phase 4's
@@ -236,7 +239,7 @@ function checkInventory(pluginRoot, results) {
 
   add(
     results,
-    `the plugin ships exactly ${EXPECTED_SKILL_COUNT} skills (docs/PLAN.md Phase 0's eleven, plus Phase 3's monitor-design and Phase 4's verify)`,
+    `the plugin ships exactly ${EXPECTED_SKILL_COUNT} skills (docs/PLAN.md Phase 0's eleven, plus Phase 3's monitor-design, Phase 4's verify and Phase 5's worker-dispatch)`,
     skillDirs.length === EXPECTED_SKILL_COUNT,
     `found ${skillDirs.length}: ${skillDirs.join(', ') || '(none)'}`,
   );

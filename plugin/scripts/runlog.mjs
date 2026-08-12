@@ -13,6 +13,7 @@
 //                           [--duration <ms>] [--detail <text>]
 //   node runlog.mjs close  --dir <path> --job <name> --status <text>
 //                           [--duration <ms>] [--detail <text>]
+//   node runlog.mjs worker --dir <path> --worker <id> [--path <relative>]
 //
 // The usual shape, from the shell running the job:
 //
@@ -88,6 +89,43 @@
 // project repository the same way run-sentinel.mjs does — projectAnchor(), shared from
 // hooks/sentinel.mjs rather than re-derived here (V-13 is what happens when two files
 // each grow their own copy of the same resolution).
+//
+// `worker` — THE RUN-SCOPED WRITE PATH (P5.4). Operation workers are bounded mechanical
+// tasks run in numbers the task sets, with no worktree and no branch: many of them write
+// into one checkout at once. What keeps that safe is that each has a write path belonging
+// to it alone, and `worker` is where that path comes from. It is a leaf on the resolution
+// that already exists rather than a third resolver: `open` found the project root through
+// projectAnchor() and named the run directory, and `worker` only adds
+// `workers/<id>/` beneath it. Nothing here re-derives a root.
+//
+//   scope=$(node runlog.mjs worker --dir "$dir" --worker w1)     # claims it, prints it
+//   out=$(node runlog.mjs worker --dir "$dir" --worker w1 --path notes/found.md)
+//
+// TWO PROPERTIES, AND HOW EACH IS ENFORCED RATHER THAN ASSERTED.
+//
+//   1. Two workers of one run never share a directory. The id is used as the directory
+//      name unchanged — no sanitising pass — because a sanitiser folds `w1` and `w.1`
+//      into one stem and hands two workers one scope without saying so. Identity mapping
+//      means distinct ids are distinct directories by construction. Ids that are not a
+//      single directory name (`..`, `a/b`, an absolute path) are refused outright rather
+//      than rewritten into something that resolves somewhere else.
+//
+//   2. The claim is a NON-RECURSIVE mkdir, so the filesystem decides the race. Two
+//      workers dispatched with the same id do not quietly land in one directory: the
+//      loser gets EEXIST and is told the scope is already claimed. mkdir is atomic, so
+//      this holds under real concurrency and not only against a string comparison. A
+//      retried worker therefore needs its own id; that is the intended shape, because a
+//      retry that reuses a dead worker's directory inherits its half-written output.
+//
+// AND A PATH OUT OF SCOPE IS REFUSED, NOT SILENTLY CLAMPED. `--path` resolves a relative
+// path inside the scope and prints it; anything resolving elsewhere — `../sibling`, an
+// absolute path, a climb out of the run — exits non-zero naming the scope. Clamping such
+// a path back inside would be worse than refusing: the worker would write to a place it
+// did not mean, and nothing would say so. This is a resolver that refuses, not a kernel
+// jail; a worker that never asks can still write anywhere it has tools for, which is why
+// "no write outside the run-scoped path" is also stated plainly in the dispatch pattern.
+// The parent directory is created, the file itself is not: creating it would make an
+// opened-but-unwritten path indistinguishable from a finished one.
 
 import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -97,7 +135,8 @@ import { projectAnchor, sentinelId } from '../hooks/sentinel.mjs';
 const USAGE = `usage:
   runlog open   --job <name> [--date <YYYY-MM-DD>]
   runlog record --dir <path> --job <name> --unit <name> --status <text> [--duration <ms>] [--detail <text>]
-  runlog close  --dir <path> --job <name> --status <text> [--duration <ms>] [--detail <text>]`;
+  runlog close  --dir <path> --job <name> --status <text> [--duration <ms>] [--detail <text>]
+  runlog worker --dir <path> --worker <id> [--path <relative>]`;
 
 function fail(message) {
   process.stderr.write(`${message}\n`);
@@ -160,6 +199,39 @@ function uniqueLogDir(logsRoot, date, job) {
   }
 }
 
+/** Where one run keeps its workers' directories, relative to the run directory. */
+const WORKERS_DIRNAME = 'workers';
+
+/**
+ * The directory belonging to one worker of one run, or null if `worker` is not a single
+ * directory name.
+ *
+ * The id is not sanitised, so two distinct ids can never resolve to one directory. The
+ * two comparisons are the whole validation: `dirname` catches anything that resolves
+ * outside the run's workers root (an absolute path, `../elsewhere`, a nested `a/b`), and
+ * `basename` catches the names that resolve back onto the root itself (`.`, `..`, a
+ * trailing separator).
+ */
+function workerScope(runDir, worker) {
+  const root = path.resolve(runDir, WORKERS_DIRNAME);
+  const scope = path.resolve(root, worker);
+  if (path.dirname(scope) !== root || path.basename(scope) !== worker) return null;
+  return scope;
+}
+
+/**
+ * `relPath` resolved inside `scope`, or null if it lands anywhere else.
+ *
+ * `path.relative` rather than a string prefix: `<scope>-2` starts with `<scope>` as text
+ * and is a different directory. The empty result is the scope itself, which is inside it.
+ */
+function withinScope(scope, relPath) {
+  const target = path.resolve(scope, relPath);
+  const rel = path.relative(scope, target);
+  if (path.isAbsolute(rel) || rel === '..' || rel.startsWith(`..${path.sep}`)) return null;
+  return target;
+}
+
 function summaryStub(job, date, dir) {
   return (
     `# ${job} — ${date}\n\n` +
@@ -220,6 +292,49 @@ if (action === 'open') {
   appendRecord(dir, { job, unit: 'run', status, duration, detail });
   appendFileSync(path.join(dir, 'summary.md'), `\n_Closed ${new Date().toISOString()}, status: ${status}._\n`, 'utf8');
   process.stdout.write(`closed ${dir}\n`);
+} else if (action === 'worker') {
+  const dir = requiredFlag(rest, 'dir');
+  const worker = requiredFlag(rest, 'worker');
+  const relPath = flag(rest, 'path');
+  requireOpenedDir(dir);
+
+  const scope = workerScope(dir, worker);
+  if (scope === null) {
+    fail(
+      `--worker must be a single directory name, and ${JSON.stringify(worker)} is not one. ` +
+        'It is used as the directory name unchanged, so that two different worker ids can never share one scope.',
+    );
+  }
+
+  if (relPath === null) {
+    mkdirSync(path.dirname(scope), { recursive: true });
+    try {
+      // Non-recursive on purpose: EEXIST is the answer, not a thing to smooth over.
+      mkdirSync(scope);
+    } catch (err) {
+      if (err?.code === 'EEXIST') {
+        fail(
+          `worker ${JSON.stringify(worker)} is already claimed in this run at ${scope}. ` +
+            'Two workers of one run must not share a write path; give this one an id of its own.',
+        );
+      }
+      fail(`could not create ${scope} (${err?.message ?? err})`);
+    }
+    process.stdout.write(`${scope}\n`);
+  } else {
+    if (!existsSync(scope)) {
+      fail(
+        `worker ${JSON.stringify(worker)} has no scope in this run yet. ` +
+          `Claim it first with \`runlog worker --dir ${dir} --worker ${worker}\`.`,
+      );
+    }
+    const target = withinScope(scope, relPath);
+    if (target === null) {
+      fail(`${JSON.stringify(relPath)} resolves outside worker ${JSON.stringify(worker)}'s scope at ${scope}.`);
+    }
+    mkdirSync(path.dirname(target), { recursive: true });
+    process.stdout.write(`${target}\n`);
+  }
 } else {
   fail(USAGE);
 }
