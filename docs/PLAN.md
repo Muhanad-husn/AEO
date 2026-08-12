@@ -331,6 +331,21 @@ what produces the usage this phase needs to be worth doing.
 - Migration plan for `C:\Users\mou97\.claude\skills\` and `D:\axial\.claude\`, presented for
   approval. Nothing upstream is touched before this point.
 
+| Slice | Model | Authors | Must not |
+|---|---|---|---|
+| **P7.1** packaging surface | **Sonnet** | Root `README.md` for a reader who has never seen this repo — what AEO is, the `node` prerequisite, install from GitHub, the lanes, who merges; both manifests audited against C-09; one test that fails when a manifest loses `version`/`$schema` or the README drops the prerequisite | Restate `CLAUDE.md`. That file briefs a session; the README briefs a stranger |
+| **P7.2** acceptance grader re-run | **Opus** | `evals/grade-plugin.mjs` re-run against the shipped tree, with L-10 discipline — noise floor first, planted-defect control, what flipped rather than totals; the write-up under `logs/` | Edit the plugin to make a check pass. A failing check is a finding and an issue |
+| **P7.3** clean install | **Sonnet** | The install proof — marketplace added from GitHub, plugin installed into a **fresh empty repo**, inventory and one lane exercised, uninstall verified clean | Install into `D:\AEO` or the testbed ([D21](DECISIONS.md), [TESTBED.md](TESTBED.md)) |
+| **P7.4** the dry run | **Opus** | Idea to merged PR in a fresh session on a throwaway product on a stack that is not Python, with a per-gate evidence line for all six wired hooks | Reuse the testbed's Node fixture, or fix a defect it finds. Defects become issues |
+| **P7.5** migration plan | **Opus** | `docs/MIGRATION.md` — per-path disposition for the global skill and `D:\axial\.claude\`, order of operations, what breaks mid-switch, rollback | Execute any part of it, or write a single byte to either tree |
+
+`P7.1` gates `P7.3`, which gates `P7.4`. `P7.2` and `P7.5` need nothing (3 parallel at peak).
+
+**The dry-run stack is an open question.** Only Node resolves on this machine — `go`,
+`cargo`, `mvn`, `gradle`, `ruby` and `dotnet` are all absent, and the testbed is already
+Node. A Node dry run satisfies "not Python" and proves nothing about generalization.
+P7.4 asks the founder before installing a toolchain.
+
 **Verify:** clean install from GitHub into an empty repo; the dry run reaches a merged PR
 with every gate exercised.
 **⛔ CHECKPOINT 7.**
