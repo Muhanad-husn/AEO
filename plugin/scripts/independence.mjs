@@ -92,20 +92,45 @@
 // DEPENDENCIES. A declared `depends-on` naming another slice in the set fails that pair,
 // because the dependent cannot start until the other lands, so they are sequential by
 // definition. A `depends-on` naming a slice outside the set is left alone: this answers "are
-// these N parallel-safe against each other", not "is each one ready to start". That
-// leave-alone rule is only safe because an id that cannot be a real id is refused rather
-// than quietly treated as one from outside.
+// these N parallel-safe against each other", not "is each one ready to start".
+//
+// That leave-alone rule is where a mis-spelled id turns into a green light, so two things
+// hold it up. An id that cannot be a real id is refused rather than quietly treated as one
+// from outside. And ids are compared case-insensitively, exactly as paths are, because
+// `depends-on: p5.1` against `slice: P5.1` is a real id in the wrong case, not a slice from
+// some other batch. It passes every validity rule, so nothing but the comparison can catch
+// it, and this project's slice vocabulary is `P5.1`, `P5.2`, `P5.3`, which makes that the
+// spelling collision that would actually happen. Findings still print each id the way its
+// author wrote it; only the comparison folds case.
 //
 // STREAMS AND EXIT. The verdict is a result, not an error, so it goes to stdout and the exit
 // code carries it: 0 parallel-safe, 1 not. stderr is reserved for "I could not run at all",
-// meaning bad arguments or an unreadable file. Both the safe and the unsafe report echo
-// every path the check actually parsed, because a count is not a coverage check and the way
-// to confirm this saw what you meant is to read back the names (L-08). The echo is evidence,
-// not a defence: nothing above relies on a human noticing a wrong value in it.
+// meaning bad arguments or an unreadable file.
 //
-// ONE KNOWN EDGE. The scan is line-oriented and does not track nested fences, so a file that
-// *demonstrates* the format also declares it. That direction is safe: two blocks in one
-// source is a hard failure, not a quiet pass.
+// Read the verdict from the exit code, not from a substring. `NOT parallel-safe:` contains
+// `parallel-safe`, so a naive grep matches both verdicts; an anchored match on the first line
+// works if the exit code is genuinely unavailable. P5.2 and P5.3 will be written by agents,
+// and this is the line they need.
+//
+// Both the safe and the unsafe report echo every path the check actually parsed, because a
+// count is not a coverage check and the way to confirm this saw what you meant is to read
+// back the names (L-08). The echo is evidence, not a defence: nothing above relies on a
+// human noticing a wrong value in it.
+//
+// KNOWN LIMITS, BOTH DELIBERATE.
+//
+// The scan is line-oriented and does not track nested fences, so a file that *demonstrates*
+// the format also declares it. That direction is safe: two blocks in one source is a hard
+// failure, not a quiet pass.
+//
+// The bare-path character set excludes `(`, `)`, `[` and `]`, so an idiomatic Next.js
+// app-router path such as `app/[slug]/page.tsx` or `src/(marketing)/layout.tsx` cannot be
+// declared. Every tracked path in this repository passes, but Phase 7 proves this plugin on a
+// stack that is not this one. The set is deliberately not widened: admitting parentheses
+// admits `(tbd)` back past the placeholder list, a certain cost against a speculative
+// benefit. A planner that hits this should rename the file. It must not drop the
+// declaration, because an undeclarable path creates pressure to omit it, and an omitted path
+// is L-04 arriving through a different door.
 
 import { readFileSync } from 'node:fs';
 
@@ -156,10 +181,17 @@ function fail(message) {
 }
 
 /**
- * A slice id in one canonical spelling, or `{ error }`. A leading `#` is dropped and a
- * numeric id loses its leading zeros, so `#13`, `13` and `013` are one slice rather than
- * three. Anything that is not a single bare token is refused instead of being canonicalised
- * into something that resolves to nothing.
+ * A slice id in one canonical spelling, or `{ error }`.
+ *
+ * Two kinds of variation get opposite treatment. A spelling with one obvious reading is
+ * canonicalised: a leading `#` is dropped, and a numeric id loses its leading zeros, so
+ * `#13`, `13` and `013` are one slice rather than three. Case is the third such spelling,
+ * folded at the comparison rather than here, so a finding can still print an id the way its
+ * author wrote it.
+ *
+ * A value that is not a single bare token has no obvious reading, and is refused rather than
+ * guessed at. There is no defensible id inside `13 (the independence check)`, and inventing
+ * one would produce a value that resolves to nothing while looking deliberate in the report.
  */
 function normaliseId(value) {
   const bare = (value.startsWith('#') ? value.slice(1) : value).trim();
@@ -201,7 +233,7 @@ function normalisePath(value) {
   return { path: joined };
 }
 
-/** Case-insensitive membership, matching how paths are compared across slices. */
+/** Case-insensitive membership, matching how paths and ids are compared across slices. */
 function holds(list, value) {
   const key = value.toLowerCase();
   return list.some((entry) => entry.toLowerCase() === key);
@@ -270,7 +302,7 @@ function parseBlock(lines, decl) {
       if (key === 'slice') sliceLines += 1;
       if (error !== undefined) problem(error);
       else if (key === 'slice') decl.slice = id;
-      else if (!decl.dependsOn.includes(id)) decl.dependsOn.push(id);
+      else if (!holds(decl.dependsOn, id)) decl.dependsOn.push(id);
       continue;
     }
 
@@ -329,7 +361,7 @@ function readDeclaration(file, index) {
       decl.problems.push({ kind: 'malformed', text: `${named} both edits and creates ${p}; it cannot be doing both.` });
     }
   }
-  if (decl.slice !== null && decl.dependsOn.includes(decl.slice)) {
+  if (decl.slice !== null && holds(decl.dependsOn, decl.slice)) {
     decl.problems.push({ kind: 'malformed', text: `${named} depends on itself.` });
   }
   return decl;
@@ -408,11 +440,11 @@ function collisions(decls) {
 }
 
 function dependencies(decls) {
-  const byId = new Map(decls.filter((d) => d.slice !== null).map((d) => [d.slice, d]));
+  const byId = new Map(decls.filter((d) => d.slice !== null).map((d) => [d.slice.toLowerCase(), d]));
   const found = [];
   for (const decl of decls) {
     for (const id of decl.dependsOn) {
-      const other = byId.get(id);
+      const other = byId.get(id.toLowerCase());
       if (other === undefined || other === decl) continue;
       found.push({
         kind: 'dependency',
@@ -448,9 +480,13 @@ const declarations = sources.map(readDeclaration);
 const seen = new Map();
 for (const decl of declarations) {
   if (decl.slice === null) continue;
-  const first = seen.get(decl.slice);
-  if (first !== undefined) fail(`${first.file} and ${decl.file} both declare slice ${decl.slice}; a collision could not be attributed to either.`);
-  seen.set(decl.slice, decl);
+  const key = decl.slice.toLowerCase();
+  const first = seen.get(key);
+  if (first !== undefined) {
+    const alias = first.slice === decl.slice ? '' : ` (spelled ${first.slice} in the first)`;
+    fail(`${first.file} and ${decl.file} both declare slice ${decl.slice}${alias}; a collision could not be attributed to either.`);
+  }
+  seen.set(key, decl);
 }
 
 const findings = [

@@ -19,8 +19,7 @@
 //
 // THE SECOND THING IT GUARDS is the set of wrong spellings that used to parse into a value
 // matching nothing, and so returned a confident `parallel-safe`. Those live in "a value in a
-// wrong spelling" below. Every one of them runs against L-04's own colliding pair, so what is
-// asserted is that the collision is still found, not merely that the input is disliked.
+// wrong spelling" below, and each one runs against a pair that must not come back green.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -260,11 +259,19 @@ describe('path comparison', () => {
 // ---------------------------------------------------------------------------
 // A value in a wrong spelling
 //
-// Every case here is L-04's own pair: two slices creating one path that exists nowhere yet.
-// The only variable is how the path or the dependency is written. Each of these once parsed
-// into a value that matched nothing and produced `parallel-safe`, exit 0, which is the L-04
-// failure reproduced inside the check built to prevent it. The assertion is therefore that
-// the collision is still found, not merely that the input is disliked.
+// Every case here is a pair that must not come back green: two slices creating one path that
+// exists nowhere yet, or two slices with a dependency between them. The only variable is how
+// the path or the id is written. Each spelling once parsed into a value that matched nothing
+// and produced `parallel-safe`, exit 0, which is the L-04 failure reproduced inside the check
+// built to prevent it.
+//
+// What each case asserts is the non-zero exit first, and the specific refusal second. The
+// exit code is the guarantee; the message only says which of the two ways it was reached.
+// Refusing rather than comparing is the right behaviour here, because a value the parser
+// declined to read cannot be compared against anything, so the pair cannot be cleared.
+//
+// The `013` and `p5.1` cases assert the opposite, that the id resolves and the dependency is
+// reported as a dependency, because those two spellings do have one obvious reading.
 // ---------------------------------------------------------------------------
 
 describe('a value in a wrong spelling never buys a green verdict', () => {
@@ -322,6 +329,42 @@ describe('a value in a wrong spelling never buys a green verdict', () => {
     assert.equal(r.status, 1, '`depends-on: 013` did not resolve to slice 13');
     assert.match(r.stdout, /dependency\s+slice 14 depends on slice 13/);
     assert.doesNotMatch(r.stdout, /malformed/, 'a numeric id with leading zeros is a spelling, not an error');
+  });
+
+  test('a depends-on in the wrong case still resolves to the slice it names', async () => {
+    // This project's slice vocabulary is P5.1/P5.2/P5.3, so this is the spelling collision
+    // that would actually happen. `p5.1` passes every validity rule, which leaves the
+    // comparison as the only thing that can catch it.
+    const a = slice('slice: P5.1', 'creates: plugin/scripts/a.mjs');
+    const b = slice('slice: P5.2', 'creates: plugin/scripts/b.mjs', 'depends-on: p5.1');
+    const r = await independence([a, b]);
+    assert.equal(r.status, 1, '`depends-on: p5.1` against `slice: P5.1` was read as pointing outside the set');
+    assert.match(r.stdout, /dependency\s+slice P5\.2 depends on slice P5\.1/);
+    assert.doesNotMatch(r.stdout, /malformed/, 'a real id in the wrong case is a spelling, not an error');
+  });
+
+  test('findings print each id the way its author wrote it', async () => {
+    const a = slice('slice: P5.1', 'creates: plugin/scripts/a.mjs');
+    const b = slice('slice: P5.2', 'creates: plugin/scripts/b.mjs', 'depends-on: p5.1');
+    const r = await independence([a, b]);
+    assert.match(r.stdout, /depends-on p5\.1/, 'the echo lost the spelling the author used');
+    assert.match(r.stdout, /slice P5\.1 in /, 'the echo lost the declared spelling of the slice id');
+  });
+
+  test('a slice depending on itself in another case is still self-dependency', async () => {
+    const a = slice('slice: P5.1', 'creates: plugin/scripts/a.mjs', 'depends-on: p5.1');
+    const b = slice('slice: P5.2', 'creates: plugin/scripts/b.mjs');
+    const r = await independence([a, b]);
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /malformed\s+slice P5\.1 depends on itself/);
+  });
+
+  test('two sources whose ids differ only in case are one slice, and are refused', async () => {
+    const a = slice('slice: P5.1', 'creates: plugin/scripts/a.mjs');
+    const b = slice('slice: p5.1', 'creates: plugin/scripts/b.mjs');
+    const r = await independence([a, b]);
+    assert.equal(r.status, 1, 'two spellings of one slice id were treated as two slices');
+    assert.match(r.stderr, /both declare slice p5\.1 \(spelled P5\.1 in the first\)/);
   });
 
   test('a slice id with leading zeros is the same slice as the plain form', async () => {
