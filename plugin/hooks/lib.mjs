@@ -36,7 +36,7 @@
 // console codepage, no *>> redirection and no ${var}: parsing hazard.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, writeSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeSync } from 'node:fs';
 import path from 'node:path';
 
 /** The plugin's namespace. Plugin subagents report `<namespace>:<role>` (C-02). */
@@ -372,6 +372,40 @@ function canonicalise(p) {
     return s;
   } catch {
     return null;
+  }
+}
+
+/**
+ * An absolute path with every symlink, junction and alias on it resolved.
+ *
+ * isPathInside compares strings and never touches the filesystem, so two names for one
+ * directory do not compare equal. Wherever the question is "may this path be reached",
+ * that is not a correctness nit: a link into a protected root walks straight past an
+ * unresolved check, and what it walks past is the guarantee. Both sides of such a
+ * comparison go through here before isPathInside sees them.
+ *
+ * The loop resolves the deepest ancestor that exists and re-appends the rest, so a path
+ * that has not been created yet still resolves to the place it would be created in.
+ *
+ * sandbox-guard.mjs carries the same logic privately as `realise`. That copy predates this
+ * export and P1.5's gate is not open for edit; the two are one function and should become
+ * one call.
+ *
+ * @param {string} p
+ * @returns {string}
+ */
+export function realpathDeep(p) {
+  let current = path.resolve(p);
+  const tail = [];
+  for (;;) {
+    try {
+      return path.join(realpathSync.native(current), ...tail);
+    } catch {
+      const parent = path.dirname(current);
+      if (parent === current) return path.resolve(p);
+      tail.unshift(path.basename(current));
+      current = parent;
+    }
   }
 }
 
