@@ -140,7 +140,11 @@ looks parallel.
    gate in its own worktree, each actor's PR goes through `safe-pr`, and
    evidence is collected per actor. Report gate exercise per actor too: a
    gate an actor never reached is reported as not exercised for that
-   actor, never as passing.
+   actor, never as passing. The reverse reading is just as wrong — a gate
+   that printed nothing passed, because a `PreToolUse` gate is silent
+   when it allows. Report from the gates named in the session-start
+   report and from what an actor's commits did, never from having seen no
+   gate output.
 
 8. **The run-in-progress sentinel is shared across worktrees.** A sentinel
    is anchored through the main checkout, so one raised anywhere is

@@ -67,10 +67,14 @@ function makeRepo() {
  * waiting on that merge.
  */
 function makePassingPluginRoot() {
+  return makePluginRoot(readFileSync(path.join(realPluginRoot, 'hooks', 'hooks.json'), 'utf8'));
+}
+
+/** The same, from a hooks.json of the caller's own. Every script it names is stubbed. */
+function makePluginRoot(raw) {
   const root = tempDir('aeo-p17-plugin-');
   const hooksDir = path.join(root, 'hooks');
   mkdirSync(hooksDir, { recursive: true });
-  const raw = readFileSync(path.join(realPluginRoot, 'hooks', 'hooks.json'), 'utf8');
   writeFileSync(path.join(hooksDir, 'hooks.json'), raw);
   for (const m of raw.matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}([^\s"']*\.mjs)/g)) {
     const abs = path.join(root, m[1].replace(/^[/\\]/, ''));
@@ -379,6 +383,75 @@ describe('gate-health banner', () => {
     const repo = makeRepo();
     const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
     assert.doesNotMatch(r.stdout, /AEO GATES ARE NOT ENFORCING/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The gates, stated positively (issue #39)
+// ---------------------------------------------------------------------------
+
+// A PreToolUse gate that allows prints nothing, so the healthy session -- every ordinary
+// one -- used to say nothing about gates at all, and two of four actors in the Checkpoint
+// 5 run read that silence as "no gate is wired". Both were wrong. The claim under test is
+// that an actor can now check instead of infer: the names come out of the manifest that
+// is actually loaded, and the report says what silence from a gate means.
+
+describe('gates stated positively', () => {
+  test('names the wired gates, and says a silent gate allowed', () => {
+    const repo = makeRepo();
+    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Gates wired for this session/);
+    assert.match(r.stdout, /PreToolUse: .*commit-gate/);
+    assert.match(r.stdout, /PreToolUse: .*block-merge/);
+    // The half that fixes the misreading. Naming the gates without this leaves the
+    // actor to work out what silence from one means, which is the step both actors got
+    // wrong.
+    assert.match(r.stdout, /prints nothing when it allows/);
+    assert.match(r.stdout, /not one where none was wired/);
+  });
+
+  test('the names come from the loaded hooks.json, not from a list in the hook', () => {
+    // The whole point of reading the manifest. A hard-coded list would pass the test
+    // above forever and report the real gates here, where this install has none of them.
+    const repo = makeRepo();
+    const root = makePluginRoot(
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            { matcher: '^Bash$', hooks: [{ type: 'command', command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/hooks/invented-gate.mjs'] }] },
+          ],
+        },
+      }),
+    );
+    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: root }) });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /PreToolUse: invented-gate/);
+    assert.doesNotMatch(r.stdout, /commit-gate/);
+  });
+
+  test('a manifest it cannot read is reported as unknown, never as a list', () => {
+    // Reachable because preflight only needs the scripts to exist somewhere in the file:
+    // this manifest satisfies it and still registers nothing under any event. Whatever
+    // the cause, "I could not tell" must not render as "these are your gates".
+    const repo = makeRepo();
+    const root = makePluginRoot(JSON.stringify({ description: 'see ${CLAUDE_PLUGIN_ROOT}/hooks/commit-gate.mjs' }));
+    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: root }) });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /Gates wired: unknown/);
+    assert.match(r.stdout, /not a finding that none of them are/);
+    assert.doesNotMatch(r.stdout, /Gates wired for this session/);
+  });
+
+  test('a broken runtime gets the banner and no list of gates above it', () => {
+    // Ordering, asserted as absence. A session whose gates are failing open must not be
+    // handed their names as reassurance -- the banner is the whole answer there.
+    const repo = makeRepo();
+    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: undefined }) });
+    assert.equal(r.status, 0);
+    assert.match(r.stdout, /AEO GATES ARE NOT ENFORCING/);
+    assert.doesNotMatch(r.stdout, /Gates wired for this session/);
+    assert.doesNotMatch(r.stdout, /prints nothing when it allows/);
   });
 });
 
