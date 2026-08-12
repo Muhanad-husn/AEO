@@ -27,7 +27,7 @@
 // the process boundary" is a claim and an end-to-end call is what pays for it.
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
@@ -96,11 +96,17 @@ async function openedRun(job = 'workers') {
   return { anchor, dir: r.stdout.trim() };
 }
 
-/** Claim a worker's scope and return the printed path. */
+/**
+ * Claim a worker's scope and return the printed path.
+ *
+ * The trailing newline is stripped, not trimmed. A path is whitespace-significant, and
+ * trimming one read off stdout is how a scope belonging to one worker turns into another
+ * worker's — the failure this whole file is about, one layer out.
+ */
 async function claim(anchor, dir, worker) {
   const r = await runlog(['worker', '--dir', dir, '--worker', worker], { cwd: anchor });
   assert.equal(r.status, 0, r.stderr);
-  return r.stdout.trim();
+  return r.stdout.replace(/\r?\n$/, '');
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +154,99 @@ describe('scopes do not collide', () => {
     const again = await runlog(['worker', '--dir', dir, '--worker', 'w1'], { cwd: anchor });
     assert.notEqual(again.status, 0);
     assert.match(again.stderr, /already claimed/i);
+  });
+
+  // The regression test for the review finding. `workerScope` accepts all of these as
+  // single directory names, and it is right to: they differ as strings. What folds them
+  // is the FILESYSTEM — Windows compares case-insensitively and drops trailing spaces and
+  // dots — and `--path` used to ask `existsSync`, which answers yes for every one of them
+  // and handed each a path inside whichever spelling claimed first. Two honest workers,
+  // ordinary ids, one directory, no warning.
+  //
+  // Both tests below hold on every platform, which is why neither asserts "W1 is
+  // refused": on a case-sensitive filesystem `W1` is a different name and claiming it is
+  // correct. What must never happen anywhere is reaching a directory claimed under a
+  // different id, and that is what is asserted. Measured on Windows/NTFS, for the record,
+  // because the behaviour is not what either the case-folding story or the
+  // trailing-space-stripping story predicts: `W1` and `W1 ` are refused EEXIST by case
+  // folding, while `w1 `, ` w1` and `w1.` are created as genuinely distinct directories —
+  // Node reaches the filesystem through extended-length paths, which bypass the Win32
+  // trailing-space rule — and `w1\t` is refused EINVAL as an illegal name.
+  const NEAR_MISSES = ['W1', 'w1 ', ' w1', 'W1 ', 'w1.', 'w1\t'];
+
+  test('--path never resolves into a directory claimed under a different spelling', async () => {
+    const { anchor, dir } = await openedRun('near-miss-path');
+    const held = await claim(anchor, dir, 'w1');
+    writeFileSync(path.join(held, 'result.md'), 'w1 wrote this', 'utf8');
+
+    for (const other of NEAR_MISSES) {
+      const r = await runlog(['worker', '--dir', dir, '--worker', other, '--path', 'result.md'], { cwd: anchor });
+      // None of these claimed anything, so a resolved path is always wrong — whether the
+      // filesystem folds the name or not.
+      assert.notEqual(r.status, 0, `--path accepted unclaimed id ${JSON.stringify(other)} -> ${r.stdout}`);
+    }
+
+    assert.equal(readFileSync(path.join(held, 'result.md'), 'utf8'), 'w1 wrote this', "w1's output was overwritten");
+  });
+
+  test('a near-miss spelling either fails to claim or gets a directory of its own', async () => {
+    const { anchor, dir } = await openedRun('near-miss-claim');
+    const held = await claim(anchor, dir, 'w1');
+    writeFileSync(path.join(held, 'result.md'), 'w1 wrote this', 'utf8');
+
+    for (const other of NEAR_MISSES) {
+      const r = await runlog(['worker', '--dir', dir, '--worker', other], { cwd: anchor });
+      if (r.status === 0) {
+        // Legitimate where the filesystem keeps the names apart. What it must not be is
+        // w1's directory under another name. Read WITHOUT trim: trimming the printed path
+        // is itself the bug one layer out, and it is what made the first version of this
+        // test lie.
+        const scope = r.stdout.replace(/\r?\n$/, '');
+        assert.equal(
+          existsSync(path.join(scope, 'result.md')),
+          false,
+          `${JSON.stringify(other)} claimed successfully and landed in w1's directory at ${JSON.stringify(scope)}`,
+        );
+      } else {
+        assert.match(
+          r.stderr,
+          /already claimed|must not begin or end with whitespace|could not create/i,
+          `${JSON.stringify(other)} failed for the wrong reason: ${r.stderr}`,
+        );
+      }
+    }
+  });
+
+  test('an id with outer whitespace is refused rather than trimmed into another id', async () => {
+    // The rule exists because the printed path has to survive being read back. `w1 ` is a
+    // usable directory name on this filesystem, but `scope=$(...)` and `.trim()` both hand
+    // it back as `w1`'s path — so accepting it would put the collision one layer out,
+    // where nothing checks. A refusal never merges two ids; a trim would.
+    const { anchor, dir } = await openedRun('outer-space');
+    const held = await claim(anchor, dir, 'w1');
+    writeFileSync(path.join(held, 'result.md'), 'w1 wrote this', 'utf8');
+
+    for (const id of ['w1 ', ' w1', 'w1\t', '\tw1', 'w2 ']) {
+      const r = await runlog(['worker', '--dir', dir, '--worker', id], { cwd: anchor });
+      assert.notEqual(r.status, 0, `${JSON.stringify(id)} was accepted`);
+      assert.match(r.stderr, /whitespace/i, `${JSON.stringify(id)} failed for the wrong reason: ${r.stderr}`);
+    }
+    assert.equal(readFileSync(path.join(held, 'result.md'), 'utf8'), 'w1 wrote this');
+  });
+
+  test('a case-folded id is refused where the filesystem folds case, and names the holder as spelled on disk', async () => {
+    // Skipped where `W1` is genuinely a different directory, because there the correct
+    // behaviour is to claim it.
+    const { anchor, dir } = await openedRun('case-fold');
+    await claim(anchor, dir, 'w1');
+    const r = await runlog(['worker', '--dir', dir, '--worker', 'W1'], { cwd: anchor });
+    if (r.status === 0) return; // case-sensitive filesystem: a distinct id, correctly claimed
+    assert.match(r.stderr, /already claimed/i);
+    // The refusal prints the on-disk spelling, not the caller's. Printing `...\W1` would
+    // send whoever diagnoses this looking for a directory that does not exist under that
+    // name.
+    assert.match(r.stderr, /[\\/]w1\b/, `the refusal did not name the on-disk holder: ${r.stderr}`);
+    assert.ok(!/[\\/]W1\b/.test(r.stderr), `the refusal echoed the caller's spelling: ${r.stderr}`);
   });
 
   test('the same worker id in a different run is a different path', async () => {
@@ -215,9 +314,13 @@ describe('a path outside the scope is refused', () => {
 
   test('a worker id that is not a single directory name is refused', async () => {
     const { anchor, dir } = await openedRun('bad-id');
-    for (const bad of ['..', '.', path.join('a', 'b'), path.join('..', 'elsewhere')]) {
-      const r = await runlog(['worker', '--dir', dir, '--worker', bad], { cwd: anchor });
-      assert.notEqual(r.status, 0, `${JSON.stringify(bad)} was accepted as a worker id`);
+    // `w1<sep>` is built with path.sep rather than a literal backslash: on POSIX a
+    // backslash is an ordinary filename character and `w1\` is a perfectly good id, so
+    // hard-coding one would assert a Windows fact on every platform.
+    const bad = ['..', '.', path.join('a', 'b'), path.join('..', 'elsewhere'), `w1${path.sep}`];
+    for (const id of bad) {
+      const r = await runlog(['worker', '--dir', dir, '--worker', id], { cwd: anchor });
+      assert.notEqual(r.status, 0, `${JSON.stringify(id)} was accepted as a worker id`);
       assert.match(r.stderr, /worker id/i);
     }
   });
@@ -283,17 +386,35 @@ describe('a worker run started while a sentinel is live', () => {
     assert.equal(inside.status, 0, inside.stderr);
   });
 
-  test("the run's single commit is blocked while that sentinel is live", async () => {
-    // Asserted through runInProgress(), which is the exact predicate the commit gate
-    // calls (plugin/hooks/commit-gate.mjs). Spawning the gate itself belongs to the
-    // integration tier; what this pins is that a worker run raises nothing that would
-    // exempt its commit from it.
-    const { anchor } = await openedRun('blocked-commit');
+  test('a whole worker run leaves the sentinel its commit must wait on standing', async () => {
+    // Asserted through runInProgress(), the exact predicate the commit gate calls
+    // (plugin/hooks/commit-gate.mjs); spawning the gate itself belongs to the integration
+    // tier. The run is driven end to end first, because the claim worth pinning is not
+    // "a live sentinel blocks" — that is sentinel.mjs's own behaviour and it has its own
+    // tests — but that nothing THIS lane does clears the sentinel or exempts its commit
+    // from it. An earlier version asserted only the former and passed with the whole
+    // slice deleted.
+    const job = 'blocked-commit';
+    const { anchor, dir } = await openedRun(job);
     assert.equal(runInProgress(anchor).reason, null, 'the anchor was not clear before the sentinel went up');
-
     raiseLiveSentinel(anchor);
+
+    for (const id of ['w1', 'w2']) {
+      const scope = await claim(anchor, dir, id);
+      writeFileSync(path.join(scope, 'out.txt'), id, 'utf8');
+      const resolved = await runlog(['worker', '--dir', dir, '--worker', id, '--path', 'notes/n.md'], { cwd: anchor });
+      assert.equal(resolved.status, 0, resolved.stderr);
+      const rec = await runlog(
+        ['record', '--dir', dir, '--job', job, '--unit', id, '--status', 'ok'],
+        { cwd: anchor },
+      );
+      assert.equal(rec.status, 0, rec.stderr);
+    }
+    const closed = await runlog(['close', '--dir', dir, '--job', job, '--status', 'ok'], { cwd: anchor });
+    assert.equal(closed.status, 0, closed.stderr);
+
     const blocked = runInProgress(anchor);
-    assert.notEqual(blocked.reason, null, 'a live sentinel did not block');
+    assert.notEqual(blocked.reason, null, 'the worker run cleared or exempted the live sentinel');
     assert.match(blocked.reason, /long job is running/);
   });
 

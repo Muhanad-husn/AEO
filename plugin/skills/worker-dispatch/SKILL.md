@@ -55,6 +55,17 @@ need not share a tier.
    all of them here, in the orchestrator, and hand each worker the path it got.
    A worker being retried gets a new id, not the dead one's directory.
 
+   **If a claim is refused, do not dispatch that worker.** A refusal means the id
+   already belongs to someone else in this run, so dispatching anyway is how two
+   workers end up on one directory — the thing the claim exists to stop. Fix the
+   id and claim again, or drop the worker. Never carry on past a refusal.
+
+   Keep ids plain: letters, digits, dashes. An id with a leading or trailing
+   space is refused, because the path it prints stops surviving a shell round
+   trip and reads back as another worker's. Avoid `NUL`, `CON`, `AUX` and `COM1`
+   as well — those claim successfully on Windows and leave directories ordinary
+   tools then refuse to delete.
+
 3. **Dispatch, each worker carrying: its unit, its scope path, and the rule that
    it writes nowhere else.** A worker resolves any path it wants to write:
 
@@ -90,14 +101,24 @@ need not share a tier.
   as reports that and stops. It does not widen its own scope.
 
 The exception is the edit the worker was assigned. If the plan names the files
-each worker edits, and no two workers name the same file, a worker edits those
-files in place and everything else it produces — notes, extracted values,
-proposed text, anything it wants to hand back — goes in its scope. If the plan
-**cannot** name them in advance, because the file set is discovered rather than
-known, then no worker edits the checkout at all: each writes its proposed output
-into its own scope and the collection step applies it. Discovering the file set
-during a fan-out is exactly when two workers find the same file, and a shared
-scope is what turns that into corrupted work instead of a conflict someone sees.
+each worker **edits or creates**, and no two workers name the same file, a worker
+writes those files in place and everything else it produces — notes, extracted
+values, proposed text, anything it wants to hand back — goes in its scope.
+
+Creates, not just edits, and the distinction is the whole point. Two issues once
+ran concurrently after being checked as touching no common file; both then
+created the same new module, with incompatible content, and it was reconciled by
+hand. A plan that names every edit while leaving workers free to create an
+incidental helper or test file reproduces that exactly. Files that do not exist
+yet are still files two workers can collide on.
+
+If the plan **cannot** name them in advance, because the file set is discovered
+rather than known, then no worker edits the checkout at all: each writes its
+proposed output into its own scope, and the collection step applies it. When two
+workers propose a change to the same file, **stop and do not merge them** — that
+is a planning failure surfacing at the safest possible moment, and merging two
+proposals by hand in the middle of a fan-out produces a change nobody specified
+and nobody reviewed. Re-divide the work and run it again.
 
 ## Gates apply once, at the commit
 
@@ -130,5 +151,8 @@ batch of mechanical edits.
 - The scope resolver refuses an out-of-scope path; it does not stop a worker
   that never asks. The rule above is what covers that, and it is stated to every
   worker at dispatch, not assumed.
+- The resolver compares paths as text, so a symlink or junction planted inside a
+  scope points out of it and resolves as in-scope. Planting one is already a
+  write the rules forbid, and this is the shape that limit takes on disk.
 - Count and tier are properties of the task, recorded with the run. A number
   carried over from the last fan-out because it worked then is not a decision.

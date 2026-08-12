@@ -105,17 +105,28 @@
 //
 //   1. Two workers of one run never share a directory. The id is used as the directory
 //      name unchanged — no sanitising pass — because a sanitiser folds `w1` and `w.1`
-//      into one stem and hands two workers one scope without saying so. Identity mapping
-//      means distinct ids are distinct directories by construction. Ids that are not a
-//      single directory name (`..`, `a/b`, an absolute path) are refused outright rather
-//      than rewritten into something that resolves somewhere else.
+//      into one stem and hands two workers one scope without saying so. Ids that are not
+//      a single directory name (`..`, `a/b`, an absolute path) are refused outright
+//      rather than rewritten into something that resolves somewhere else.
 //
-//   2. The claim is a NON-RECURSIVE mkdir, so the filesystem decides the race. Two
-//      workers dispatched with the same id do not quietly land in one directory: the
-//      loser gets EEXIST and is told the scope is already claimed. mkdir is atomic, so
-//      this holds under real concurrency and not only against a string comparison. A
-//      retried worker therefore needs its own id; that is the intended shape, because a
-//      retry that reuses a dead worker's directory inherits its half-written output.
+//      Not sanitising is not the same as the ids being distinct, and the difference is
+//      the whole of property 2. THE FILESYSTEM FOLDS NAMES THIS CODE CANNOT: Windows
+//      compares case-insensitively and drops trailing spaces and dots, so `W1`, `w1 `,
+//      `w1.` and ` w1` all name the same directory as `w1`. Every one of those is an
+//      ordinary id — a symbol name, a filename, a field with a stray space from a split
+//      — and two honest workers colliding on one is the failure this lane exists to
+//      prevent. So the guarantee is not "distinct ids are distinct directories"; it is
+//      that a fold is always a refusal and never a silent share.
+//
+//   2. The claim is a NON-RECURSIVE mkdir and the lookup is an EXACT-NAME directory read.
+//      mkdir is atomic, so it decides a real race between two workers claiming at once,
+//      and it also reports EEXIST for every folded spelling — the loser is told, not
+//      quietly pointed at the winner's directory. `--path` then matches the id against
+//      `readdirSync`, which returns names byte-exact, rather than asking whether the path
+//      exists: an existence test answers yes for all six folded spellings and hands them
+//      a path inside whichever one claimed first. A retried worker needs its own id; that
+//      is the intended shape, because a retry reusing a dead worker's directory inherits
+//      its half-written output.
 //
 // AND A PATH OUT OF SCOPE IS REFUSED, NOT SILENTLY CLAMPED. `--path` resolves a relative
 // path inside the scope and prints it; anything resolving elsewhere — `../sibling`, an
@@ -127,7 +138,7 @@
 // The parent directory is created, the file itself is not: creating it would make an
 // opened-but-unwritten path indistinguishable from a finished one.
 
-import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { projectAnchor, sentinelId } from '../hooks/sentinel.mjs';
@@ -157,6 +168,22 @@ function requiredFlag(argv, name) {
   const trimmed = value.trim();
   if (trimmed === '') fail(`--${name} must not be empty`);
   return trimmed;
+}
+
+/**
+ * A required flag read EXACTLY as given, with no trim.
+ *
+ * `requiredFlag` trims, which is right for a label like `--job` or `--status` and wrong
+ * for an id used as a directory name. Trimming folds `w1 `, ` w1` and `w1\t` into `w1`,
+ * so two workers dispatched under ids differing only in whitespace become one worker as
+ * far as this script is concerned — and the second is handed the first's directory with
+ * nothing said. An id is a key, not a label. All-whitespace is still empty.
+ */
+function requiredExactFlag(argv, name) {
+  const value = flag(argv, name);
+  if (value === null) fail(`--${name} is required\n${USAGE}`);
+  if (value.trim() === '') fail(`--${name} must not be empty`);
+  return value;
 }
 
 function durationFlag(argv) {
@@ -203,20 +230,32 @@ function uniqueLogDir(logsRoot, date, job) {
 const WORKERS_DIRNAME = 'workers';
 
 /**
- * The directory belonging to one worker of one run, or null if `worker` is not a single
- * directory name.
+ * One worker's directory and the workers root holding it, or null if `worker` is not a
+ * single directory name.
  *
- * The id is not sanitised, so two distinct ids can never resolve to one directory. The
- * two comparisons are the whole validation: `dirname` catches anything that resolves
- * outside the run's workers root (an absolute path, `../elsewhere`, a nested `a/b`), and
- * `basename` catches the names that resolve back onto the root itself (`.`, `..`, a
- * trailing separator).
+ * The basename comparison is the whole validation, and it is stronger than it looks: for
+ * `path.basename(scope)` to equal `worker`, the id has to survive `path.resolve` as one
+ * intact trailing segment, which nothing carrying a separator, a drive letter, `.` or
+ * `..` does. This started as two comparisons, the other being
+ * `path.dirname(scope) !== root` for ids resolving out of the root. Review showed that
+ * one never fires: a brute force over path-significant characters up to length four found
+ * zero ids that pass basename and fail dirname, against 2504 the other way. A check with
+ * no independent job is a check nobody can test, so it is gone rather than kept for
+ * comfort.
+ *
+ * The id is NOT sanitised. A sanitiser folding `w1` and `w.1` into one stem would hand two
+ * workers one scope and say nothing. What this cannot promise by itself is that the
+ * FILESYSTEM keeps two accepted ids apart: Windows compares names case-insensitively and
+ * drops trailing spaces and dots, so `W1`, `w1 ` and `w1.` all land on `w1`. That is why
+ * the claim below is a non-recursive mkdir and the lookup is an exact-name directory read
+ * rather than an existence test — under folding, the second id is refused, never quietly
+ * pointed at the first one's directory.
  */
 function workerScope(runDir, worker) {
   const root = path.resolve(runDir, WORKERS_DIRNAME);
   const scope = path.resolve(root, worker);
-  if (path.dirname(scope) !== root || path.basename(scope) !== worker) return null;
-  return scope;
+  if (path.basename(scope) !== worker) return null;
+  return { root, scope };
 }
 
 /**
@@ -224,6 +263,12 @@ function workerScope(runDir, worker) {
  *
  * `path.relative` rather than a string prefix: `<scope>-2` starts with `<scope>` as text
  * and is a different directory. The empty result is the scope itself, which is inside it.
+ *
+ * Lexical, not resolved: a symlink or junction planted INSIDE a scope points out of it and
+ * this returns a path through it as in-scope. That sits inside the stated limit — this is
+ * a resolver that refuses, not a jail — because planting one is already a write the
+ * dispatch rules forbid. Resolving here instead would cost a syscall per path and still
+ * not stop a worker that never asks.
  */
 function withinScope(scope, relPath) {
   const target = path.resolve(scope, relPath);
@@ -294,27 +339,54 @@ if (action === 'open') {
   process.stdout.write(`closed ${dir}\n`);
 } else if (action === 'worker') {
   const dir = requiredFlag(rest, 'dir');
-  const worker = requiredFlag(rest, 'worker');
+  const worker = requiredExactFlag(rest, 'worker');
   const relPath = flag(rest, 'path');
   requireOpenedDir(dir);
 
-  const scope = workerScope(dir, worker);
-  if (scope === null) {
+  const resolved = workerScope(dir, worker);
+  if (resolved === null) {
     fail(
       `--worker must be a single directory name, and ${JSON.stringify(worker)} is not one. ` +
         'It is used as the directory name unchanged, so that two different worker ids can never share one scope.',
     );
   }
+  // Refused, never trimmed. On this platform `w1 `, ` w1` and `w1.` do become genuinely
+  // separate directories, so accepting them would be safe on disk and unusable above it:
+  // the printed path is read back by `scope=$(...)` or a trim, both of which drop the
+  // outer whitespace and hand back a DIFFERENT worker's path. Every consumer would have
+  // to be careful in the same way, and the first one that is not reintroduces exactly the
+  // collision this lane exists to prevent. This is a refusal, not a fold — two ids are
+  // never merged, one is rejected.
+  if (worker !== worker.trim()) {
+    fail(
+      `--worker must not begin or end with whitespace, and ${JSON.stringify(worker)} does. ` +
+        'The id becomes a directory name, and a path with outer whitespace does not survive ' +
+        "being read back: a shell substitution or a trim turns it into another worker's path.",
+    );
+  }
+  const { root, scope } = resolved;
 
   if (relPath === null) {
-    mkdirSync(path.dirname(scope), { recursive: true });
+    mkdirSync(root, { recursive: true });
     try {
-      // Non-recursive on purpose: EEXIST is the answer, not a thing to smooth over.
+      // Non-recursive on purpose: EEXIST is the answer, not a thing to smooth over. mkdir
+      // is atomic, so this decides a genuine race between two workers claiming at once,
+      // and it is also what catches the ids the filesystem folds together.
       mkdirSync(scope);
     } catch (err) {
       if (err?.code === 'EEXIST') {
+        // Name the holder as it is spelled ON DISK, not as this caller spelled it. When
+        // the collision came from case folding, `scope` is a path that does not exist
+        // under that spelling, and handing it to whoever diagnoses this sends them
+        // looking for a directory they will not find.
+        let holder = scope;
+        try {
+          holder = realpathSync.native(scope);
+        } catch {
+          /* the true name is a nicety; the refusal is not */
+        }
         fail(
-          `worker ${JSON.stringify(worker)} is already claimed in this run at ${scope}. ` +
+          `worker ${JSON.stringify(worker)} is already claimed in this run at ${holder}. ` +
             'Two workers of one run must not share a write path; give this one an id of its own.',
         );
       }
@@ -322,10 +394,22 @@ if (action === 'open') {
     }
     process.stdout.write(`${scope}\n`);
   } else {
-    if (!existsSync(scope)) {
+    // An exact-name match against the directory listing, NOT existsSync. Windows resolves
+    // `W1`, `w1 ` and `w1.` to an existing `w1`, so an existence test hands six spellings
+    // of one id a path inside whichever of them claimed first — two honest workers
+    // silently writing to one directory, which is the whole failure this lane prevents.
+    // readdirSync returns names byte-exact, so only the id that actually claimed matches.
+    let claimed;
+    try {
+      claimed = readdirSync(root);
+    } catch {
+      claimed = [];
+    }
+    if (!claimed.includes(worker)) {
       fail(
         `worker ${JSON.stringify(worker)} has no scope in this run yet. ` +
-          `Claim it first with \`runlog worker --dir ${dir} --worker ${worker}\`.`,
+          `Claim it first with \`runlog worker --dir ${dir} --worker ${worker}\`. ` +
+          'The id must match the claimed directory name exactly, including case and spacing.',
       );
     }
     const target = withinScope(scope, relPath);
