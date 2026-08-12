@@ -10,6 +10,47 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-12 — One decision from Phase 5
+
+### D24 — A tier CI already ran on a commit is cited, never re-run locally
+
+**Problem.** P5.3's issue told its builder to run the full battery before starting, to
+satisfy the plan's rule against building on a red or untested gate suite. CI had already
+run both tiers on `465bff16`, concluded success, and that commit is exactly what the
+builder's worktree was cut from. The local run could not learn anything the CI run had
+not already established, and it was charged to the founder's machine and wall-clock while
+two actors were live on it.
+
+The rule against this already existed. `sprint-start` step 5 says the full suite is CI's
+job either way, and `builder.md` says to wait for CI green rather than run acceptance
+suites locally. Both were written and then not followed, because a rule stated once
+inside one step of one skill is a line an agent reads past. It was also stated nowhere as
+a decision, so nothing carried its reason.
+
+**What separates the two runs** is which question they answer. A local run answers *is my
+uncommitted work green*, about a tree no CI has seen. A CI run answers *was this commit
+green*, and once that answer exists it does not improve by being computed a second time on
+slower hardware.
+
+**Decision.** No role re-runs a tier CI has already run on a commit in order to establish
+that commit's state. The evidence is the CI run, cited by run id, SHA and conclusion. This
+binds builders, reviewers, verifiers and the orchestrator alike. The fast tier stays local
+and unchanged: it is the commit gate's tier under [D17](#d17--two-test-tiers-in-process-is-the-commit-gates-process-level-is-cis),
+it is cheap, and it covers working-tree changes that exist nowhere else yet.
+
+**Impact.** PR bodies carry a CI citation where they carried a pasted local battery
+result. A branch-point claim becomes checkable by a reader in one command instead of
+trusted from a transcript. The founder's machine stops running a suite twice while
+concurrent actors compete for its cores, which is the measurement P5.5 was scheduled to
+take.
+
+**What this does not license.** Skipping the fast tier before a commit. Citing a run on a
+different SHA than the branch point, or one that is queued, in progress, or not green.
+Nor does a green branch point say anything about the branch's own changes, which is what
+the PR's own CI check is for.
+
+---
+
 ## 2026-08-11 — One decision from Phase 2
 
 ### D23 — The trigger eval moves to Phase 6, where the tuning tool already is
