@@ -283,6 +283,172 @@ describe('skill frontmatter', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The frontmatter block parses as YAML (issue #52)
+//
+// The grader used to read frontmatter with a line regex that never established the block
+// parsed. It reported `name="monitor-design", description=569 chars` for a file that loads
+// with zero fields, and scored that tree whole. A silent gap says nothing; that printed a
+// confident wrong number.
+//
+// Every malformation asserted below was confirmed against `claude plugin validate
+// --strict` before it was written down, and every legal case below was confirmed to pass
+// the same validator. That cross-check is a measurement, not a test: this file spawns no
+// subprocess, which is what keeps it in the fast tier (D17). The cost is that nothing here
+// re-derives the rule from the real parser, so a future YAML rule this list does not model
+// is a gap, not a failure.
+// ---------------------------------------------------------------------------
+
+describe('frontmatter parses as YAML (issue #52)', () => {
+  const brokenSkill = (name, descriptionLine) => ['---', `name: ${name}`, descriptionLine, '---', '', `# ${name}`, ''].join('\n');
+
+  test('the golden tree passes a parse check for every skill and every agent', () => {
+    const report = gradePlugin(makeGoldenPluginRoot());
+    const checks = passedFor(report, 'frontmatter parses as YAML');
+    assert.equal(checks.length, ALL_SKILLS.length + 5, 'one per skill and per agent');
+    for (const c of checks) assert.equal(c.passed, true, `${c.text}: ${c.evidence}`);
+  });
+
+  // P15 in P7.2's positive control, and the live defect of issue #48: an unquoted ": "
+  // reopens the parser in mapping context and the whole block fails.
+  test('an unquoted ": " in a description fails the parse check and names the file', () => {
+    const root = makeGoldenPluginRoot();
+    write(root, 'skills/monitor-design/SKILL.md', brokenSkill(
+      'monitor-design',
+      'description: Do not use to check on a run in progress: "is it still working" is the generic monitor.',
+    ));
+    const report = gradePlugin(root);
+    const check = passedFor(report, 'skills/monitor-design/SKILL.md frontmatter parses as YAML')[0];
+    assert.equal(check.passed, false);
+    assert.match(check.evidence, /monitor-design[\\/]SKILL\.md/);
+    assert.match(check.evidence, /frontmatter did not parse/);
+    assert.match(check.evidence, /": "/);
+    // Every other skill is untouched.
+    assert.equal(passedFor(report, 'skills/fix/SKILL.md frontmatter parses as YAML')[0].passed, true);
+  });
+
+  // P16: YAML forbids the tab character for indentation outright.
+  test('a description continued on a tab-indented line fails the parse check', () => {
+    const root = makeGoldenPluginRoot();
+    write(root, 'skills/monitor-design/SKILL.md', brokenSkill(
+      'monitor-design',
+      'description: A description that continues\n\tonto a tab-indented line.',
+    ));
+    const report = gradePlugin(root);
+    const check = passedFor(report, 'skills/monitor-design/SKILL.md frontmatter parses as YAML')[0];
+    assert.equal(check.passed, false);
+    assert.match(check.evidence, /tab/);
+  });
+
+  test('a value opening a quote it never closes fails the parse check', () => {
+    const root = makeGoldenPluginRoot();
+    write(root, 'skills/safe-pr/SKILL.md', brokenSkill('safe-pr', 'description: "A description that never closes its quote.'));
+    const report = gradePlugin(root);
+    const check = passedFor(report, 'skills/safe-pr/SKILL.md frontmatter parses as YAML')[0];
+    assert.equal(check.passed, false);
+    assert.match(check.evidence, /quote/);
+  });
+
+  test('a value ending in a bare ":" fails the parse check', () => {
+    const root = makeGoldenPluginRoot();
+    write(root, 'skills/tdd-ci/SKILL.md', brokenSkill('tdd-ci', 'description: A description that ends with a colon:'));
+    const report = gradePlugin(root);
+    const check = passedFor(report, 'skills/tdd-ci/SKILL.md frontmatter parses as YAML')[0];
+    assert.equal(check.passed, false);
+    assert.match(check.evidence, /dangling mapping key/);
+  });
+
+  // The point of the issue. A block that does not parse loads with no fields, so the
+  // grader must not go on to report the text of a field that will not exist.
+  test('a block that does not parse reports no field facts, and no character count', () => {
+    const root = makeGoldenPluginRoot();
+    write(root, 'skills/monitor-design/SKILL.md', brokenSkill(
+      'monitor-design',
+      'description: Do not use to check on a run in progress: "is it still working".',
+    ));
+    const report = gradePlugin(root);
+    const declares = passedFor(report, 'skills/monitor-design/SKILL.md declares')[0];
+    assert.equal(declares.passed, false, 'a name the runtime never loads is not a declared name');
+    assert.doesNotMatch(declares.evidence, /chars/);
+    assert.match(declares.evidence, /did not parse/);
+  });
+
+  test('an agent whose block does not parse fails its parse check and its tools and model checks', () => {
+    const root = makeGoldenPluginRoot();
+    write(root, 'agents/builder.md', [
+      '---',
+      'name: builder',
+      'description: Takes work from issue to PR: test-first.',
+      'tools: Read, Grep, Glob, Edit, Write, Bash',
+      'model: sonnet',
+      '---',
+      '',
+      '# builder',
+      '',
+    ].join('\n'));
+    const report = gradePlugin(root);
+    assert.equal(passedFor(report, 'agents/builder.md frontmatter parses as YAML')[0].passed, false);
+    assert.equal(passedFor(report, "agents/builder.md's tools:")[0].passed, false);
+    assert.equal(passedFor(report, 'agents/builder.md pins its model to an alias')[0].passed, false);
+    assert.equal(passedFor(report, 'agents/reviewer.md frontmatter parses as YAML')[0].passed, true);
+  });
+
+  // The other direction, and the one that decides whether this check can be trusted: legal
+  // YAML must not be reported as broken. All three of these pass the real validator.
+  describe('legal YAML is not flagged', () => {
+    test('a value folded onto a space-indented line parses', () => {
+      const root = makeGoldenPluginRoot();
+      write(root, 'skills/tdd-plan/SKILL.md', brokenSkill(
+        'tdd-plan',
+        'description: A description that continues\n  onto a space-indented line.',
+      ));
+      const check = passedFor(gradePlugin(root), 'skills/tdd-plan/SKILL.md frontmatter parses as YAML')[0];
+      assert.equal(check.passed, true, check.evidence);
+    });
+
+    test('a nested mapping under a key parses (this is how the C-01 plant is written)', () => {
+      const root = makeGoldenPluginRoot();
+      write(root, 'agents/builder.md', agentFrontmatter({
+        name: 'builder',
+        tools: 'Read, Grep, Glob, Edit, Write, Bash',
+        model: 'sonnet',
+        extra: 'hooks:\n  PreToolUse: []',
+      }));
+      const report = gradePlugin(root);
+      assert.equal(passedFor(report, 'agents/builder.md frontmatter parses as YAML')[0].passed, true);
+      // And the nested block is still seen as a `hooks:` key, so C-01 still fires.
+      assert.equal(passedFor(report, 'agents/builder.md carries none of hooks:')[0].passed, false);
+    });
+
+    test('a tab inside a value, rather than at the start of a line, parses', () => {
+      const root = makeGoldenPluginRoot();
+      write(root, 'skills/review/SKILL.md', brokenSkill('review', 'description: A description with a\ttab inside the value.'));
+      const check = passedFor(gradePlugin(root), 'skills/review/SKILL.md frontmatter parses as YAML')[0];
+      assert.equal(check.passed, true, check.evidence);
+    });
+
+    test('a ": " inside a quoted value parses, and the count excludes the quotes', () => {
+      const root = makeGoldenPluginRoot();
+      const inner = 'Do not use to check on a run in progress: is it still working.';
+      write(root, 'skills/monitor-design/SKILL.md', brokenSkill('monitor-design', `description: "${inner}"`));
+      const report = gradePlugin(root);
+      assert.equal(passedFor(report, 'skills/monitor-design/SKILL.md frontmatter parses as YAML')[0].passed, true);
+      assert.match(passedFor(report, 'skills/monitor-design/SKILL.md declares')[0].evidence, new RegExp(`description=${inner.length} chars`));
+    });
+  });
+
+  // Not a parse failure — it parses, and silently truncates. The grader has to report the
+  // value YAML yields, not the text on the page, or it is back to a confident wrong number.
+  test('an unquoted "#" comment parses, and the reported length is the truncated value', () => {
+    const root = makeGoldenPluginRoot();
+    const kept = 'A description that stops here.';
+    write(root, 'skills/safe-cleanup/SKILL.md', brokenSkill('safe-cleanup', `description: ${kept} # and this is a comment YAML drops.`));
+    const report = gradePlugin(root);
+    assert.equal(passedFor(report, 'skills/safe-cleanup/SKILL.md frontmatter parses as YAML')[0].passed, true);
+    assert.match(passedFor(report, 'skills/safe-cleanup/SKILL.md declares')[0].evidence, new RegExp(`description=${kept.length} chars`));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Per-agent: C-01 frontmatter, C-07 tool survival, EN-9 model alias, role structure
 // ---------------------------------------------------------------------------
 
@@ -555,6 +721,15 @@ describe('against this repo\'s real plugin/ tree', () => {
     assert.equal(passedFor(report, 'ships exactly 14 skills')[0].passed, true);
     assert.equal(passedFor(report, 'ships exactly 5 agents')[0].passed, true);
     assert.equal(passedFor(report, 'hooks/hooks.json exists and parses')[0].passed, true);
+  });
+
+  // Issue #48 shipped a SKILL.md whose frontmatter did not parse and the grader scored it
+  // green for three phases. This is the direction that check faces in production.
+  test('every shipped skill and agent frontmatter block parses', () => {
+    const report = gradePlugin(path.join(repoRoot, 'plugin'));
+    const checks = passedFor(report, 'frontmatter parses as YAML');
+    assert.equal(checks.length, 19, '14 skills plus 5 agents');
+    for (const c of checks) assert.equal(c.passed, true, `${c.text}: ${c.evidence}`);
   });
 
   // A locked regression pin (see docs/EVIDENCE.md L-08's "a gate one ordinary run from

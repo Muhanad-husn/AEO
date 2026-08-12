@@ -34,7 +34,7 @@ fail-closed logic, which is what P2.4 is.
 
 | Measure | Value |
 | --- | --- |
-| Acceptance grader | 92 expectations, 92 pass |
+| Acceptance grader | 91 expectations, 91 pass |
 | Planted-defect control | 6 planted, 6 caught |
 | Fast tier | 139 pass, 0 fail |
 | Integration tier | 497 tests, 496 pass, 1 skipped |
