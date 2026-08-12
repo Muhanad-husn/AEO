@@ -519,6 +519,60 @@ describe('identity', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The second jailed role
+// ---------------------------------------------------------------------------
+
+describe('the verifier, sealed by the same gate', () => {
+  const VERIFIER = `${NAMESPACE}:verifier`;
+  const verifierCall = (tool_name, tool_input, extra = {}) =>
+    reviewerCall(tool_name, tool_input, { agent_type: VERIFIER, ...extra });
+
+  test('a verifier Grep is blocked', () => {
+    const { root } = stagePacket();
+    const r = runJail({ payload: verifierCall('Grep', { pattern: 'claim' }), env: { [PACKET_DIR_ENV]: root } });
+    assertBlockedBecause(r, /is not available to the verifier role/, 'verifier Grep');
+  });
+
+  test('a verifier Read of the staged packet is allowed', () => {
+    const { root, file } = stagePacket();
+    assertAllowed(runJail({ payload: verifierCall('Read', { file_path: file }), env: { [PACKET_DIR_ENV]: root } }), 'staged verifier Read');
+  });
+
+  test('a verifier Read of a repo path is blocked', () => {
+    const { root } = stagePacket();
+    const r = runJail({
+      payload: verifierCall('Read', { file_path: path.join(repoRoot, 'CLAUDE.md') }),
+      env: { [PACKET_DIR_ENV]: root },
+    });
+    assertBlockedBecause(r, OUTSIDE_THE_PACKET, 'verifier reading the repository');
+  });
+
+  test('each jailed role is told which role it is, not the other one', () => {
+    // One gate, two roles, and the charter it prints is the explanation the agent acts
+    // on. A verifier told it is the reviewer would be reading instructions about a job
+    // it is not doing.
+    const { root } = stagePacket();
+    const verifier = runJail({ payload: verifierCall('Bash', { command: 'git log' }), env: { [PACKET_DIR_ENV]: root } });
+    assert.match(verifier.stderr, /You are the AEO verifier/);
+    assert.doesNotMatch(verifier.stderr, /You are the AEO reviewer/);
+
+    const reviewer = runJail({ payload: reviewerCall('Bash', { command: 'git log' }), env: { [PACKET_DIR_ENV]: root } });
+    assert.match(reviewer.stderr, /You are the AEO reviewer/);
+    assert.doesNotMatch(reviewer.stderr, /You are the AEO verifier/);
+  });
+
+  test('the identity is anchored for this role too', () => {
+    const { root } = stagePacket();
+    for (const agent_type of ['verifier', `${NAMESPACE}:verifier-assistant`, `not-${NAMESPACE}:verifier`, 'other-plugin:verifier']) {
+      assertAllowed(
+        runJail({ payload: verifierCall('Grep', { pattern: 'x' }, { agent_type }), env: { [PACKET_DIR_ENV]: root } }),
+        `${agent_type} is not this plugin's verifier`,
+      );
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Malformed payloads
 // ---------------------------------------------------------------------------
 
