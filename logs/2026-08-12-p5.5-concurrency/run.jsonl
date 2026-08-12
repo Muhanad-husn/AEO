@@ -1,0 +1,57 @@
+{"ts":"2026-08-12T13:35:42.258Z","job":"p5.5-concurrency","unit":"background-idle","status":"ok","duration":3000,"detail":"busy=0.3237 node_procs=7 cores=16"}
+{"ts":"2026-08-12T13:36:40.102Z","job":"p5.5-concurrency","unit":"warmup","status":"ok","duration":55704,"detail":"busy=0.3621 node_procs=7 discarded=true"}
+{"ts":"2026-08-12T13:37:33.045Z","job":"p5.5-concurrency","unit":"noise-serial","status":"ok","duration":51356,"detail":"i=1 busy=0.3715 node_procs=7 exit=0"}
+{"ts":"2026-08-12T13:38:21.878Z","job":"p5.5-concurrency","unit":"noise-serial","status":"ok","duration":46211,"detail":"i=2 busy=0.3271 node_procs=7 exit=0"}
+{"ts":"2026-08-12T13:38:22.829Z","job":"p5.5-concurrency","unit":"merge-positive-control","status":"ok","duration":0,"detail":"direct_conflict=true direct_clean=false linear_conflict=true linear_clean=false git=git version 2.49.0.windows.1"}
+{"ts":"2026-08-12T13:39:10.580Z","job":"p5.5-concurrency","unit":"noise-serial","status":"ok","duration":46357,"detail":"i=3 busy=0.3207 node_procs=8 exit=0"}
+{"ts":"2026-08-12T13:39:11.297Z","job":"p5.5-concurrency","unit":"noise-floor","status":"ok","duration":46357,"detail":"n=3 median_ms=46357 spread_frac=0.1110"}
+{"ts":"2026-08-12T13:39:12.218Z","job":"p5.5-concurrency","unit":"one-run-cores","status":"ok","duration":0,"detail":"cores=0.06 idle_busy=0.3237 run_busy=0.3271"}
+{"ts":"2026-08-12T13:40:05.507Z","job":"p5.5-concurrency","unit":"round-serial","status":"ok","duration":50051,"detail":"round=1 busy=0.3054 node_procs=8 exit=0"}
+{"ts":"2026-08-12T13:42:23.945Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":135213,"detail":"round=1 actor=1 exit=0"}
+{"ts":"2026-08-12T13:42:25.073Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":134098,"detail":"round=1 actor=2 exit=0"}
+{"ts":"2026-08-12T13:42:25.737Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":134023,"detail":"round=1 actor=3 exit=0"}
+{"ts":"2026-08-12T13:42:26.532Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":134578,"detail":"round=1 actor=4 exit=0"}
+{"ts":"2026-08-12T13:42:27.096Z","job":"p5.5-concurrency","unit":"round-group","status":"ok","duration":135213,"detail":"round=1 actors=4 serial_ms=50051 ratio=2.702 busy=0.3584 node_procs=8"}
+{"ts":"2026-08-12T13:42:51.886Z","job":"p5.5-concurrency","unit":"merge-census-all","status":"ok","duration":0,"detail":"conflicting=18 pairs=76 rate=0.2368 rule=every-adjacent-pair-on-main population=synthetic"}
+{"ts":"2026-08-12T13:42:53.210Z","job":"p5.5-concurrency","unit":"merge-census-observed","status":"ok","duration":0,"detail":"conflicting=1 pairs=6 rate=0.1667 population=real-concurrent"}
+{"ts":"2026-08-12T13:42:54.314Z","job":"p5.5-concurrency","unit":"merge-group-of-four","status":"ok","duration":0,"detail":"pair_rate=0.2368 pairs_in_group=6 p_any=0.8024 assumption=independence-which-is-a-floor"}
+{"ts":"2026-08-12T13:43:19.608Z","job":"p5.5-concurrency","unit":"round-serial","status":"ok","duration":49156,"detail":"round=2 busy=0.4539 node_procs=8 exit=0"}
+{"ts":"2026-08-12T13:45:33.681Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":130498,"detail":"round=2 actor=1 exit=0"}
+{"ts":"2026-08-12T13:45:34.328Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":129995,"detail":"round=2 actor=2 exit=0"}
+{"ts":"2026-08-12T13:45:34.728Z","job":"p5.5-concurrency","unit":"round-actor","status":"fail","duration":131411,"detail":"round=2 actor=3 exit=1"}
+{"ts":"2026-08-12T13:45:35.306Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":129306,"detail":"round=2 actor=4 exit=0"}
+{"ts":"2026-08-12T13:45:35.692Z","job":"p5.5-concurrency","unit":"round-group","status":"fail","duration":131571,"detail":"round=2 actors=4 serial_ms=49156 ratio=2.677 busy=0.3970 node_procs=7"}
+{"ts":"2026-08-12T13:46:20.214Z","job":"p5.5-concurrency","unit":"round-serial","status":"ok","duration":42674,"detail":"round=3 busy=0.4661 node_procs=7 exit=0"}
+{"ts":"2026-08-12T13:48:34.602Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":131161,"detail":"round=3 actor=1 exit=0"}
+{"ts":"2026-08-12T13:48:35.216Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":130770,"detail":"round=3 actor=2 exit=0"}
+{"ts":"2026-08-12T13:48:35.766Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":131990,"detail":"round=3 actor=3 exit=0"}
+{"ts":"2026-08-12T13:48:36.354Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":132286,"detail":"round=3 actor=4 exit=0"}
+{"ts":"2026-08-12T13:48:37.022Z","job":"p5.5-concurrency","unit":"round-group","status":"ok","duration":132667,"detail":"round=3 actors=4 serial_ms=42674 ratio=3.109 busy=0.3722 node_procs=7"}
+{"ts":"2026-08-12T13:48:40.380Z","job":"p5.5-concurrency","unit":"merge-positive-control","status":"ok","duration":0,"detail":"direct_conflict=true direct_clean=false linear_conflict=true linear_clean=false git=git version 2.49.0.windows.1"}
+{"ts":"2026-08-12T13:49:23.736Z","job":"p5.5-concurrency","unit":"round-serial","status":"ok","duration":43788,"detail":"round=4 busy=0.2989 node_procs=8 exit=0"}
+{"ts":"2026-08-12T13:51:06.159Z","job":"p5.5-concurrency","unit":"merge-census-all","status":"ok","duration":0,"detail":"conflicting=16 pairs=60 rate=0.2667 rule=every-adjacent-pair-on-main population=synthetic"}
+{"ts":"2026-08-12T13:51:10.765Z","job":"p5.5-concurrency","unit":"merge-census-observed","status":"ok","duration":0,"detail":"conflicting=1 pairs=6 rate=0.1667 population=real-concurrent"}
+{"ts":"2026-08-12T13:51:15.293Z","job":"p5.5-concurrency","unit":"merge-group-of-four","status":"ok","duration":0,"detail":"pair_rate=0.2667 pairs_in_group=6 p_any=0.8445 assumption=independence-which-is-a-floor"}
+{"ts":"2026-08-12T13:51:39.245Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":132202,"detail":"round=4 actor=1 exit=0"}
+{"ts":"2026-08-12T13:51:40.319Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":130056,"detail":"round=4 actor=2 exit=0"}
+{"ts":"2026-08-12T13:51:41.039Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":129086,"detail":"round=4 actor=3 exit=0"}
+{"ts":"2026-08-12T13:51:41.766Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":131886,"detail":"round=4 actor=4 exit=0"}
+{"ts":"2026-08-12T13:51:42.659Z","job":"p5.5-concurrency","unit":"round-group","status":"ok","duration":132309,"detail":"round=4 actors=4 serial_ms=43788 ratio=3.022 busy=0.3188 node_procs=8"}
+{"ts":"2026-08-12T13:52:24.414Z","job":"p5.5-concurrency","unit":"round-serial","status":"ok","duration":38527,"detail":"round=5 busy=0.3264 node_procs=7 exit=0"}
+{"ts":"2026-08-12T13:54:32.333Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":122565,"detail":"round=5 actor=1 exit=0"}
+{"ts":"2026-08-12T13:54:32.770Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":124417,"detail":"round=5 actor=2 exit=0"}
+{"ts":"2026-08-12T13:54:33.424Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":123650,"detail":"round=5 actor=3 exit=0"}
+{"ts":"2026-08-12T13:54:34.186Z","job":"p5.5-concurrency","unit":"round-actor","status":"ok","duration":123729,"detail":"round=5 actor=4 exit=0"}
+{"ts":"2026-08-12T13:54:35.238Z","job":"p5.5-concurrency","unit":"round-group","status":"ok","duration":124532,"detail":"round=5 actors=4 serial_ms=38527 ratio=3.232 busy=0.3444 node_procs=7"}
+{"ts":"2026-08-12T13:54:36.986Z","job":"p5.5-concurrency","unit":"ratio-summary","status":"ok","duration":0,"detail":"n=5 median=3.022 min=2.677 max=3.232"}
+{"ts":"2026-08-12T14:04:17.485Z","job":"p5.5-concurrency","unit":"merge-positive-control","status":"ok","duration":0,"detail":"direct_conflict=true direct_clean=false linear_conflict=true linear_clean=false git=git version 2.49.0.windows.1"}
+{"ts":"2026-08-12T14:05:04.984Z","job":"p5.5-concurrency","unit":"positive-control","status":"ok","duration":598062,"detail":"spinners=16 unloaded_median_ms=46357 ratio=12.901 busy=1.0000"}
+{"ts":"2026-08-12T14:05:48.126Z","job":"p5.5-concurrency","unit":"merge-census-all","status":"ok","duration":0,"detail":"conflicting=16 pairs=60 rate=0.2667 rule=every-first-parent-adjacent-pair-on-main population=synthetic"}
+{"ts":"2026-08-12T14:05:48.599Z","job":"p5.5-concurrency","unit":"merge-conflict-files","status":"ok","duration":0,"detail":"logs/2026-08-11-phase-2-verification/summary.md=5 docs/BUILD-METHOD.md=3 CLAUDE.md=2 package.json=2 plugin/skills/sprint-start/SKILL.md=2 docs/PLAN.md=1 source/_manifests/07-plugin-format.md=1 logs/2026-08-04-p1.1-hook-runtime/summary.md=1 plugin/hooks/hooks.json=1 plugin/hooks/session-status.mjs=1 tests/hooks/hooks-json.test.mjs=1 tests/hooks/session-status.test.mjs=1 plugin/skills/safe-cleanup/scripts/classify-branches.mjs=1 plugin/skills/safe-pr/scripts/collect-evidence.mjs=1 tests/skills/collect-evidence.test.mjs=1 plugin/skills/sprint-start/references/actor-cap.md=1 plugin/DECISIONS.md=1"}
+{"ts":"2026-08-12T14:05:48.852Z","job":"p5.5-concurrency","unit":"merge-census-observed","status":"ok","duration":0,"detail":"conflicting=1 pairs=6 rate=0.1667 population=real-concurrent"}
+{"ts":"2026-08-12T14:05:49.350Z","job":"p5.5-concurrency","unit":"merge-group-of-four","status":"ok","duration":0,"detail":"pair_rate=0.2667 pairs_in_group=6 p_any=0.8445 assumption=independence-which-is-a-floor"}
+{"ts":"2026-08-12T14:06:20.114Z","job":"p5.5-concurrency","unit":"merge-positive-control","status":"ok","duration":0,"detail":"direct_conflict=true direct_clean=false linear_conflict=true linear_clean=false git=git version 2.49.0.windows.1"}
+{"ts":"2026-08-12T14:06:36.704Z","job":"p5.5-concurrency","unit":"merge-census-all","status":"ok","duration":0,"detail":"conflicting=16 pairs=60 rate=0.2667 rule=every-first-parent-adjacent-pair-on-main population=synthetic"}
+{"ts":"2026-08-12T14:06:36.917Z","job":"p5.5-concurrency","unit":"merge-conflict-files","status":"ok","duration":0,"detail":"logs/2026-08-11-phase-2-verification/summary.md=5 docs/BUILD-METHOD.md=3 CLAUDE.md=2 package.json=2 plugin/skills/sprint-start/SKILL.md=2 docs/PLAN.md=1 source/_manifests/07-plugin-format.md=1 logs/2026-08-04-p1.1-hook-runtime/summary.md=1 plugin/hooks/hooks.json=1 plugin/hooks/session-status.mjs=1 tests/hooks/hooks-json.test.mjs=1 tests/hooks/session-status.test.mjs=1 plugin/skills/safe-cleanup/scripts/classify-branches.mjs=1 plugin/skills/safe-pr/scripts/collect-evidence.mjs=1 tests/skills/collect-evidence.test.mjs=1 plugin/skills/sprint-start/references/actor-cap.md=1 plugin/DECISIONS.md=1"}
+{"ts":"2026-08-12T14:06:37.129Z","job":"p5.5-concurrency","unit":"merge-census-observed","status":"ok","duration":0,"detail":"conflicting=1 pairs=6 rate=0.1667 population=real-concurrent"}
+{"ts":"2026-08-12T14:06:37.341Z","job":"p5.5-concurrency","unit":"merge-group-of-four","status":"ok","duration":0,"detail":"pair_rate=0.2667 pairs_in_group=6 p_any=0.8445 assumption=independence bound=ceiling reason=conflicts-cluster-on-hot-files"}
