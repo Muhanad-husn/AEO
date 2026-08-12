@@ -52,7 +52,7 @@ function write(root, relPath, content) {
 // so the fixture reads like a miniature, honest plugin rather than an arbitrary shape.
 // ---------------------------------------------------------------------------
 
-const LANES = ['sprint-plan', 'sprint-start', 'fix', 'review', 'triage', 'status'];
+const LANES = ['sprint-plan', 'sprint-start', 'fix', 'review', 'triage', 'status', 'verify'];
 const OTHER_SKILLS = ['red-green-refactor', 'tdd-plan', 'tdd-ci', 'safe-pr', 'safe-cleanup', 'monitor-design'];
 const ALL_SKILLS = [...LANES, ...OTHER_SKILLS];
 
@@ -100,6 +100,7 @@ function makeGoldenPluginRoot() {
   write(root, 'agents/builder.md', agentFrontmatter({ name: 'builder', tools: 'Read, Grep, Glob, Edit, Write, Bash', model: 'sonnet' }));
   write(root, 'agents/reviewer.md', agentFrontmatter({ name: 'reviewer', tools: 'Read', model: 'opus' }));
   write(root, 'agents/triage.md', agentFrontmatter({ name: 'triage', tools: 'Read, Grep, Glob, Bash', model: 'haiku' }));
+  write(root, 'agents/verifier.md', agentFrontmatter({ name: 'verifier', tools: 'Read', model: 'opus' }));
   // The fourth agent carries a ${CLAUDE_PLUGIN_ROOT} reference to a script that exists in
   // this fixture, so the path-resolution scan is exercised non-vacuously over an AGENT file
   // and not only over a skill directory. The real monitor-designer charter points at the
@@ -219,26 +220,26 @@ describe('plugin.json (C-09)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Inventory: twelve skills, four agents, no commands/
+// Inventory: thirteen skills, five agents, no commands/
 // ---------------------------------------------------------------------------
 
 describe('inventory', () => {
-  test('eleven skills fails the skill-count expectation', () => {
+  test('one skill short fails the skill-count expectation', () => {
     const root = makeGoldenPluginRoot();
     rmSync(path.join(root, 'skills', 'safe-cleanup'), { recursive: true, force: true });
     const report = gradePlugin(root);
-    const check = passedFor(report, 'ships exactly 12 skills')[0];
+    const check = passedFor(report, 'ships exactly 13 skills')[0];
     assert.equal(check.passed, false);
-    assert.match(check.evidence, /found 11/);
+    assert.match(check.evidence, /found 12/);
   });
 
-  test('three agents fails the agent-count expectation', () => {
+  test('one agent short fails the agent-count expectation', () => {
     const root = makeGoldenPluginRoot();
     rmSync(path.join(root, 'agents', 'triage.md'));
     const report = gradePlugin(root);
-    const check = passedFor(report, 'ships exactly 4 agents')[0];
+    const check = passedFor(report, 'ships exactly 5 agents')[0];
     assert.equal(check.passed, false);
-    assert.match(check.evidence, /found 3/);
+    assert.match(check.evidence, /found 4/);
   });
 
   test('a commands/ directory fails the no-commands expectation (C-03 / D9)', () => {
@@ -332,6 +333,14 @@ describe('agent frontmatter (C-01, C-07, EN-9)', () => {
     write(root, 'agents/reviewer.md', agentFrontmatter({ name: 'reviewer', tools: 'Read', model: 'claude-opus-4-20250514' }));
     const report = gradePlugin(root);
     assert.equal(passedFor(report, 'agents/reviewer.md pins its model to an alias')[0].passed, false);
+  });
+
+  test('verifier holding more than Read fails its isolation check', () => {
+    const root = makeGoldenPluginRoot();
+    write(root, 'agents/verifier.md', agentFrontmatter({ name: 'verifier', tools: 'Read, Bash', model: 'opus' }));
+    const report = gradePlugin(root);
+    assert.equal(passedFor(report, 'agents/verifier.md tools: frontmatter is exactly Read')[0].passed, false);
+    assert.equal(passedFor(report, 'agents/reviewer.md tools: frontmatter is exactly Read')[0].passed, true);
   });
 
   test('reviewer holding more than Read fails the L-01 isolation check', () => {
@@ -492,8 +501,8 @@ describe('cross-cutting text scans', () => {
 describe('against this repo\'s real plugin/ tree', () => {
   test('inventory and hooks.json wiring hold', () => {
     const report = gradePlugin(path.join(repoRoot, 'plugin'));
-    assert.equal(passedFor(report, 'ships exactly 12 skills')[0].passed, true);
-    assert.equal(passedFor(report, 'ships exactly 4 agents')[0].passed, true);
+    assert.equal(passedFor(report, 'ships exactly 13 skills')[0].passed, true);
+    assert.equal(passedFor(report, 'ships exactly 5 agents')[0].passed, true);
     assert.equal(passedFor(report, 'hooks/hooks.json exists and parses')[0].passed, true);
   });
 

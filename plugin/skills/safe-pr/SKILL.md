@@ -95,8 +95,12 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    Fill the remaining `<placeholders>`: description, what changed, how to
    review, the unit summary, risk notes, the plan path. Be honest about
    anything partial. `PR_BODY.md` is git-ignored — it isn't committed.
-6. Show the founder the title, body, and branch, and get explicit
-   confirmation — this is outward-facing. Then push:
+6. Take the row for this change from
+   `${CLAUDE_PLUGIN_ROOT}/skills/verify/references/risk-rubric.md`, the only copy
+   of the rubric and the one the `verify` lane reads. On a row that asks for
+   verification, run `verify` first and attach its findings as advisory; they
+   never block. Then show the founder the title, body, and branch, and get
+   explicit confirmation — this is outward-facing. Then push:
 
    ```
    git push -u origin feat/<feature-slug>/<NN-slice-slug>

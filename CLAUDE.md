@@ -61,8 +61,9 @@ it is not this one. Read it before running any lane end to end.
 ## Current stage
 
 Phases 0 through 3 complete. The gates exist, in Node, wired through
-`hooks/hooks.json`. Four agent charters and eleven of twelve skills carry real
-content; `status` is still a stub and lands in Phase 6.
+`hooks/hooks.json`. Five agent charters and twelve of thirteen skills carry real
+content; `status` is still a stub and lands in Phase 6. The fifth agent and the
+thirteenth skill are Phase 4's `verifier` and `verify`.
 
 Phase 3 added the observability layer: `runlog.mjs` writes the fixed six-field
 record, `run-monitor.mjs` answers "is this thing still working" from a plain
