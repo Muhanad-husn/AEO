@@ -286,9 +286,21 @@ gets silently bypassed. Read-only fan-out already shipped in Phase 2.
 **Verify:** four issues run to four PRs concurrently with every gate firing correctly; the
 independence check catches a deliberately conflicting pair, including one that collides
 only on files neither had created yet.
-**⛔ CHECKPOINT 5.**
+**⛔ CHECKPOINT 5.** Closed 2026-08-12 —
+[`logs/2026-08-12-checkpoint-5-verification/summary.md`](../logs/2026-08-12-checkpoint-5-verification/summary.md).
+Both clauses ran live against the testbed; both of [D11](DECISIONS.md)'s quantities are
+measured in #17, which recommends changing nothing.
 
 ## Phase 6 — Scaffolder and tracker
+
+**Deferred until the plugin has been used. Phase 7 runs first.** Founder decision,
+confirmed 2026-08-12 at Checkpoint 5.
+
+The reason is that this phase tunes descriptions and shrinks the scaffolder against how
+the plugin is actually used, and nobody has used it yet — so tuning now is tuning against
+a guess, and [D23](DECISIONS.md) already moved the trigger eval here so the number lands
+against the descriptions the tuning produces. Phase 7's dry run on a throwaway product is
+what produces the usage this phase needs to be worth doing.
 
 - The skill shrinks to **Phase 0 (detect stack, tree, git/`gh`, branch protection) and
   Phase 1 (write the project handbook)**. No project config file
@@ -355,7 +367,7 @@ gets its own worktree, branch and PR; none share files, and none create the same
 | 3 | Evidence substrate; feeds Phase 4 |
 | 4 | Needs Phase 3's structured logs |
 | 5 | Needs Phase 1's tested worktree handling |
-| 6 | Needs the plugin content settled to know what is left to scaffold |
+| 6 | Needs the plugin content settled to know what is left to scaffold — **and, since 2026-08-12, deferred until it has been used, so it runs after 7** |
 | 7 | Proves the whole thing |
 
 ## Division of labour

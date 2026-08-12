@@ -60,8 +60,8 @@ it is not this one. Read it before running any lane end to end.
 
 ## Current stage
 
-Phases 0 through 4 complete. The gates exist, in Node, wired through
-`hooks/hooks.json`. Five agent charters and twelve of thirteen skills carry real
+Phases 0 through 5 complete. The gates exist, in Node, wired through
+`hooks/hooks.json`. Five agent charters and thirteen of fourteen skills carry real
 content; `status` is still a stub and lands in Phase 6.
 
 Phase 3 added the observability layer: `runlog.mjs` writes the fixed six-field
@@ -85,8 +85,26 @@ Checkpoint 3's four cases have run live against real processes; the record is in
 Checkpoint 4's four clauses are in
 [logs/2026-08-12-checkpoint-4-verification/summary.md](logs/2026-08-12-checkpoint-4-verification/summary.md)
 — three live against the testbed, one cited from P4.2 and labelled as cited.
+Checkpoint 5's record is in
+[logs/2026-08-12-checkpoint-5-verification/summary.md](logs/2026-08-12-checkpoint-5-verification/summary.md):
+four actors reached four PRs concurrently, each holding exactly its declared paths and
+all six merge-order pairs clean, and the independence check refused a create-create
+collision on a file neither slice had created.
 
-Next is **Phase 5** of [docs/PLAN.md](docs/PLAN.md).
+Phase 5 added write concurrency. Planning declares the paths a slice will create, and
+`independence.mjs` asserts disjointness over those rather than over what is already on
+disk (L-04). `sprint-start` dispatches up to the actor cap, one worktree, branch and PR
+each, with the cap stated in exactly one file; operation workers get run-scoped write
+paths and no worktree at all. **Both of [D11](docs/DECISIONS.md)'s quantities are
+measured rather than assumed**: four concurrent commit gates cost **3.02x** a single run
+while leaving 60% of the cores idle, and the merge-order conflict rate is **1 in 6** real
+concurrent pairs. The measurement's own recommendation is that nothing needs changing —
+serialising the gates would make the founder wait longer.
+
+Next is **Phase 7** of [docs/PLAN.md](docs/PLAN.md) — package the plugin and prove it
+with a dry run on a stack that is not Python. **Phase 6 is deferred until the plugin has
+been used**, by founder decision confirmed 2026-08-12; it tunes the scaffolder and the
+skill descriptions, and Phase 7's dry run is what produces the usage that tuning needs.
 
 Four findings overturn things the vendored skill states as settled. They are cheap to
 miss and expensive to discover late:
