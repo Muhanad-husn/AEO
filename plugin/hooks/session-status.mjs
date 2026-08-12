@@ -266,13 +266,76 @@ function renderDataRoot() {
   ];
 }
 
+// The names are read out of the manifest, never listed here. A copy of the gate list in
+// this file would be a second source of truth that goes stale the first time a gate is
+// added or renamed, and nothing would notice -- which is the same duplication this
+// report exists to stop the reader making from memory.
+const PLUGIN_SCRIPT = /\$\{CLAUDE_PLUGIN_ROOT\}([^\s"']*\.mjs)/g;
+
+/**
+ * The hook scripts this session actually has, grouped by event, from the loaded
+ * hooks.json. Never throws; "could not read it" is an answer and is rendered as one.
+ */
+function readWiredGates(pluginRoot = process.env.CLAUDE_PLUGIN_ROOT) {
+  if (!pluginRoot) return { ok: false, reason: 'CLAUDE_PLUGIN_ROOT is unset, so hooks.json cannot be located' };
+  const manifest = path.join(pluginRoot, 'hooks', 'hooks.json');
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(manifest, 'utf8'));
+  } catch (err) {
+    return { ok: false, reason: `hooks/hooks.json could not be read (${err.message})` };
+  }
+  const events = [];
+  for (const [event, entries] of Object.entries(parsed?.hooks ?? {})) {
+    // Re-serialising is how every string under one event is reached without this having
+    // to know the shell form from the exec form, or where in the entry a path may sit.
+    const names = new Set([...JSON.stringify(entries).matchAll(PLUGIN_SCRIPT)].map((m) => path.basename(m[1], '.mjs')));
+    if (names.size > 0) events.push({ event, names: [...names].sort() });
+  }
+  if (events.length === 0) return { ok: false, reason: 'hooks/hooks.json registers no hook scripts' };
+  return { ok: true, events };
+}
+
+/**
+ * Which gates are wired, stated positively.
+ *
+ * A PreToolUse gate that allows a call prints nothing, so an actor asked which gates
+ * fired for it reads an ordinary session as "none are wired" -- L-08's negative signal
+ * that cannot be told from "not instrumented", in the gate-reporting path. Two of four
+ * actors in the Checkpoint 5 run made exactly that call, and both were wrong. Naming the
+ * gates at session start turns "I saw nothing" into something checkable.
+ */
+function renderGates() {
+  const wired = readWiredGates();
+  if (!wired.ok) {
+    return [
+      `**Gates wired: unknown.** ${wired.reason}. This report cannot say which gates are`,
+      'running; that is a gap in the report and not a finding that none of them are.',
+      '',
+    ];
+  }
+  return [
+    "**Gates wired for this session,** read just now from the plugin's own `hooks/hooks.json`:",
+    ...wired.events.map((e) => `- ${e.event}: ${e.names.join(', ')}`),
+    '', // without it the sentence below renders as a continuation of the last bullet
+    'A PreToolUse gate prints nothing when it allows a call, so a session with no gate',
+    'message is one where these ran and allowed -- not one where none was wired.',
+    '',
+  ];
+}
+
 async function run(payload) {
   const lines = [];
 
   // Gate health first (D8), so a broken runtime is the first thing read rather than
   // buried under repo state that may itself be stale if the gates are open.
+  //
+  // The banner replaces the gate list rather than sitting above it. When preflight
+  // fails the gates are failing open, and a list of their names under that warning
+  // reads as reassurance for enforcement that is not happening.
   const health = preflight();
   if (!health.ok) lines.push(health.banner, '');
+  else lines.push(...renderGates());
 
   // Then the sandbox guard's one precondition (D18). Both of these are facts about
   // whether enforcement is running at all, so they belong above repo state and ahead of
