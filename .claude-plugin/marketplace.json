@@ -1,4 +1,5 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "aeo",
   "description": "A solo-operator AI software engineering harness with test-first build, on-demand review and triage, deterministic merge and test gates, and a GitHub-native issue and PR workflow.",
   "owner": {
