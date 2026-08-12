@@ -145,22 +145,109 @@ function walk(dir) {
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
+// A top-level mapping entry. The separator is required: `name:fix` is a plain scalar to
+// YAML, not a key, and a block whose first line is a scalar is not a mapping at all.
+const KEY_LINE_RE = /^([A-Za-z][A-Za-z0-9_-]*):(?:[ \t]+(.*))?$/;
+const DOUBLE_QUOTED_RE = /^"(?:[^"\\]|\\.)*"$/;
+const SINGLE_QUOTED_RE = /^'(?:[^']|'')*'$/;
+
 /**
- * A flat `key: value` reading of a Markdown frontmatter block. Every SKILL.md and agent
- * file in this plugin uses single-line scalar values only (no nested YAML, no block
- * scalars), so a line parser is the whole job — pulling in a YAML dependency for this
- * would be exactly the "new dependency" the founder's principles ask to justify first.
+ * Would YAML reject `raw` as the value of a mapping entry? Returns a reason, or null.
+ *
+ * Narrow on purpose. This is not a YAML grammar, it is the set of malformations a
+ * one-line frontmatter value can actually hit, each one confirmed against
+ * `claude plugin validate --strict` rather than reasoned about: an unquoted ": " opens a
+ * nested mapping (issue #48), an unquoted trailing ":" is a dangling mapping key, and a
+ * quote that never closes is an unexpected character. A `#` comment is deliberately
+ * absent from the list — it parses fine, it just truncates, which `plainValue` models.
+ */
+function scalarProblem(raw) {
+  if (raw === '') return null;
+  if (DOUBLE_QUOTED_RE.test(raw) || SINGLE_QUOTED_RE.test(raw)) return null;
+  if (raw.startsWith('"') || raw.startsWith("'")) return 'opens a quote it never closes';
+  const value = plainValue(raw);
+  if (value.includes(': ')) return 'holds ": " in an unquoted value, which YAML reads as opening a nested mapping';
+  if (value.endsWith(':')) return 'ends in a bare ":" in an unquoted value, which YAML reads as a dangling mapping key';
+  return null;
+}
+
+/** A plain (unquoted) scalar as YAML yields it: everything before an unquoted `#` comment. */
+function plainValue(raw) {
+  const comment = /(?:^|\s)#/.exec(raw);
+  return (comment ? raw.slice(0, comment.index) : raw).trim();
+}
+
+/** A quoted scalar as YAML yields it, or null when `raw` is not a quoted scalar. */
+function quotedValue(raw) {
+  if (DOUBLE_QUOTED_RE.test(raw)) {
+    return raw.slice(1, -1).replace(/\\(.)/g, (_, c) => ({ n: '\n', t: '\t', r: '\r' })[c] ?? c);
+  }
+  if (SINGLE_QUOTED_RE.test(raw)) return raw.slice(1, -1).replace(/''/g, "'");
+  return null;
+}
+
+/**
+ * Read a Markdown frontmatter block the way the runtime reads it.
+ *
+ * The runtime hands the block to a real YAML parser and, when that throws, loads the file
+ * with **no fields at all** — not with the fields a reader would see on the page. So this
+ * returns `fields: {}` whenever `errors` is non-empty. Reporting the text of a
+ * `description:` line from a block that does not parse is how a broken skill scored green
+ * for three phases (issue #52): the number was not merely unchecked, it was wrong.
+ *
+ * Still not a YAML parser, and it does not need to be. It classifies lines — tab indents
+ * are illegal, space indents are a nested block or a folded scalar and are legal, a
+ * top-level line must be a mapping entry — and checks each top-level value with
+ * `scalarProblem`. Known limit: a value folded across space-indented lines contributes
+ * only its first line to `fields`. No shipped file does that; `errors` stays empty for it,
+ * which is correct, because it parses.
  */
 function parseFrontmatter(text) {
-  if (text === null) return { fields: {}, present: false };
+  if (text === null) return { fields: {}, present: false, errors: [] };
   const m = FRONTMATTER_RE.exec(text);
-  if (!m) return { fields: {}, present: false };
+  if (!m) return { fields: {}, present: false, errors: [] };
   const fields = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    const km = /^([A-Za-z][A-Za-z0-9_-]*):[ \t]?(.*)$/.exec(line);
-    if (km) fields[km[1]] = km[2].trim();
-  }
-  return { fields, present: true };
+  const errors = [];
+  m[1].split(/\r?\n/).forEach((line, idx) => {
+    const at = `line ${idx + 1}`;
+    if (line.trim() === '' || line.startsWith('#')) return;
+    if (line.startsWith('\t')) {
+      errors.push(`${at}: indented with a tab, which YAML forbids for indentation`);
+      return;
+    }
+    if (/^\s/.test(line)) return; // nested block or folded scalar: legal, no top-level field
+    const km = KEY_LINE_RE.exec(line);
+    if (!km) {
+      errors.push(`${at}: ${JSON.stringify(line.slice(0, 60))} is not a "key: value" mapping entry`);
+      return;
+    }
+    const [, key, rawValue] = km;
+    const raw = (rawValue ?? '').trim();
+    const problem = scalarProblem(raw);
+    if (problem) errors.push(`${at}: "${key}" ${problem}`);
+    fields[key] = quotedValue(raw) ?? plainValue(raw);
+  });
+  // A block that does not parse loads with zero fields. Mirror that, so no later check can
+  // report a fact about a field the runtime never sees.
+  return { fields: errors.length > 0 ? {} : fields, present: true, errors };
+}
+
+/**
+ * One expectation per skill and agent file: the frontmatter block parses. Named for the
+ * file, and the evidence says what did not parse rather than quoting fields that do not
+ * load.
+ */
+function checkFrontmatterParses(unitLabel, file, fm, results) {
+  add(
+    results,
+    `${unitLabel} frontmatter parses as YAML (a block that does not parse loads with zero fields, so every field it appears to declare is silently dropped)`,
+    fm.present && fm.errors.length === 0,
+    !fm.present
+      ? `${file}: no frontmatter block found`
+      : fm.errors.length > 0
+        ? `${file}: frontmatter did not parse — ${fm.errors.join('; ')}`
+        : `${file}: parses, ${Object.keys(fm.fields).length} field(s): ${Object.keys(fm.fields).join(', ')}`,
+  );
 }
 
 function splitTools(value) {
@@ -294,13 +381,17 @@ function checkSkills(pluginRoot, skillDirs, results) {
     const fmName = fm.fields.name;
     const fmDesc = fm.fields.description;
 
+    checkFrontmatterParses(`skills/${name}/SKILL.md`, file, fm, results);
+
     add(
       results,
       `skills/${name}/SKILL.md declares a "name" and a non-empty "description"`,
       fm.present && typeof fmName === 'string' && fmName.trim() !== '' && typeof fmDesc === 'string' && fmDesc.trim() !== '',
-      fm.present
-        ? `name=${JSON.stringify(fmName)}, description=${fmDesc ? `${fmDesc.length} chars` : '(missing)'}`
-        : `${file}: no frontmatter block found`,
+      !fm.present
+        ? `${file}: no frontmatter block found`
+        : fm.errors.length > 0
+          ? `${file}: frontmatter did not parse, so no field loads at runtime`
+          : `name=${JSON.stringify(fmName)}, description=${fmDesc ? `${fmDesc.length} chars` : '(missing)'}`,
     );
 
     const isLane = OPERATOR_LANES.has(name);
@@ -327,6 +418,8 @@ function checkAgents(pluginRoot, agentFiles, results) {
     const file = path.join(agentsDir, fname);
     const fm = parseFrontmatter(safeRead(file));
     const fields = fm.fields;
+
+    checkFrontmatterParses(`agents/${fname}`, file, fm, results);
 
     const carried = IGNORED_AGENT_FRONTMATTER_KEYS.filter((k) => Object.prototype.hasOwnProperty.call(fields, k));
     add(
