@@ -46,13 +46,13 @@ Every file that existed in each tree at the moment of its retirement. Three disp
 
 | Path | Disposition | Plugin equivalent |
 | --- | --- | --- |
-| `SKILL.md` | **Gap** | None. This is the scaffolder: detect the stack, write the tree, write the handbook. Phase 6 builds it, and Phase 6 is deferred until the plugin has been used |
+| `SKILL.md` | Superseded | `plugin/skills/new-project/` — the scaffolder, built by P6.1. Two stages rather than seven: detect the stack, write the tree, reach a green first commit, prepare the remote and its branch protection for approval; then the handbook |
 | `references/agents.md` | Superseded | `plugin/agents/` — five charters (builder, reviewer, triage, verifier, monitor-designer) |
 | `references/hooks.md` | Superseded | `plugin/hooks/*.mjs` + `hooks.json`; the lessons it carried are restated in `docs/EVIDENCE.md` |
 | `references/harness-and-sprint.md` | Superseded | `plugin/skills/{sprint-plan,sprint-start,red-green-refactor,safe-pr,safe-cleanup,worker-dispatch}` |
-| `references/directory-tree.md` | **Gap** | None. The scaffold skeleton. Read only by the scaffolder, so it is blocked on the same deferred phase |
-| `references/claude-md-handbook.md` | **Gap** | None. How to write a project's `CLAUDE.md`. Same deferred phase |
-| `evals/evals.json` | **Partial gap** | `evals/grade-plugin.mjs` grades the shipped tree. The trigger eval this file fed moves to Phase 6 ([D23](DECISIONS.md)), so no trigger measurement exists today |
+| `references/directory-tree.md` | Superseded | `plugin/skills/new-project/assets/scaffold-plan.json` — the same skeleton as data, without the hardcoded `ai-enterprise-template` name or the GitHub Pro assumption stated as fact |
+| `references/claude-md-handbook.md` | Superseded | `plugin/skills/new-project/` Stage 1. Around 100 lines, not 400 |
+| `evals/evals.json` | Superseded | `evals/grade-plugin.mjs` grades the shipped tree, and `evals/trigger-eval.mjs` is the trigger measurement this file fed ([D23](DECISIONS.md)), built in P6.4 and run in P6.5 |
 
 Two further artifacts went with it:
 
@@ -61,12 +61,11 @@ Two further artifacts went with it:
 | `agentic-engineering-org.skill` (41,167 bytes, the packaged bundle) | Superseded by plugin packaging: `.claude-plugin/marketplace.json` + `plugin/.claude-plugin/plugin.json` |
 | `~/.claude/skills/agentic-engineering-org-workspace/` (186 files, the eval workspace) | **Kept as provenance**, in `source/global-workspace/` and in the tarball. Its `benchmark.json` holds the number P7.2 measures against: with-skill pass rate 1.0 against without-skill 0.27–0.45 |
 
-**Three of seven files are gaps, and they are the same gap.** The plugin ships the org
-but not the thing that creates the org. Everything a running project needs is superseded.
-Everything a *new* project needs to become such a project is missing. That is the
-scaffolder, and it is not an oversight: Phase 6 owns it and was deliberately deferred
-until Phase 7's dry run produces usage to tune against. It does mean a reader installing
-the plugin into an empty repository today gets lanes and gates and no starting shape.
+**All seven files are now superseded.** As first written, this table had three gaps and
+they were the same gap: the plugin shipped the org but not the thing that creates the org,
+so a reader installing into an empty repository got lanes and gates and no starting shape.
+Phase 6 closed it. `plugin/skills/new-project/` is the scaffolder, and the trigger
+measurement `evals/evals.json` used to feed now exists as `evals/trigger-eval.mjs`.
 
 ### Tree B — `D:\axial\.claude\` (38 files) plus `CLAUDE.local.md`
 
@@ -122,15 +121,19 @@ four the harness never had: `monitor-design`, `verify`, `worker-dispatch`, and `
 
 ### Every gap, in one list
 
-1. **The scaffolder** (`SKILL.md`, `directory-tree.md`, `claude-md-handbook.md`). No
-   plugin equivalent. Phase 6, deferred. The plugin cannot yet stand up a new project.
-2. **Trigger measurement** (`evals/evals.json`). Deferred to Phase 6 with the
-   descriptions it would measure ([D23](DECISIONS.md)).
+Three of the four were Phase 6's, and Phase 6 has since closed them. One remains.
+
+1. ~~**The scaffolder**~~ (`SKILL.md`, `directory-tree.md`, `claude-md-handbook.md`).
+   **Closed by P6.1** — `plugin/skills/new-project/`. The plugin stands up a new project.
+2. ~~**Trigger measurement**~~ (`evals/evals.json`). **Closed by P6.4** —
+   `evals/trigger-eval.mjs`, with P6.5's before-and-after ([D23](DECISIONS.md)).
 3. **Cost and ETA reporting** (`axial-watch.py`). No plugin equivalent, no phase owns it,
-   and `monitor-design` only describes where it would go. Of every gap here this is the
-   one nothing is scheduled to close.
-4. **`status`** ships as a stub that declares its contract and says so. It is not a gap in
-   the trees, but it is a hole in the plugin a migrating reader will meet.
+   and `monitor-design` only describes where it would go. **This is the one gap still
+   open**, and now the only one — every phase is complete, so nothing is scheduled to
+   close it. Closing it is a founder decision, not a deferral.
+4. ~~**`status`** as a stub~~. **Closed by P6.3** — it renders issues, PR check state and
+   the Decision Log every run, sharing one renderer with `session-status.mjs`. It does not
+   render the project's phase, and says why.
 
 ## 2. What axial has lost, and for how long
 
@@ -347,9 +350,9 @@ waiting.
    the commit gate runs Axial's suite, not a guess at one.
 9. **Correct `docs/INVENTORY.md`** for the two stale snapshots, naming the six hooks and
    five agents the harness actually retired with. `source/` itself is not edited.
-10. **Decide the three gaps.** The scaffolder and the trigger eval are Phase 6 work and
-    have an owner. Cost and ETA reporting has none. Either open an issue for it or record
-    that it is dropped.
+10. **Decide the one remaining gap.** The scaffolder and the trigger eval were Phase 6
+    work and both landed. Cost and ETA reporting still has no owner and no phase left to
+    give it one. Either open an issue for it or record that it is dropped.
 
 Steps 5 to 8 are reversible in one edit: remove `"aeo@aeo": true` and restart. That
 returns axial to its current state, not to its pre-retirement state. The tarball restore
