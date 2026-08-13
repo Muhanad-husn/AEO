@@ -19,3 +19,18 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+--------------------------------------------------------------------------
+
+Scope of this licence
+
+The MIT grant above covers AEO's own work: everything in this repository
+except `source/`, which is to say `plugin/`, `.claude-plugin/`, `docs/`,
+`tests/`, `evals/`, `logs/` and the root files. It does not cover `source/`,
+which is a verbatim reference snapshot of other trees, kept for provenance and
+governed by their own terms rather than by this licence. `source/axial/` is
+copied from a repository published under PolyForm Noncommercial 1.0.0.
+`source/upstream-red-green-refactor/` is upstream work under its own MIT
+licence, with that licence file in place; the five skills derived from it under
+`plugin/` carry the same notice in `plugin/UPSTREAM-LICENSE`. Where a subtree
+under `source/` carries its own licence file, that file governs.
