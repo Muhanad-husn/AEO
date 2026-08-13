@@ -119,6 +119,8 @@ things.
 ## Who merges
 
 You do. Always. Every lane stops at a pull request and waits for your
-approval; nothing in this plugin has a path to `git merge`, `gh pr merge`,
-or a push to your default branch. That's the product, not a limitation of
-it.
+approval; the plugin's own roles — builder, reviewer, triage — have no
+path to `git merge`, `gh pr merge`, or a push to your default branch, no
+matter how they're invoked. Your own session merges, but only once
+you've approved it, never on a role's judgment and never before that
+approval. That's the product, not a limitation of it.
