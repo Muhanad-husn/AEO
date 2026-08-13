@@ -10,7 +10,8 @@
 //
 // Scope is deliberately narrow (P7.1): version and $schema on the manifests, and the
 // node prerequisite in the README. Nothing about prose, section order, or the rest of
-// the README's content is asserted here.
+// the README's content is asserted here — except the merge-rule check added for
+// issue #62 below, which is the same kind of drift alarm applied to a second claim.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -72,5 +73,30 @@ describe('the README states the node prerequisite (D8)', () => {
     // reader who misses this installs a plugin that silently guards nothing (D8).
     const readme = readFileSync(README_PATH, 'utf8');
     assert.match(readme, /fails open/i);
+  });
+});
+
+describe('the README states the merge rule block-merge.mjs actually enforces (issue #62)', () => {
+  // block-merge.mjs's own F5 comment: the gate enforces on `isAnyAeoRole` — this
+  // plugin's three roles (builder, reviewer, triage) — and nothing else, because C-02
+  // forbids matching on bare `agent_type` presence. That exempts the founder's own
+  // session, which is exactly the path sprint-start's wrap-up brief describes: "The
+  // orchestrator merges only on the founder's explicit approval, never before and
+  // never on its own judgment." A README claiming no path exists anywhere in the
+  // plugin contradicts both; this pins the narrower claim the code and the skill agree on.
+
+  test('does not repeat the old absolute claim that no path exists anywhere in the plugin', () => {
+    const readme = readFileSync(README_PATH, 'utf8');
+    assert.doesNotMatch(readme, /nothing in this plugin has a path to/i);
+  });
+
+  test("names the roles that have no merge path, and that the founder's own approved session does merge", () => {
+    const readme = readFileSync(README_PATH, 'utf8');
+    const section = readme.slice(readme.indexOf('## Who merges'));
+    assert.notEqual(readme.indexOf('## Who merges'), -1, 'README has no "Who merges" section');
+    assert.match(section, /builder/i);
+    assert.match(section, /review/i);
+    assert.match(section, /triage/i);
+    assert.match(section, /approv/i);
   });
 });
