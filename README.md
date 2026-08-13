@@ -65,9 +65,9 @@ orphaned plugin caches Claude Code is holding, not just this one.
 
 ## The lanes
 
-Fourteen skills ship today. Seven are operator-invoked only
+Fifteen skills ship today. Seven are operator-invoked only
 (`disable-model-invocation: true`: they run when you type the slash
-command, never on their own read of a description) and seven trigger on
+command, never on their own read of a description) and eight trigger on
 description, so Claude can reach for them mid-session:
 
 **Operator-invoked**
@@ -87,6 +87,7 @@ description, so Claude can reach for them mid-session:
 | Skill | What it does |
 | --- | --- |
 | `monitor-design` | Designs a job-specific monitoring overlay for one long-running job. |
+| `new-project` | Scaffolds a new repository the other skills can work in, to one green commit on `main`. |
 | `red-green-refactor` | Double-loop TDD: a failing acceptance test drives inner red/green/refactor cycles. |
 | `safe-cleanup` | Retires local branches once their PRs have merged or closed. Never touches the remote. |
 | `safe-pr` | Opens a reviewable PR with evidence attached, once a slice is green. |
