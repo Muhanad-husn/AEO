@@ -165,18 +165,23 @@ Bundled resource:
 
    Two things belong in the checkpoint as choices rather than as assertions.
    Visibility is the founder's call, and the command above defaults to private
-   only because that is the safer default to present. Branch protection on a
-   private repository has historically required a paid GitHub tier; check the
-   current terms for this account rather than repeating a plan name, and put the
-   real options to the founder: public visibility, a paid plan, or running
-   without the server-side backstop and relying on the merge gate alone.
+   only because that is the safer default to present. Whether protection is
+   available at all is the other, and it is settled by attempting the call rather
+   than by inspecting the account first. Do not look up the plan tier: `gh api
+   user` reports `plan` only on a token carrying the `user` scope, which
+   `gh auth login` does not grant, so on an ordinary token the field comes back
+   null and answers nothing. Run the protection call and read what comes back.
 
-   If the protection call fails, read the status code before reaching for any of
-   those options. A 403 is the tier refusal, and it is a cost decision for the
-   founder. A 422 is a malformed request — a bug in the command rather than a
-   limit on the account — and its message names the property the API rejected;
-   fix the command and rerun it, and do not present a cost decision the account
-   is not actually facing.
+   - **Success.** Protection is on. Report the properties it set.
+   - **403.** The tier refusal. Protection on a private repository has
+     historically required a paid GitHub tier, and this is where that bites. It
+     is a cost decision and it belongs to the founder, so put the real options to
+     them rather than choosing one: public visibility, a paid plan, or running
+     without the server-side backstop and relying on the merge gate alone.
+   - **422.** A malformed request — a bug in the command rather than a limit on
+     the account. The message names the property the API rejected. Fix the
+     command and rerun it, and do not present a cost decision the account is not
+     actually facing.
 
    Then report: the tree, the resolved test command, the green baseline, the one
    commit, whether protection is on, and that `.claude/settings.json` declares
