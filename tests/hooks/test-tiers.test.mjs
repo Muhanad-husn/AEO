@@ -80,6 +80,33 @@ describe('every test file is in exactly one tier', () => {
   });
 });
 
+describe('the two Phase 6 artifacts keep a smoke check in the fast tier (D26)', () => {
+  // The union check above is satisfied by any placement, so it would accept a smoke file
+  // being moved into the integration tier beside the test it exists to compensate for.
+  // That move would restore issue #96's hole in silence. Each pair below is one artifact
+  // seen from both tiers: the expensive test that spawns processes, and the cheap check
+  // that runs on every commit.
+  const PAIRS = [
+    { artifact: 'the new-project scaffolder', smoke: 'new-project-plan-smoke.test.mjs', full: 'new-project-scaffold.test.mjs' },
+    { artifact: 'the shared status renderer', smoke: 'status-render-smoke.test.mjs', full: 'status.test.mjs' },
+  ];
+
+  for (const { artifact, smoke, full } of PAIRS) {
+    test(`${artifact}: ${smoke} is fast, ${full} is integration`, () => {
+      assert.ok(
+        fast.includes(smoke),
+        `${smoke} is not in the fast tier. It exists because ${full} is too expensive to run ` +
+          'on every commit, so moving it out leaves the commit gate blind to this artifact again.',
+      );
+      assert.ok(
+        integration.includes(full),
+        `${full} is not in the integration tier. If it became cheap enough for the fast tier, ` +
+          `D26 needs revising and ${smoke} is then redundant.`,
+      );
+    });
+  }
+});
+
 describe('the commit gate resolves the fast tier', () => {
   // The whole point of D17 turns on which command detection picks. `scripts.test` is
   // what stack.mjs resolves for a package.json project (D10, no config file), so the
