@@ -6,6 +6,13 @@ Code plugin distributed from GitHub and a marketplace.
 This file is the **execution sequence and the dispatch table** — what happens in what
 order, who authors it, at which model tier, and where the checkpoints are.
 
+> **All eight checkpoints are closed as of 2026-08-13.** Phase 6 ran last, out of order,
+> because it was deferred at Checkpoint 5 until the plugin had been used and Phase 7's dry
+> run was that usage. Read this file from here on as the record of how the build went, not
+> as work outstanding. What is left open is named in
+> [`MIGRATION.md`](MIGRATION.md)'s gap list — one item, cost and ETA reporting, which no
+> phase owns.
+
 | Doc | Answers |
 |---|---|
 | [`PRINCIPLES.md`](PRINCIPLES.md) | What is fixed and what is proposed. **Authoritative** |
@@ -308,8 +315,13 @@ this phase one defect of its own (#64).
 - The plugin ships as an installed unit rather than repo content, which removes the
   gitignored-harness problem instead of solving it (V-06).
 - `skill-creator` pass on the description-triggered skills and the scaffolder's, for
-  trigger accuracy. The six lanes are excluded; they do not trigger on description. There
-  were five when this line was written; Phase 3 added `monitor-design`, so it is six.
+  trigger accuracy. The operator lanes are excluded; they do not trigger on description.
+  **The count in this line was wrong for three phases and P6.4 caught it.** It said five,
+  then six. The shipped tree carries **seven** lanes — `fix`, `review`, `triage`,
+  `sprint-plan`, `sprint-start`, `verify`, `status` — against **eight** description-triggered
+  skills, of fifteen. `verify` was the seventh lane from Phase 4 and this line never
+  absorbed it. P6.4's harness now reads the split from the tree, so the number cannot
+  drift again.
 - **The trigger eval runs here, once, and it is what judges that pass**
   ([D23](DECISIONS.md)). Moved out of P2.M so the measurement lands against the
   descriptions the tuning produces rather than the ones it is about to replace. A tuned
@@ -320,8 +332,8 @@ this phase one defect of its own (#64).
 | **P6.1** the scaffolder | **Opus** | `plugin/skills/new-project/` — verify the toolchain, detect the stack, write the tree with `logs/` before any product code (EN-14), init git, and prepare `gh repo create` plus branch protection for founder approval; then write the project handbook. Tests assert the emitted tree, not the instructions | Reintroduce a project config file ([D10](DECISIONS.md)). Carry over `directory-tree.md`'s hardcoded example repo name, or its GitHub Pro assumption stated as settled fact |
 | **P6.2** the guard the scaffold leaves inert (#64) | **Sonnet** | Whatever the scaffolder emits declares `AEO_LIVE_DATA_ROOT` in one visible place — a declared blank the founder fills in, rather than an absent variable — with a test over the scaffolded output | Change `sandbox-guard`'s semantics. The gate is correct; the default state of a new install is what is wrong |
 | **P6.3** `/aeo:status` | **Sonnet** | `plugin/skills/status/` for real — issues, PR state and the Decision Log, read every run and rendered (EN-7, [D5](DECISIONS.md)); session start reads it first. When the Decision Log is absent it says so and names what it looked for | Write, cache or hand-maintain any part of what it renders. A stale file is the thing [D5](DECISIONS.md) exists to kill |
-| **P6.4** the trigger eval | **Opus** | The harness and the **before** number over the six description-triggered skills, with L-10 discipline — noise floor first, per-skill results rather than one total | Touch a single description. This slice measures; the next one tunes |
-| **P6.5** the tuning pass | **Opus** | `skill-creator` over those six plus the scaffolder's own description, re-run through P6.4's harness, reporting what flipped and in which direction; the write-up under `logs/` | Declare a description improved without its after-number ([D23](DECISIONS.md)). Tune the six operator-invoked lanes; they do not trigger on description |
+| **P6.4** the trigger eval | **Opus** | The harness and the **before** number over the eight description-triggered skills, with L-10 discipline — noise floor first, per-skill results rather than one total | Touch a single description. This slice measures; the next one tunes |
+| **P6.5** the tuning pass | **Opus** | `skill-creator` over those eight, the scaffolder's own description among them, re-run through P6.4's harness, reporting what flipped and in which direction; the write-up under `logs/` | Declare a description improved without its after-number ([D23](DECISIONS.md)). Tune the seven operator-invoked lanes; they do not trigger on description |
 
 `P6.1` gates `P6.2` and `P6.5`. `P6.4` gates `P6.5`. `P6.3` needs nothing (3 parallel at
 peak). V-06 needs no slice: the plugin already ships as an installed unit, so the
@@ -330,7 +342,17 @@ was proven.
 
 **Verify:** scaffolding a fresh repo on a non-Python stack produces a working org;
 `/aeo:status` reflects reality with no hand-maintained file.
-**⛔ CHECKPOINT 6.**
+**⛔ CHECKPOINT 6.** Closed 2026-08-13 —
+[`logs/2026-08-13-checkpoint-6-verification/summary.md`](../logs/2026-08-13-checkpoint-6-verification/summary.md).
+Both clauses hold, and both ran live. An empty directory was scaffolded into a Go project
+— `logs/` written 11.4 seconds ahead of the first product path, one commit on `main`, the
+suite green, and `commit-gate` then **fired** on a real commit inside the scaffolded repo
+and refused it. The skill was never named in the prompt; it triggered on description. The
+remote half ran against a scratch private repository, since deleted: branch protection was
+read back from the API with all three properties set, and a push to `main` was refused with
+`GH006`. The live run found one defect the tests could not see — the branch-protection
+command sent `required_approving_review_count` as a string and returned HTTP 422, setting
+nothing. Fixed in-session rather than filed.
 
 ## Phase 7 — Package and prove
 

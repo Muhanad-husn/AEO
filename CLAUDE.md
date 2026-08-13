@@ -60,9 +60,9 @@ it is not this one. Read it before running any lane end to end.
 
 ## Current stage
 
-Phases 0 through 5 and Phase 7 complete. The gates exist, in Node, wired through
-`hooks/hooks.json`. Five agent charters and thirteen of fourteen skills carry real
-content; `status` is still a stub and lands in Phase 6.
+**All seven phases complete.** The gates exist, in Node, wired through
+`hooks/hooks.json`. Five agent charters and all fifteen skills carry real content —
+`status` was the last stub and Phase 6 implemented it.
 
 Phase 3 added the observability layer: `runlog.mjs` writes the fixed six-field
 record, `run-monitor.mjs` answers "is this thing still working" from a plain
@@ -106,11 +106,33 @@ dry run on a Go product that reached a founder-merged PR with all six gates firi
 record is in
 [logs/2026-08-13-checkpoint-7-verification/summary.md](logs/2026-08-13-checkpoint-7-verification/summary.md).
 
-Next is **Phase 6** of [docs/PLAN.md](docs/PLAN.md) — the scaffolder and the tracker. It
-was deferred at Checkpoint 5 until the plugin had been used, and Phase 7's dry run is that
-usage. Five slices, P6.1 through P6.5: the scaffolder, the guard declaration the dry run
-found missing (#64), `/aeo:status` for real, the trigger eval's before number, and the
-`skill-creator` tuning pass judged by it.
+Phase 6 closed last, out of order. It was deferred at Checkpoint 5 until the plugin had
+been used, and Phase 7's dry run was that usage. It added the scaffolder
+(`plugin/skills/new-project/`, the fifteenth skill), `/aeo:status` for real, and the
+sandbox variables the dry run found undeclared on a fresh install.
+
+**Two things in Phase 6 are worth knowing before touching anything nearby.**
+
+`/aeo:status` and `session-status.mjs` are **one renderer with two callers**
+(`plugin/hooks/status-render.mjs`), not two answers to the same question. Nothing it
+prints is stored. It does not report the project's phase, because there is no generated
+source for one — inventing a phase field would mean hand-maintaining the second record
+[D5](docs/DECISIONS.md) exists to kill.
+
+Trigger accuracy is now **measured, not asserted**. `evals/trigger-eval.mjs` scores the
+eight description-triggered skills against an authored case set, and P6.5's tuning moved
+overall accuracy from **90.2% to 96.8%** against a **5.0 pp** noise floor — three
+descriptions that never fired on their own case now fire 15 times out of 15. The pass also
+**cost** something and says so: `safe-cleanup` fell from 15/15 to 8/15 on one case without
+its description changing a byte, because its neighbours grew. One defect is still open at
+3/15. Read
+[logs/2026-08-13-p6.5-tuning-pass/summary.md](logs/2026-08-13-p6.5-tuning-pass/summary.md)
+before editing any `description:` line — an unmeasured edit re-rolls a number that cost
+hours of live evaluation to take.
+
+The plan's "six description-triggered skills" was wrong for three phases; the real split
+is seven operator lanes against eight description-triggered skills, of fifteen. The
+harness reads it from the tree now, so it cannot drift again.
 
 Four findings overturn things the vendored skill states as settled. They are cheap to
 miss and expensive to discover late:

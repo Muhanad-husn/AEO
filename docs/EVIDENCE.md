@@ -118,7 +118,8 @@ deterministic invocation versus description-matching — the platform no longer
 draws. What survives, in the current model:
 
 - `disable-model-invocation: true` makes a skill **user-invocable only** — the
-  determinism the six operator lanes wanted, without a second directory.
+  determinism the operator lanes wanted, without a second directory. (There were six
+  when this was written. Phase 4's `verify` made it seven.)
 - `user-invocable: false` hides a skill from the `/` menu for workflow-internal pieces.
 - Plugin skills are **always namespaced** (`/aeo:sprint-start`), which removes the
   trigger-competition risk that motivated the rest of the split.

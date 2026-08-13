@@ -112,7 +112,16 @@ the PR's own CI check is for.
 trigger eval over the five description-triggered skills" — and then separately gives
 Phase 6 a `skill-creator` pass over **the same five skills** for trigger accuracy. Two
 phases, one measurement, one set of files. (Five was the count when this was decided.
-Phase 3 added `monitor-design`, so the set is six; the decision is unaffected.)
+Phase 3 added `monitor-design`, so the set was six; the decision is unaffected.)
+
+> **Count corrected, 2026-08-13.** Both figures were already wrong when Phase 6 ran, and
+> P6.4 caught it by reading the tree rather than the plan. Phase 4 added `verify` as a
+> seventh operator lane and nobody subtracted it from the description-triggered side;
+> Phase 6 then added the scaffolder to that side. The set P6.4 measured and P6.5 tuned is
+> **eight**: `monitor-design`, `new-project`, `red-green-refactor`, `safe-cleanup`,
+> `safe-pr`, `tdd-ci`, `tdd-plan`, `worker-dispatch`. The harness derives the split from
+> `disable-model-invocation` at run time and refuses to run when a roster skill has no
+> cases, so the number cannot silently drift again.
 
 Running it in Phase 2 also measures the wrong moment. A trigger eval scores whether a
 description fires when it should. Phase 6 is where descriptions get tuned, so a Phase 2
@@ -473,11 +482,18 @@ because it will be installed many times before Phase 7. The strengthened check i
 what caught that a manifest-only pass proves nothing about eleven skills, and it is
 the same failure shape as C-01: a check that reads as coverage and is not.
 
-**Residual gap, recorded rather than closed.** No runtime check proves the six lanes
+**Residual gap, recorded rather than closed.** No runtime check proves the lanes
 are absent from the model-invocable set. `disable-model-invocation` is confirmed as
 the correct key — it is the only spelling present anywhere in the local plugin cache,
-and a shipped first-party plugin uses it — and it is present on exactly those six.
+and a shipped first-party plugin uses it — and it is present on exactly those lanes.
 That is the strongest evidence available without a live negative test.
+
+> **Partly closed, 2026-08-13.** There were six lanes when this was written; there are
+> seven. P6.4's trigger eval is the live negative test this paragraph said did not exist:
+> it derives the description-triggered roster from `disable-model-invocation` at run time
+> and scores whether each description fires, so a lane that leaked into the model-invocable
+> set would show up as a skill firing on prompts it should never see. It is a measurement
+> rather than a gate, so the gap is narrowed, not shut.
 
 **Cost of reversal.** One file and one paragraph. Nothing depends on it.
 
@@ -536,11 +552,13 @@ interface, and the tests are runtime-agnostic in intent.
 
 > **Counts amended; the decision is unchanged.** `skills/` only, and the operator
 > lanes still carry `disable-model-invocation: true`. The inventory below is Phase 0's.
-> The plugin now ships **fourteen skills** and **seven operator lanes**: Phase 3 added
+> The plugin now ships **fifteen skills** and **seven operator lanes**: Phase 3 added
 > `monitor-design`, which triggers on description and is deliberately not a lane; Phase
 > 4 added the `verify` lane, the seventh, deterministic like the other six because the
 > risk rubric decides whether a verification runs, not a phrase in a message; Phase 5
-> added `worker-dispatch`, which triggers on description. `evals/grade-plugin.mjs`
+> added `worker-dispatch` and Phase 6 added `new-project`, the scaffolder, both of which
+> trigger on description. That leaves eight on the description side against the seven
+> lanes. `evals/grade-plugin.mjs`
 > grades both numbers — `EXPECTED_SKILL_COUNT` and `OPERATOR_LANES` — and records where
 > each part of the count comes from. That is the copy to read when they move again.
 
