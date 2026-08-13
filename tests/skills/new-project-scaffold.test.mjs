@@ -41,6 +41,9 @@ const PLAN_PATH = path.resolve(
   '../../plugin/skills/new-project/assets/scaffold-plan.json',
 );
 
+/** P6.2 (issue #64): the guard the blank placeholder has to leave inert, unmodified. */
+const GUARD_PATH = path.resolve(import.meta.dirname, '../../plugin/hooks/sandbox-guard.mjs');
+
 const plan = JSON.parse(readFileSync(PLAN_PATH, 'utf8'));
 
 /** The directory whose presence EN-14 is about. */
@@ -260,6 +263,93 @@ describe('the emitted tree has the declared shape', () => {
         `${name} was emitted; D10 says detection, no project config file`,
       );
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P6.2 (issue #64) — the sandbox variables are declared blank at scaffold time
+// ---------------------------------------------------------------------------
+//
+// The defect this closes: sandbox-guard.mjs only fires once AEO_LIVE_DATA_ROOT is set,
+// and a freshly scaffolded project had no step that set it, so a new install shipped a
+// wired guard protecting nothing. The fix writes .claude/settings.json with both
+// variables present and blank — visible in a file the founder is already reading,
+// rather than an absent variable they would have to know to add. These tests cover the
+// file that actually lands on disk, not the intention behind it.
+
+describe('the sandbox variables are declared blank at scaffold time (P6.2, issue #64)', () => {
+  const settingsRelPath = '.claude/settings.json';
+  const settingsAbsPath = () => path.join(scaffolded.root, ...settingsRelPath.split('/'));
+
+  test('.claude/settings.json was written by the plan and exists on disk', () => {
+    assert.ok(
+      scaffolded.writeLog.some((w) => w.path === settingsRelPath),
+      `${settingsRelPath} is not in the write log; has the scaffold-plan.json step gone missing?`,
+    );
+    assert.ok(existsSync(settingsAbsPath()), `${settingsRelPath} is in the write log but not on disk`);
+  });
+
+  test('it parses as JSON and declares both sandbox variables as an explicit, blank placeholder', () => {
+    const parsed = JSON.parse(readFileSync(settingsAbsPath(), 'utf8'));
+    assert.deepEqual(
+      parsed.env,
+      { AEO_LIVE_DATA_ROOT: '', AEO_DATA_ROOT: '' },
+      `${settingsRelPath} does not declare AEO_LIVE_DATA_ROOT and AEO_DATA_ROOT as a blank pair`,
+    );
+  });
+
+  // Not an assumption about sandbox-guard.mjs — the real gate, spawned the way hooks.json
+  // wires it, fed exactly the pair the scaffold just wrote. readRoot() in sandbox-guard.mjs
+  // treats an empty string the same as an absent variable, so this placeholder must leave
+  // the guard exactly as inert as a fresh install with no .claude/settings.json at all,
+  // never accidentally armed into refusing everything.
+  test('the blank placeholder leaves sandbox-guard inert, the same as no declaration at all', () => {
+    const parsed = JSON.parse(readFileSync(settingsAbsPath(), 'utf8'));
+    const payload = {
+      hook_event_name: 'PreToolUse',
+      cwd: scaffolded.root,
+      tool_name: 'Bash',
+      tool_input: { command: 'echo ok' },
+    };
+    const childEnv = {
+      ...process.env,
+      CLAUDE_PROJECT_DIR: '',
+      AEO_LIVE_DATA_ROOT: parsed.env.AEO_LIVE_DATA_ROOT,
+      AEO_DATA_ROOT: parsed.env.AEO_DATA_ROOT,
+    };
+    const r = spawnSync(process.execPath, [GUARD_PATH], {
+      input: JSON.stringify(payload),
+      encoding: 'utf8',
+      cwd: scaffolded.root,
+      env: childEnv,
+      windowsHide: true,
+    });
+    assert.equal(
+      r.status,
+      0,
+      `sandbox-guard blocked an ordinary command with the scaffolded blank placeholder:\n${r.stderr}`,
+    );
+  });
+
+  test('.claude/settings.json is tracked in the committed tree, unlike settings.local.json', () => {
+    const tracked = git(scaffolded.root, ['ls-files']).split(/\r?\n/);
+    assert.ok(
+      tracked.includes(settingsRelPath),
+      `${settingsRelPath} is not tracked in git: ${tracked.join(', ')}`,
+    );
+  });
+
+  test('.claude/settings.json is written before any product code, same as the rest of EN-14', () => {
+    const settingsIndex = scaffolded.writeLog.findIndex((w) => w.path === settingsRelPath);
+    assert.notEqual(settingsIndex, -1, `${settingsRelPath} never appeared in the write log`);
+    scaffolded.writeLog.forEach((entry, index) => {
+      if (entry.role !== 'product') return;
+      assert.ok(
+        settingsIndex < index,
+        `${entry.path} (product code, position ${index}) was written before ` +
+          `${settingsRelPath} (position ${settingsIndex})`,
+      );
+    });
   });
 });
 
