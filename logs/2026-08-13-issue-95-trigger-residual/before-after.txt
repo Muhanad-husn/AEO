@@ -1,0 +1,33 @@
+OVERALL, 5 repeats each, judge sonnet, concurrency 4
+  before mean 97.5%  per repeat 97.5, 97.5, 100.0, 95.0, 97.5  spread 5.0pp  stdev 1.6pp
+  after  mean 99.5%  per repeat 100.0, 100.0, 100.0, 100.0, 97.5  spread 2.5pp  stdev 1.0pp
+  gap 2.0pp, against a before-floor of 5.0pp. INSIDE THE FLOOR — not a claimable aggregate movement.
+  none-accuracy before 93.3% (12 cases)  after 100.0% (11 cases, denominators differ)
+  re-rolled cases before 2/40  after 1/40
+
+PER SKILL, recall / false fires per repeat / precision
+  skill                 nB nA   recall B->A          ff B->A        precision B->A
+  monitor-design        3  3   100.0 -> 100.0      0.00 -> 0.00   100.0 -> 100.0
+  new-project           4  4   100.0 -> 100.0      0.00 -> 0.00   100.0 -> 100.0
+  red-green-refactor    4  5   100.0 -> 100.0      0.20 -> 0.00   96.0 -> 100.0
+  safe-cleanup          3  3   93.3 -> 93.3        0.00 -> 0.00   100.0 -> 100.0
+  safe-pr               3  3   100.0 -> 100.0      0.00 -> 0.00   100.0 -> 100.0
+  tdd-ci                4  4   100.0 -> 100.0      0.00 -> 0.00   100.0 -> 100.0
+  tdd-plan              4  4   100.0 -> 100.0      0.60 -> 0.00   88.0 -> 100.0
+  worker-dispatch       3  3   100.0 -> 100.0      0.00 -> 0.00   100.0 -> 100.0
+
+  Every false-fire and precision movement above is wd-n2 and nothing else. It is
+  definitional, not behavioural: the case that tdd-plan and red-green-refactor were
+  scored wrong on no longer expects NONE. No description changed in this slice.
+
+PER CASE — verdict distribution, before vs after
+  sc-n2   expect safe-cleanup                      4/5 -> 4/5   UNCHANGED, STILL FAILING
+      before: safe-cleanup x4, NONE x1
+      after : safe-cleanup x4, NONE x1
+  wd-n2   expect NONE -> red-green-refactor        1/5 -> 5/5   CASE RE-FRAMED, FIXED
+      before: tdd-plan x3, red-green-refactor x1, NONE x1
+      after : red-green-refactor x5
+  The other 38 cases were correct in all five repeats both before and after.
+
+AFTER — wrong firings: none
+AFTER — misses: safe-cleanup missed sc-n2 1/5
