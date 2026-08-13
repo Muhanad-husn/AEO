@@ -54,6 +54,53 @@ build requirement or a decision input.
 | **L-09** | Five Windows encoding incidents in the gate layer | [D8](DECISIONS.md) |
 | **L-10** | Measurement discipline | Phase 4 |
 
+## The gate layer, as wired
+
+`hooks/hooks.json` records which script runs on which event; this file records why
+each one exists. Nothing has held both, so the wiring is drawn here once. Solid
+edges are refusals. Dotted edges are the paths a call takes when nothing stops it.
+
+```mermaid
+flowchart LR
+  call(["any tool call"]) --> match{"PreToolUse<br>matcher"}
+
+  match -->|"Bash, PowerShell, Edit, Write,<br>MultiEdit, Read, NotebookRead"| sandbox["sandbox-guard"]
+  match -->|"Bash, PowerShell"| merge["block-merge"]
+  match -->|"Bash, PowerShell"| commit["commit-gate"]
+  match -->|"Edit, Write, MultiEdit,<br>NotebookEdit"| pathg["path-guard"]
+  match -->|"any GitHub forge tool"| merge
+  match -->|"no matcher at all:<br>every tool, every role"| jail["review-jail"]
+
+  sandbox -->|"declared production data,<br>or the suite over a live run"| deny
+  merge -->|"merge, branch delete, or a push<br>to the protected branch"| deny
+  commit -->|"a protected-branch commit, or one<br>while the suite is red or undetectable"| deny
+  pathg -->|"a role editing the harness's<br>own .claude/"| deny
+  jail -->|"anything but a Read of the<br>reviewer's own staged packet"| deny
+
+  deny{{"exit 2"}} --> refused(["call refused,<br>stderr returned to the model"])
+
+  match -.->|"no gate objects, and a PreToolUse<br>gate is silent when it allows"| proceeds(["call proceeds"])
+  dead["a gate that cannot start"] -.->|"non-zero, but not 2,<br>so non-blocking"| proceeds
+
+  start(["SessionStart"]) --> status["session-status"]
+  status -.->|"reports which gates are wired<br>and the project's live state"| proceeds
+  start --> pre["inline node preflight"]
+  pre -.->|"prints GATES NOT ENFORCING<br>when node does not resolve"| proceeds
+```
+
+Three things the wiring shows that a list of six hooks does not. `block-merge` hangs
+off two matchers, so a role that cannot reach `gh pr merge` through a shell cannot
+reach the same operation through the GitHub forge tool either. `review-jail` carries
+no matcher, which is what makes it a seal on the reviewer rather than a rule about
+particular tools (L-01). And the two dotted lines into `call proceeds` are one
+outcome arriving by opposite routes: a gate that allowed, and a gate that never ran.
+
+That second route is why the `SessionStart` pair belongs in the same picture. Silence
+from a `PreToolUse` gate is not evidence it fired, and any non-zero exit other than 2
+is non-blocking, so a gate whose runtime is missing waves every call through (C-06,
+[D8](DECISIONS.md)). The session-start report and the preflight line are the only
+signals that separate an enforcing session from an ungated one.
+
 ---
 
 # C — Claude Code currency

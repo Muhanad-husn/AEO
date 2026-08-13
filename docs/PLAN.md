@@ -290,6 +290,69 @@ gets silently bypassed. Read-only fan-out already shipped in Phase 2.
 - Measure, do not pre-solve: core oversubscription at four concurrent gates, and
   merge-order conflict rate.
 
+### The shape of a concurrent sprint
+
+`sprint-start` fans out and the founder's merge seat funnels back in. N is the actor
+cap, which is stated in exactly one file and read from there, never typed
+([`plugin/skills/sprint-start/references/actor-cap.md`](../plugin/skills/sprint-start/references/actor-cap.md)).
+
+```mermaid
+flowchart TB
+  sel["select the next N unblocked issues,<br>in the order one-at-a-time would take them"]
+  sel --> decl["each candidate declares the paths<br>it will edit and the paths it will create"]
+  decl --> indep{"independence check,<br>before any worktree is cut"}
+
+  indep -->|"a collision, including on a file<br>neither slice has created yet (L-04):<br>the whole group is refused, never<br>trimmed to a subset that passes"| stop(["back to the founder,<br>naming the two slices<br>and the path"])
+
+  indep -->|"disjoint"| lane1
+  indep -->|"disjoint"| laneN
+
+  subgraph lane1["actor 1"]
+    direction TB
+    w1["own worktree and branch"] --> b1["builder: red, green, refactor"]
+    b1 --> g1["gates, per actor"]
+    g1 --> p1["own PR"]
+  end
+
+  subgraph laneN["actor N"]
+    direction TB
+    wN["own worktree and branch"] --> bN["builder: red, green, refactor"]
+    bN --> gN["gates, per actor"]
+    gN --> pN["own PR"]
+  end
+
+  sentinel["run-in-progress sentinel,<br>anchored through the main checkout"]
+  sentinel -.->|"one raised in any worktree<br>refuses every actor's commit,<br>because the commit gate runs<br>the suite (L-02)"| g1
+  sentinel -.-> gN
+
+  p1 --> seat
+  pN --> seat
+  seat{{"the founder's merge seat:<br>one PR at a time, on explicit approval"}}
+  seat -->|"landing one rebases the rest.<br>Measured: 1 conflicting pair in 6<br>genuinely concurrent ones"| main(["main"])
+```
+
+Lanes 2 through N-1 are identical to the two drawn and are left out. Three
+relationships in that picture are invisible in a list of Phase 5's rules.
+
+**The check runs before anything is created, and it refuses the group rather than the
+pair.** Two disjoint slices sitting alongside a colliding pair are not dispatched
+either. That is deliberate: a quietly smaller group hides the collision the founder
+needs to decide about.
+
+**The sentinel edge cuts across the lanes.** Everything else in a lane is private to
+it — its worktree, its branch, its PR. The sentinel is the one thing that is not, and
+it points at the commit gate specifically, because the commit gate is the only gate
+that *performs* an operation rather than refusing one: it runs the suite, so a commit
+executes code.
+
+**The fan-in is where the cost lands, not the fan-out.** The measurement in #17 gives
+the two edges their numbers. Four concurrent gates cost each actor 3.02x its solo
+latency while leaving about 60% of the cores idle, which still returns the group 1.3x
+faster than running the four one after another — so serialising the parallel middle
+would make the founder wait longer. The merge seat is where sequence actually matters,
+and one pair in six real concurrent ones conflicted there, twelve of sixteen synthetic
+collisions being in prose rather than code. Both numbers argue for changing nothing.
+
 **Verify:** four issues run to four PRs concurrently with every gate firing correctly; the
 independence check catches a deliberately conflicting pair, including one that collides
 only on files neither had created yet.

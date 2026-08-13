@@ -68,7 +68,61 @@ orphaned plugin caches Claude Code is holding, not just this one.
 Fifteen skills ship today. Seven are operator-invoked only
 (`disable-model-invocation: true`: they run when you type the slash
 command, never on their own read of a description) and eight trigger on
-description, so Claude can reach for them mid-session:
+description, so Claude can reach for them mid-session.
+
+All fifteen are below. The seven drawn with a `/aeo:` prefix are the
+operator-invoked ones; nothing you say makes them fire.
+
+```mermaid
+flowchart TB
+  subgraph dev["the development line, in the order it runs"]
+    direction TB
+    tddplan["tdd-plan"] --> rgr["red-green-refactor"]
+    rgr --> ci["tdd-ci"]
+    ci --> pr["safe-pr"]
+  end
+
+  subgraph obs["read-only, on no lane at all"]
+    direction TB
+    stat["/aeo:status"]
+    mon["monitor-design"]
+  end
+
+  scratch(["an empty directory"]) --> newproj["new-project"]
+  newproj -->|"scaffold to one green commit on main"| repo(["a repository the lanes can work in"])
+
+  repo --> triage["/aeo:triage"]
+  triage -->|"proposes issues, files none"| plan["/aeo:sprint-plan"]
+  plan -->|"files the backlog"| start["/aeo:sprint-start"]
+  start -->|"one issue = one worktree =<br>one branch = one PR"| tddplan
+
+  repo --> fix["/aeo:fix"]
+  fix -->|"skips the planning and the reviewer,<br>never the gates"| rgr
+
+  repo --> bulk["worker-dispatch"]
+  bulk -->|"many workers, one checkout, one commit.<br>No branch, no PR, no merge seat"| onecommit(["one commit"])
+
+  pr --> seat
+  pr -.->|"on demand, or on outsized<br>blast radius"| review["/aeo:review"]
+  pr -.->|"when the risk rubric asks for it"| verify["/aeo:verify"]
+  review -.-> seat
+  verify -.-> seat
+
+  seat{{"you merge, and only on<br>your explicit approval"}}
+  seat --> cleanup["safe-cleanup"]
+  cleanup -->|"retires the merged branch,<br>local only, never the remote"| done(["done"])
+
+  obs -.->|"report state, change none"| seat
+```
+
+Four things that map is for. The development line runs in one order and
+only that order, so a slice that has not been through `tdd-plan` has no
+plan for `red-green-refactor` to execute. `/aeo:fix` is a second entrance
+to the same line rather than a lane of its own, which is why it skips the
+ceremony and not the gates. `worker-dispatch` is the other way to write to
+your repository, and it stops at a commit without ever reaching a branch,
+a PR, or you. And every path that produces a pull request converges on one
+node you own.
 
 **Operator-invoked**
 
