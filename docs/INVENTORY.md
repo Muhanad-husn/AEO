@@ -234,8 +234,8 @@ The founder authored both axial and Zij and may relicense his own work at will, 
 here is an infringement. It is a **statement** problem: a bare root MIT would represent
 terms for those trees that their upstream licences do not grant. A one-paragraph scope
 note saying the licence covers AEO's own work and that `source/` is a vendored snapshot
-under its own terms would close it. That note belongs in `README.md`, which #97 is already
-rewriting for a public reader, and is not written here.
+under its own terms would close it. That note is now in the root
+[`LICENSE`](../LICENSE) itself, below the unmodified MIT text.
 
 ### History
 
