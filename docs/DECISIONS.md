@@ -15,6 +15,52 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-13 — One decision from Phase 7
+
+### D25 — The shell merge arm stays role-scoped, and the assumption is written down
+
+**Problem.** Three surfaces merge a pull request from a session, and two are guarded for
+every caller. `git merge` is denied by a rule in the founder's own
+`.claude/settings.local.json`. The forge's `merge_pull_request` is caught by
+`block-merge`'s forge arm, which runs before any identity test. The third is `gh pr merge`
+through `Bash`, and it reaches the shell arm, which returns unless `agent_type` matches
+`aeo:<role>`. No deny rule names that command. A caller with no AEO identity merges
+unopposed.
+
+**What the alternatives cost.** A deny rule on `Bash(gh pr merge:*)` looks cheap if the
+founder merges in the web UI. He does not.
+`gh api repos/Muhanad-husn/AEO/pulls/{n}` shows the recent PRs merged by the founder's
+account, which does not say which client did it; grepping this project's session
+transcripts for `"command":"[^"]*gh pr merge` does. The merge that landed this slice's
+branch point was `cd D:/AEO && gh pr merge <n> --merge --delete-branch=false`, run from a
+main session's `Bash`. A deny rule takes the merge seat away from the seat it exists for.
+Widening the shell arm to any subagent is what C-02 refuses: `agent_type` is also set on a
+main session started with `--agent`, and it carries a bare name there exactly as a plain
+subagent does. Nothing in the payload separates the two, so widening buys the gap back by
+blocking the merge seat of anyone who starts a session that way.
+
+**Decision.** The shell arm stays scoped to `aeo:<role>`. No deny rule, no widening, and
+no new discriminator invented to tell a main session from a subagent.
+
+**The assumption this rests on.** Every caller that should be blocked declares an AEO
+role. Writing it down matters because it is already false in one place. `worker-dispatch`
+sends operation workers into a shared checkout with `Bash` and no worktree, and the plugin
+ships no worker agent, so those workers carry no `aeo:` identity. The same skill forbids
+them a commit and a pull request. The one actor the product ships that most clearly must
+not merge is the one the gate cannot see, and that is in the product's intended use rather
+than in this repository's bootstrapping.
+
+**Impact.** No change to the gate or its tests. The exemption becomes a decision carrying
+a named assumption instead of an unexamined consequence of C-02, so a future reader can
+notice when the assumption stops holding.
+
+**What this does not license.** Treating the worker exemption as settled. If an operation
+worker ever needs gating, the fix is to dispatch it under an `aeo:` identity, which is a
+`worker-dispatch` change and leaves C-02 intact. It is not a second identity test in the
+gate.
+
+---
+
 ## 2026-08-12 — One decision from Phase 5
 
 ### D24 — A tier CI already ran on a commit is cited, never re-run locally
