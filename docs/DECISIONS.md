@@ -31,9 +31,11 @@ unopposed.
 founder merges in the web UI. He does not.
 `gh api repos/Muhanad-husn/AEO/pulls/{n}` shows the recent PRs merged by the founder's
 account, which does not say which client did it; grepping this project's session
-transcripts for `"command":"[^"]*gh pr merge` does. The merge that landed this slice's
-branch point was `cd D:/AEO && gh pr merge <n> --merge --delete-branch=false`, run from a
-main session's `Bash`. A deny rule takes the merge seat away from the seat it exists for.
+transcripts for `"command":"[^"]*gh pr merge` does. Six main-session transcripts dated
+2026-08-04 to 2026-08-12 merge this repository's PRs from `Bash`, mostly as
+`gh pr merge <n> --repo Muhanad-husn/AEO --squash --delete-branch`, and PR 12's recorded
+merge time falls inside its transcript's window. A deny rule takes the merge seat away
+from the seat it exists for.
 Widening the shell arm to any subagent is what C-02 refuses: `agent_type` is also set on a
 main session started with `--agent`, and it carries a bare name there exactly as a plain
 subagent does. Nothing in the payload separates the two, so widening buys the gap back by
