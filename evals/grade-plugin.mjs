@@ -372,7 +372,9 @@ function checkInventory(pluginRoot, results) {
 }
 
 // ---------------------------------------------------------------------------
-// Per-skill: SKILL.md frontmatter, and the six-lane disable-model-invocation split
+// Per-skill: SKILL.md frontmatter, and the seven-lane disable-model-invocation split
+// (seven operator-invoked lanes carrying disable-model-invocation: true, against
+// eight description-triggered skills, of fifteen skills total)
 // ---------------------------------------------------------------------------
 
 function checkSkills(pluginRoot, skillDirs, results) {
