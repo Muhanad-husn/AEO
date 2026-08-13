@@ -60,7 +60,7 @@ it is not this one. Read it before running any lane end to end.
 
 ## Current stage
 
-Phases 0 through 5 complete. The gates exist, in Node, wired through
+Phases 0 through 5 and Phase 7 complete. The gates exist, in Node, wired through
 `hooks/hooks.json`. Five agent charters and thirteen of fourteen skills carry real
 content; `status` is still a stub and lands in Phase 6.
 
@@ -101,10 +101,16 @@ while leaving 60% of the cores idle, and the merge-order conflict rate is **1 in
 concurrent pairs. The measurement's own recommendation is that nothing needs changing —
 serialising the gates would make the founder wait longer.
 
-Next is **Phase 7** of [docs/PLAN.md](docs/PLAN.md) — package the plugin and prove it
-with a dry run on a stack that is not Python. **Phase 6 is deferred until the plugin has
-been used**, by founder decision confirmed 2026-08-12; it tunes the scaffolder and the
-skill descriptions, and Phase 7's dry run is what produces the usage that tuning needs.
+Phase 7 packaged the plugin and proved it: installed from GitHub into a fresh repo, and a
+dry run on a Go product that reached a founder-merged PR with all six gates firing. The
+record is in
+[logs/2026-08-13-checkpoint-7-verification/summary.md](logs/2026-08-13-checkpoint-7-verification/summary.md).
+
+Next is **Phase 6** of [docs/PLAN.md](docs/PLAN.md) — the scaffolder and the tracker. It
+was deferred at Checkpoint 5 until the plugin had been used, and Phase 7's dry run is that
+usage. Five slices, P6.1 through P6.5: the scaffolder, the guard declaration the dry run
+found missing (#64), `/aeo:status` for real, the trigger eval's before number, and the
+`skill-creator` tuning pass judged by it.
 
 Four findings overturn things the vendored skill states as settled. They are cheap to
 miss and expensive to discover late:
