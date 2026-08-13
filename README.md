@@ -28,10 +28,15 @@ If you ever see that line, treat the session as ungated until it's fixed.
 
 ## Install
 
-`Muhanad-husn/AEO` is currently a **private** repository. The commands below
-need collaborator access — without it, `marketplace add` fails at the clone
-step with a permission error, not a helpful one. Ask the owner to add you as
-a collaborator before you try.
+A Claude Code marketplace is a repository that publishes plugins, and this
+repository is one. The whole mechanism is a single file,
+`.claude-plugin/marketplace.json` at the root: it names a marketplace called
+`aeo` and one plugin, also called `aeo`, whose source is the `plugin/`
+directory sitting beside it. There is no build step, no release artifact, and
+nothing to download by hand.
+
+The repository is public. Anyone can install it, and no account, token, or
+collaborator access is involved.
 
 From inside a Claude Code session:
 
@@ -47,8 +52,35 @@ claude plugin marketplace add Muhanad-husn/AEO
 claude plugin install aeo@aeo
 ```
 
-Both add this repository as a marketplace named `aeo` and install the `aeo`
-plugin it publishes.
+The first command clones this repository and registers it as a marketplace
+named `aeo`. The second installs the `aeo` plugin that marketplace publishes.
+`aeo@aeo` is `plugin@marketplace`, and both happen to be called `aeo`, so the
+doubled name reads like a typo and is not one.
+
+The install lands in Claude Code's own plugin directory. It does not write
+into whichever repository you happen to be working in.
+
+### What that installs
+
+Fifteen skills, five agent charters, and six gate scripts wired to two hook
+events — `SessionStart` and `PreToolUse`.
+
+**Seven of the fifteen skills are operator-invoked only.** They run when you
+type their slash command and never on their own, no matter what you say to
+Claude:
+
+```
+/aeo:fix   /aeo:review   /aeo:sprint-plan   /aeo:sprint-start
+/aeo:status   /aeo:triage   /aeo:verify
+```
+
+This matters on the first day more than any other fact about the plugin. If
+you describe a sprint in a sentence and wait for `/aeo:sprint-start` to pick
+it up, nothing happens, and the plugin looks broken when it is behaving
+exactly as designed. Type the command. The remaining eight skills do trigger
+on description, so Claude reaches for them mid-session without being asked.
+[The lanes](#the-lanes) below shows the whole set and the order the
+development ones run in.
 
 ## Uninstall
 
@@ -65,13 +97,10 @@ orphaned plugin caches Claude Code is holding, not just this one.
 
 ## The lanes
 
-Fifteen skills ship today. Seven are operator-invoked only
-(`disable-model-invocation: true`: they run when you type the slash
-command, never on their own read of a description) and eight trigger on
-description, so Claude can reach for them mid-session.
-
-All fifteen are below. The seven drawn with a `/aeo:` prefix are the
-operator-invoked ones; nothing you say makes them fire.
+All fifteen skills are below. The seven drawn with a `/aeo:` prefix are the
+operator-invoked ones, and `disable-model-invocation: true` in their
+frontmatter is what makes them so. The other eight carry no such flag and
+fire on their descriptions.
 
 ```mermaid
 flowchart TB
