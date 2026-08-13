@@ -1,0 +1,71 @@
+# The scaffolded tree, D:\aeo-scaffold-proof, captured before teardown
+
+## git
+```
+8375534 chore: scaffold the project
+branch: main
+commits: 1
+HEAD: 83755340da672813e0d078ad595317e38a8e4ff9
+status --porcelain --ignored: (empty below means clean)
+```
+
+## tracked files
+```
+.claude/settings.json
+.gitignore
+README.md
+docs/tdd-evidence/.gitkeep
+go.mod
+logs/.gitkeep
+plans/.gitkeep
+specs/.gitkeep
+src/.gitkeep
+tests/baseline_test.go
+```
+
+## creation order (mtime), logs/ first
+```
+09:29:57.027 logs/.gitkeep
+09:30:00.315 .gitignore
+09:30:02.686 .claude/settings.json
+09:30:02.831 specs/.gitkeep
+09:30:02.977 plans/.gitkeep
+09:30:03.115 docs/tdd-evidence/.gitkeep
+09:30:07.791 README.md
+09:30:08.466 go.mod
+09:30:11.307 tests/baseline_test.go
+09:30:11.451 src/.gitkeep
+```
+
+## .claude/settings.json
+```json
+{
+  "env": {
+    "AEO_LIVE_DATA_ROOT": "",
+    "AEO_DATA_ROOT": ""
+  }
+}
+```
+
+## go.mod
+```
+module github.com/Muhanad-husn/aeo-scaffold-proof
+
+go 1.26
+```
+
+## tests/baseline_test.go
+```go
+package tests
+
+import "testing"
+
+// TestBaselineSuiteRuns pins nothing about the product. It exists so the
+// scaffolded repository has a green suite before any product code is written,
+// and so the commit gate has a command that resolves and passes from day one.
+func TestBaselineSuiteRuns(t *testing.T) {
+	if 1+1 != 2 {
+		t.Fatal("the baseline suite did not run as expected")
+	}
+}
+```

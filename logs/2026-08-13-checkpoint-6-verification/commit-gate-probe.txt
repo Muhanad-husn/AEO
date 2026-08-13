@@ -1,0 +1,19 @@
+**Command not allowed to run.** PreToolUse hook blocked before git executed.
+
+Verbatim tool return:
+
+```
+PreToolUse:Bash hook error: [node ${CLAUDE_PLUGIN_ROOT}/hooks/commit-gate.mjs]: BLOCKED: no direct commits on main. Work on a branch and merge via PR after founder approval.
+```
+
+`git log --oneline`:
+```
+8375534 chore: scaffold the project
+```
+
+`git rev-parse --abbrev-ref HEAD`:
+```
+main
+```
+
+No new commit. HEAD unchanged at 8375534.
