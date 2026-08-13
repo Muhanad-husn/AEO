@@ -208,3 +208,11 @@ path to `git merge`, `gh pr merge`, or a push to your default branch, no
 matter how they're invoked. Your own session merges, but only once
 you've approved it, never on a role's judgment and never before that
 approval. That's the product, not a limitation of it.
+
+## Licence
+
+AEO's own work is MIT. The exception is `source/`, a verbatim reference
+snapshot of other trees kept for provenance: it is governed by the terms
+those trees carry, not by AEO's MIT grant. [LICENSE](LICENSE) states the
+exact scope, tree by tree. Read it before you redistribute anything from
+this repository.
