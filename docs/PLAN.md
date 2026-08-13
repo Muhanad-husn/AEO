@@ -293,14 +293,11 @@ measured in #17, which recommends changing nothing.
 
 ## Phase 6 — Scaffolder and tracker
 
-**Deferred until the plugin has been used. Phase 7 runs first.** Founder decision,
-confirmed 2026-08-12 at Checkpoint 5.
-
-The reason is that this phase tunes descriptions and shrinks the scaffolder against how
-the plugin is actually used, and nobody has used it yet — so tuning now is tuning against
-a guess, and [D23](DECISIONS.md) already moved the trigger eval here so the number lands
-against the descriptions the tuning produces. Phase 7's dry run on a throwaway product is
-what produces the usage this phase needs to be worth doing.
+**Deferred at Checkpoint 5 until the plugin had been used; unblocked by Checkpoint 7.**
+The deferral reason was that this phase tunes descriptions and shrinks the scaffolder
+against how the plugin is actually used, and nobody had used it — so tuning then was
+tuning against a guess. Phase 7's dry run on a Go product is the usage, and it also left
+this phase one defect of its own (#64).
 
 - The skill shrinks to **Phase 0 (detect stack, tree, git/`gh`, branch protection) and
   Phase 1 (write the project handbook)**. No project config file
@@ -317,6 +314,19 @@ what produces the usage this phase needs to be worth doing.
   ([D23](DECISIONS.md)). Moved out of P2.M so the measurement lands against the
   descriptions the tuning produces rather than the ones it is about to replace. A tuned
   description with no before-and-after is not an improvement, it is a claim.
+
+| Slice | Model | Authors | Must not |
+|---|---|---|---|
+| **P6.1** the scaffolder | **Opus** | `plugin/skills/new-project/` — verify the toolchain, detect the stack, write the tree with `logs/` before any product code (EN-14), init git, and prepare `gh repo create` plus branch protection for founder approval; then write the project handbook. Tests assert the emitted tree, not the instructions | Reintroduce a project config file ([D10](DECISIONS.md)). Carry over `directory-tree.md`'s hardcoded example repo name, or its GitHub Pro assumption stated as settled fact |
+| **P6.2** the guard the scaffold leaves inert (#64) | **Sonnet** | Whatever the scaffolder emits declares `AEO_LIVE_DATA_ROOT` in one visible place — a declared blank the founder fills in, rather than an absent variable — with a test over the scaffolded output | Change `sandbox-guard`'s semantics. The gate is correct; the default state of a new install is what is wrong |
+| **P6.3** `/aeo:status` | **Sonnet** | `plugin/skills/status/` for real — issues, PR state and the Decision Log, read every run and rendered (EN-7, [D5](DECISIONS.md)); session start reads it first. When the Decision Log is absent it says so and names what it looked for | Write, cache or hand-maintain any part of what it renders. A stale file is the thing [D5](DECISIONS.md) exists to kill |
+| **P6.4** the trigger eval | **Opus** | The harness and the **before** number over the six description-triggered skills, with L-10 discipline — noise floor first, per-skill results rather than one total | Touch a single description. This slice measures; the next one tunes |
+| **P6.5** the tuning pass | **Opus** | `skill-creator` over those six plus the scaffolder's own description, re-run through P6.4's harness, reporting what flipped and in which direction; the write-up under `logs/` | Declare a description improved without its after-number ([D23](DECISIONS.md)). Tune the six operator-invoked lanes; they do not trigger on description |
+
+`P6.1` gates `P6.2` and `P6.5`. `P6.4` gates `P6.5`. `P6.3` needs nothing (3 parallel at
+peak). V-06 needs no slice: the plugin already ships as an installed unit, so the
+gitignored-harness problem is removed rather than solved, and Checkpoint 7 is where that
+was proven.
 
 **Verify:** scaffolding a fresh repo on a non-Python stack produces a working org;
 `/aeo:status` reflects reality with no hand-maintained file.
@@ -391,7 +401,7 @@ gets its own worktree, branch and PR; none share files, and none create the same
 | 3 | Evidence substrate; feeds Phase 4 |
 | 4 | Needs Phase 3's structured logs |
 | 5 | Needs Phase 1's tested worktree handling |
-| 6 | Needs the plugin content settled to know what is left to scaffold — **and, since 2026-08-12, deferred until it has been used, so it runs after 7** |
+| 6 | Needs the plugin content settled to know what is left to scaffold — **and, by the 2026-08-12 deferral, needs it used, so it runs after 7** |
 | 7 | Proves the whole thing |
 
 ## Division of labour
