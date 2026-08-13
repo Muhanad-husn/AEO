@@ -1,6 +1,6 @@
 ---
 name: worker-dispatch
-description: Fan a bounded mechanical task out across operation workers — many subagents writing into one checkout, in numbers the task sets, reaching exactly one commit. Use when a task divides into independent mechanical units and the question is how many workers, what each may write, and where the gates apply. Do not use for implementation work that needs its own branch and pull request; that is a development actor, one worktree each, and capped.
+description: Use this skill for a bulk mechanical chore one agent would otherwise grind through serially — fan it out across operation workers, many subagents writing into one checkout, in numbers the task sets, reaching exactly one commit. Use it when the work divides into many independent, near-identical units with no design decision left inside any of them, and the real question is how many workers, what each may write, and where the gates apply. Do not use it when the units add or change behaviour, need a test written first, or produce something a reviewer should read as a change; that is implementation work and it belongs to red-green-refactor however many files it spans. Do not use it for feature work that needs its own branch and pull request either; that is a development actor, one worktree each, and capped.
 ---
 
 # Worker dispatch — operation workers

@@ -1,0 +1,45 @@
+OVERALL
+  before mean 90.2%  min 90.0 max 92.5 stdev 0.6
+  after  mean 96.8%  min 95.0 max 100.0 stdev 1.7
+  none-accuracy before 92.2%  after 93.3%
+  flipped cases before 2/40  after 2/40
+
+PER-RUN MEANS (after), 5 repeats each
+  run 1: 97.5, 95.0, 97.5, 97.5, 97.5  mean 97.0%  spread 2.5pp  flipped 2/40  (pooled check 97.0)
+  run 2: 100.0, 97.5, 95.0, 95.0, 95.0  mean 96.5%  spread 5.0pp  flipped 2/40  (pooled check 96.5)
+  run 3: 95.0, 97.5, 100.0, 95.0, 97.5  mean 97.0%  spread 5.0pp  flipped 2/40  (pooled check 97.0)
+
+PER SKILL
+  skill                 n   recall B->A        ff/repeat B->A     precision B->A
+  monitor-design        3    66.7 -> 100.0 (±0.0)   0.00 -> 0.00 (±0.0)   100.0 -> 100.0
+  new-project           4   100.0 -> 100.0 (±0.0)   0.00 -> 0.00 (±0.0)   100.0 -> 100.0
+  red-green-refactor    4    75.0 -> 100.0 (±0.0)   0.00 -> 0.47 (±1.0)   100.0 ->  90.7
+  safe-cleanup          3   100.0 ->  84.5 (±33.3)   0.00 -> 0.00 (±0.0)   100.0 -> 100.0
+  safe-pr               3   100.0 -> 100.0 (±0.0)   0.00 -> 0.00 (±0.0)   100.0 -> 100.0
+  tdd-ci                4    75.0 -> 100.0 (±0.0)   0.00 -> 0.00 (±0.0)   100.0 -> 100.0
+  tdd-plan              4   100.0 -> 100.0 (±0.0)   0.93 -> 0.33 (±1.0)    81.3 ->  93.3
+  worker-dispatch       3   100.0 -> 100.0 (±0.0)   0.53 -> 0.00 (±0.0)    86.7 -> 100.0
+
+PER CASE — every case whose verdict distribution changed
+  md-n3   expect monitor-design       0/15 -> 15/15  IMPROVED
+      before: NONE x15
+      after : monitor-design x15
+  rgr-n2  expect red-green-refactor   0/15 -> 15/15  IMPROVED
+      before: worker-dispatch x8, NONE x7
+      after : red-green-refactor x15
+  sc-n2   expect safe-cleanup        15/15 ->  8/15  REGRESSED
+      before: safe-cleanup x15
+      after : safe-cleanup x8, NONE x7
+  ci-n1   expect tdd-ci               0/15 -> 15/15  IMPROVED
+      before: NONE x15
+      after : tdd-ci x15
+  wd-n2   expect NONE                 1/15 ->  3/15  IMPROVED
+      before: tdd-plan x14, NONE x1
+      after : red-green-refactor x7, tdd-plan x5, NONE x3
+
+AFTER — wrong firings
+  red-green-refactor on wd-n2 7/15 (expected NONE)
+  tdd-plan on wd-n2 5/15 (expected NONE)
+AFTER — misses
+  safe-cleanup missed sc-n2 7/15, NONE took it
+AFTER — unanimous-failure check

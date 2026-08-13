@@ -1,6 +1,6 @@
 ---
 name: tdd-plan
-description: Split a new feature, product, or fix into thin, independently valuable vertical slices before any code is written, and write one execution plan per slice to disk. Trigger at the start of new work, or on a request to slice something up, find the smallest first step, or plan test-first. The output plan is the contract red-green-refactor executes next. For sprint- or epic-scale work that needs filed GitHub issues, use `/aeo:sprint-plan` instead.
+description: Use this skill when someone wants work broken down before any code is written — split a feature, product, rewrite, or fix into thin, independently valuable vertical slices and write one execution plan per slice to disk. Use it whenever the ask is for the breakdown itself — slice this up, what is the smallest first step, what order should these go in, plan it test-first. The resulting plan is the contract red-green-refactor executes next. Do not use it when the user is asking for the work to be carried out rather than planned, however large that work is and even when they want it parallelised; that is implementation. At sprint or epic scale, where several actors work in parallel or GitHub issues need filing, use `/aeo:sprint-plan` instead.
 ---
 
 # TDD Plan — slice and plan

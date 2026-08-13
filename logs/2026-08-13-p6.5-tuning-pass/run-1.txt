@@ -1,0 +1,27 @@
+Trigger eval — 8 description-triggered skills, 40 cases, 5 repeats, judge sonnet
+
+NOISE FLOOR (read this before any score)
+  overall accuracy across repeats: 97.5%, 95.0%, 97.5%, 97.5%, 97.5%
+  spread 2.5% (min 95.0%, max 97.5%, stdev 1.0%)
+  cases whose verdict re-rolled: 2/40 (5.0%)
+
+PER SKILL
+  skill               n  recall (spread)        false fires (spread)
+  monitor-design      3  100.0% (±  0.0%)    0.0 (±0.0)
+  new-project         4  100.0% (±  0.0%)    0.0 (±0.0)
+  red-green-refactor  4  100.0% (±  0.0%)    0.4 (±1.0)
+  safe-cleanup        3   86.7% (± 33.3%)    0.0 (±0.0)
+  safe-pr             3  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-ci              4  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-plan            4  100.0% (±  0.0%)    0.4 (±1.0)
+  worker-dispatch     3  100.0% (±  0.0%)    0.0 (±0.0)
+
+FIRED WHERE IT SHOULD NOT — the P6.5 work order, first half
+  red-green-refactor on wd-n2 (2/5 repeats) — should have been NONE
+      "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it."
+  tdd-plan on wd-n2 (2/5 repeats) — should have been NONE
+      "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it."
+
+DID NOT FIRE WHERE IT SHOULD — the second half
+  safe-cleanup missed sc-n2 (2/5 repeats), NONE took it instead
+      "Delete the merged branches on GitHub as well as locally."
