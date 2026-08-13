@@ -1,0 +1,315 @@
+{
+  "version": 1,
+  "authored": "2026-08-13",
+  "authored_for": "P6.4 (issue #82)",
+  "note": "Authored from what a founder would plausibly type, not derived from the skill descriptions. Wording deliberately avoids the descriptions' own vocabulary: a case set written out of the text it scores measures the case set. 'expect' is a roster skill name or NONE. NONE is correct whenever the prompt belongs to an operator lane (those carry disable-model-invocation: true and are unreachable by description) or to no skill at all.",
+  "cases": [
+    {
+      "id": "md-p1",
+      "kind": "positive",
+      "expect": "monitor-design",
+      "prompt": "The nightly reindex takes about six hours and all I get is a spinner. I want a readout that tells me which stage it is on and how much of the budget it has burned.",
+      "why": "The plainest statement of the job monitor-design exists for: one named long-running job, a derived reading the generic monitor does not compute."
+    },
+    {
+      "id": "md-p2",
+      "kind": "positive",
+      "expect": "monitor-design",
+      "prompt": "For the customer import job specifically, put together a view showing how many records are left and what it has cost so far.",
+      "why": "Same intent stated as a build request rather than a complaint, to check the description is not keyed to the complaint framing."
+    },
+    {
+      "id": "md-n1",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": ["monitor-design"],
+      "prompt": "Is the reindex still going, or has it wedged?",
+      "why": "monitor-design's description explicitly disclaims this question — it is answered by running the generic monitor, not by designing an overlay. A skill carrying an anti-trigger should be tested against it."
+    },
+    {
+      "id": "md-n2",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": ["monitor-design"],
+      "prompt": "How far along is the migration?",
+      "why": "The second question monitor-design's description disclaims by name, phrased the way it would actually be typed."
+    },
+    {
+      "id": "md-n3",
+      "kind": "near-miss",
+      "expect": "monitor-design",
+      "competes": ["worker-dispatch"],
+      "prompt": "The four-hundred-file rename is running now. Give me a progress readout for that job.",
+      "why": "Sits between monitor-design and worker-dispatch. The subject is a fan-out job, but the ask is a view of it, not a dispatch. Tests whether worker-dispatch's vocabulary pulls a monitoring request across."
+    },
+
+    {
+      "id": "rgr-p1",
+      "kind": "positive",
+      "expect": "red-green-refactor",
+      "prompt": "Here is the slice plan for token refresh. Build it.",
+      "why": "The handoff red-green-refactor is specified to receive: an existing plan, now execute it."
+    },
+    {
+      "id": "rgr-p2",
+      "kind": "positive",
+      "expect": "red-green-refactor",
+      "prompt": "Fix the cart total rounding, but I want the test written before the code.",
+      "why": "Small change plus an explicit test-first demand. Also probes the boundary with the fix lane, which is operator-invoked: the test-first demand is what should tip it here rather than nowhere."
+    },
+    {
+      "id": "rgr-n1",
+      "kind": "near-miss",
+      "expect": "tdd-plan",
+      "competes": ["red-green-refactor"],
+      "prompt": "I have a rough idea for offline mode. What is the smallest first piece worth shipping?",
+      "why": "The tdd-plan / red-green-refactor pair, on the planning side. Nothing exists yet, so implementing is wrong."
+    },
+    {
+      "id": "rgr-n2",
+      "kind": "near-miss",
+      "expect": "red-green-refactor",
+      "competes": ["worker-dispatch"],
+      "prompt": "Add deleted_at handling to the three repository classes that need it.",
+      "why": "The red-green-refactor / worker-dispatch pair. Mechanical-sounding and spread across files, but three files is implementation work, not a fan-out."
+    },
+
+    {
+      "id": "sc-p1",
+      "kind": "positive",
+      "expect": "safe-cleanup",
+      "prompt": "My branch list is a mess. Get rid of the ones whose pull requests already landed.",
+      "why": "The core case, stated the way it is actually said."
+    },
+    {
+      "id": "sc-p2",
+      "kind": "positive",
+      "expect": "safe-cleanup",
+      "prompt": "I have about thirty local branches left over from last month. Delete the finished ones and leave anything still in flight.",
+      "why": "Same intent with the safety condition attached, which is the part the skill is built around."
+    },
+    {
+      "id": "sc-n1",
+      "kind": "near-miss",
+      "expect": "safe-pr",
+      "competes": ["safe-cleanup"],
+      "prompt": "This branch is finished. Get it in front of me.",
+      "why": "The safe-cleanup / safe-pr pair. Both are end-of-branch work; only one of them opens anything."
+    },
+    {
+      "id": "sc-n2",
+      "kind": "near-miss",
+      "expect": "safe-cleanup",
+      "competes": ["NONE"],
+      "prompt": "Delete the merged branches on GitHub as well as locally.",
+      "why": "Half the request is outside safe-cleanup's stated limits, which is exactly when a skill should still be selected and then refuse the out-of-bounds half. A description that goes quiet here leaves the founder with no handler at all."
+    },
+
+    {
+      "id": "pr-p1",
+      "kind": "positive",
+      "expect": "safe-pr",
+      "prompt": "The slice is green. Put the pull request up with the terminal output attached.",
+      "why": "The core case for a service-shaped slice."
+    },
+    {
+      "id": "pr-p2",
+      "kind": "positive",
+      "expect": "safe-pr",
+      "prompt": "Everything passes locally. Raise it for review and include the proof.",
+      "why": "Same intent without naming the evidence format, so the description cannot key on the word screenshot or transcript."
+    },
+    {
+      "id": "pr-n1",
+      "kind": "near-miss",
+      "expect": "tdd-ci",
+      "competes": ["safe-pr"],
+      "prompt": "I want these tests blocking merges, not just running on my laptop.",
+      "why": "The safe-pr / tdd-ci pair. Both concern pull requests; only one writes a workflow."
+    },
+    {
+      "id": "pr-n2",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": ["safe-pr", "red-green-refactor"],
+      "prompt": "Go over my diff and tell me what is wrong with it before I open anything.",
+      "why": "This is the review lane, which is operator-invoked and not in the roster. If safe-pr takes it, a description-triggered skill is poaching a lane's prompt."
+    },
+    {
+      "id": "pr-n3",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": ["safe-pr"],
+      "prompt": "Merge this once it is green.",
+      "why": "No roster skill merges anything, and safe-pr's description says so in as many words. Anything that fires here has read past its own limits."
+    },
+
+    {
+      "id": "ci-p1",
+      "kind": "positive",
+      "expect": "tdd-ci",
+      "prompt": "Add the GitHub Actions workflow so the unit tests and the browser tests both run on every pull request.",
+      "why": "The core case, named concretely."
+    },
+    {
+      "id": "ci-p2",
+      "kind": "positive",
+      "expect": "tdd-ci",
+      "prompt": "Set up continuous integration for this repo.",
+      "why": "The same ask at its vaguest. A description that only fires on the concrete phrasing is brittle."
+    },
+    {
+      "id": "ci-n1",
+      "kind": "near-miss",
+      "expect": "tdd-ci",
+      "competes": ["NONE"],
+      "prompt": "Make the test job a required check on main.",
+      "why": "Phrased as a repository settings change rather than a file to write, which is where it could slide to NONE."
+    },
+    {
+      "id": "ci-n2",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": ["tdd-ci", "red-green-refactor"],
+      "prompt": "The end-to-end suite is flaky in CI. Work out why and fix it.",
+      "why": "Carries tdd-ci's vocabulary but asks for debugging, which is the fix lane's job and the fix lane is operator-invoked. Tests whether tdd-ci fires on the word CI alone."
+    },
+
+    {
+      "id": "tp-p1",
+      "kind": "positive",
+      "expect": "tdd-plan",
+      "prompt": "New feature: saved searches. Break it into the thinnest pieces that each deliver something on their own.",
+      "why": "The core case."
+    },
+    {
+      "id": "tp-p2",
+      "kind": "positive",
+      "expect": "tdd-plan",
+      "prompt": "Before anyone writes code, cut this rewrite into steps and write each step down somewhere.",
+      "why": "Same intent emphasising the written output, which is the part that distinguishes it from a conversation."
+    },
+    {
+      "id": "tp-n1",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": ["tdd-plan"],
+      "prompt": "Turn section four of the spec into a backlog of GitHub issues for the coming sprint.",
+      "why": "This is the sprint-plan lane, which is operator-invoked. tdd-plan's own description points here, so the question is whether it points or grabs."
+    },
+    {
+      "id": "tp-n2",
+      "kind": "near-miss",
+      "expect": "red-green-refactor",
+      "competes": ["tdd-plan"],
+      "prompt": "The plan for slice three is written. Start on it, test first.",
+      "why": "The tdd-plan / red-green-refactor pair from the other side: a plan is mentioned, but it already exists."
+    },
+
+    {
+      "id": "wd-p1",
+      "kind": "positive",
+      "expect": "worker-dispatch",
+      "prompt": "Rename userId to accountId across the codebase, roughly four hundred files. Spread it over several agents and land it as one commit.",
+      "why": "The core case, with the shape and the fan-out both stated."
+    },
+    {
+      "id": "wd-p2",
+      "kind": "positive",
+      "expect": "worker-dispatch",
+      "prompt": "All eighty fixture files need regenerating to the new schema. Split the work up between agents.",
+      "why": "Same shape, different domain, so the description cannot be keyed to renames."
+    },
+    {
+      "id": "wd-p3",
+      "kind": "positive",
+      "expect": "worker-dispatch",
+      "prompt": "Strip the deprecated licence header out of every file under src. There are hundreds of them.",
+      "why": "The fan-out is implied by the volume rather than requested outright, which is how it usually arrives."
+    },
+    {
+      "id": "wd-n1",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": ["worker-dispatch"],
+      "prompt": "Take the next four issues at the same time, each on its own branch with its own pull request.",
+      "why": "The sprint-start lane, which is operator-invoked, and the exact case worker-dispatch's description disclaims. The strongest single test of that anti-trigger."
+    },
+    {
+      "id": "wd-n2",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": ["worker-dispatch"],
+      "prompt": "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it.",
+      "why": "Asks for a fan-out in as many words, but the work is a feature that needs its own branch and pull request, which worker-dispatch excludes. Tests whether the request for parallelism overrides the exclusion."
+    },
+
+    {
+      "id": "np-p1",
+      "kind": "positive",
+      "expect": "new-project",
+      "prompt": "Empty folder, nothing in it yet. Stand me up a repository I can actually work in.",
+      "why": "The core case: no repository exists and the ask is to make one that the rest of the lanes can operate on."
+    },
+    {
+      "id": "np-p2",
+      "kind": "positive",
+      "expect": "new-project",
+      "prompt": "I have just installed this thing. What do I do first?",
+      "why": "The orientation question a first-time operator actually types. Nothing in it names a repository, a stack, or a commit."
+    },
+    {
+      "id": "np-p3",
+      "kind": "positive",
+      "expect": "new-project",
+      "prompt": "Bootstrap a new Go service from scratch, with the tests wired up and a first commit landed.",
+      "why": "Same intent with a stack named, so the description cannot be keyed only to the empty-folder framing."
+    },
+    {
+      "id": "np-n1",
+      "kind": "near-miss",
+      "expect": "tdd-plan",
+      "competes": ["new-project"],
+      "prompt": "The repo already exists. Cut the payments feature into pieces before we start on it.",
+      "why": "The new-project / tdd-plan pair, on the side new-project's last sentence points away from. Both answer start some work; only one of them assumes there is nothing there yet."
+    },
+    {
+      "id": "np-n2",
+      "kind": "near-miss",
+      "expect": "new-project",
+      "competes": ["tdd-plan"],
+      "prompt": "Brand new product, nothing written yet. Where do I start?",
+      "why": "The same pair from the other side. Reads like planning, but there is no repository to plan inside."
+    },
+    {
+      "id": "np-n3",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": ["new-project"],
+      "prompt": "Turn on branch protection for this repo.",
+      "why": "new-project prepares branch protection, but only while standing a project up. An existing repository needing one setting changed is nobody on the roster, and firing the scaffolder at it would be destructive."
+    },
+
+    {
+      "id": "cn-1",
+      "kind": "control-none",
+      "expect": "NONE",
+      "prompt": "What is the capital of Portugal?",
+      "why": "Judge-generosity control. L-10 records that judges are systematically generous; if the roster fires on this, no score below it is trustworthy."
+    },
+    {
+      "id": "cn-2",
+      "kind": "control-none",
+      "expect": "NONE",
+      "prompt": "Explain how a bloom filter works.",
+      "why": "Second control, technical enough to tempt a coding skill but asking for nothing to be done."
+    },
+    {
+      "id": "cn-3",
+      "kind": "control-none",
+      "expect": "NONE",
+      "prompt": "Read config.yaml and tell me what the request timeout is set to.",
+      "why": "Third control: real repository work that no skill covers. Distinguishes a roster that declines off-topic questions from one that declines only non-technical ones."
+    }
+  ]
+}
