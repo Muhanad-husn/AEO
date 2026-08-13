@@ -143,7 +143,7 @@ Bundled resource:
    ```
    gh api -X PUT repos/<owner>/<repo>/branches/main/protection \
      -H "Accept: application/vnd.github+json" \
-     -f 'required_pull_request_reviews[required_approving_review_count]=0' \
+     -F 'required_pull_request_reviews[required_approving_review_count]=0' \
      -F 'enforce_admins=true' \
      -F 'required_status_checks=null' \
      -F 'restrictions=null'
@@ -158,13 +158,30 @@ Bundled resource:
    Required status checks are left null until CI exists to name, which `tdd-ci`
    creates on the first slice.
 
+   Every value that is not a string carries `-F`, and that is load-bearing rather
+   than stylistic. `gh api -f` sends its value as a string, so the review count
+   would go as `"0"` against a field the API types as an integer and the whole
+   call would be rejected.
+
    Two things belong in the checkpoint as choices rather than as assertions.
    Visibility is the founder's call, and the command above defaults to private
-   only because that is the safer default to present. Branch protection on a
-   private repository has historically required a paid GitHub tier; check the
-   current terms for this account rather than repeating a plan name, and put the
-   real options to the founder: public visibility, a paid plan, or running
-   without the server-side backstop and relying on the merge gate alone.
+   only because that is the safer default to present. Whether protection is
+   available at all is the other, and it is settled by attempting the call rather
+   than by inspecting the account first. Do not look up the plan tier: `gh api
+   user` reports `plan` only on a token carrying the `user` scope, which
+   `gh auth login` does not grant, so on an ordinary token the field comes back
+   null and answers nothing. Run the protection call and read what comes back.
+
+   - **Success.** Protection is on. Report the properties it set.
+   - **403.** The tier refusal. Protection on a private repository has
+     historically required a paid GitHub tier, and this is where that bites. It
+     is a cost decision and it belongs to the founder, so put the real options to
+     them rather than choosing one: public visibility, a paid plan, or running
+     without the server-side backstop and relying on the merge gate alone.
+   - **422.** A malformed request — a bug in the command rather than a limit on
+     the account. The message names the property the API rejected. Fix the
+     command and rerun it, and do not present a cost decision the account is not
+     actually facing.
 
    Then report: the tree, the resolved test command, the green baseline, the one
    commit, whether protection is on, and that `.claude/settings.json` declares
