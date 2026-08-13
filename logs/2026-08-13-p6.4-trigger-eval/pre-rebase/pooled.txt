@@ -1,0 +1,34 @@
+Trigger eval — 7 description-triggered skills, 34 cases, 10 repeats, judge sonnet
+
+NOISE FLOOR (read this before any score)
+  overall accuracy across repeats: 88.2%, 88.2%, 85.3%, 88.2%, 91.2%, 88.2%, 88.2%, 85.3%, 88.2%, 88.2%
+  spread 5.9% (min 85.3%, max 91.2%, stdev 1.6%)
+  cases whose verdict re-rolled: 3/34 (8.8%)
+
+PER SKILL
+  skill               n  recall (spread)        false fires (spread)
+  monitor-design      3   66.7% (±  0.0%)    0.0 (±0.0)
+  red-green-refactor  4   75.0% (±  0.0%)    0.0 (±0.0)
+  safe-cleanup        3   93.3% (± 33.3%)    0.0 (±0.0)
+  safe-pr             3  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-ci              4   75.0% (±  0.0%)    0.0 (±0.0)
+  tdd-plan            3  100.0% (±  0.0%)    0.9 (±1.0)
+  worker-dispatch     3  100.0% (±  0.0%)    0.5 (±1.0)
+
+FIRED WHERE IT SHOULD NOT — the P6.5 work order, first half
+  tdd-plan on wd-n2 (9/10 repeats) — should have been NONE
+      "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it."
+  worker-dispatch on rgr-n2 (5/10 repeats) — should have been red-green-refactor
+      "Add deleted_at handling to the three repository classes that need it."
+
+DID NOT FIRE WHERE IT SHOULD — the second half
+  tdd-ci missed ci-n1 (10/10 repeats), NONE took it instead
+      "Make the test job a required check on main."
+  monitor-design missed md-n3 (10/10 repeats), NONE took it instead
+      "The four-hundred-file rename is running now. Give me a progress readout for that job."
+  red-green-refactor missed rgr-n2 (5/10 repeats), NONE took it instead
+      "Add deleted_at handling to the three repository classes that need it."
+  red-green-refactor missed rgr-n2 (5/10 repeats), worker-dispatch took it instead
+      "Add deleted_at handling to the three repository classes that need it."
+  safe-cleanup missed sc-n2 (2/10 repeats), NONE took it instead
+      "Delete the merged branches on GitHub as well as locally."
