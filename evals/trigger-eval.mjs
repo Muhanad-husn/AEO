@@ -34,6 +34,13 @@
 // the per-skill spread and the per-case flip list for exactly that reason, and the flip
 // list is there because L-10 also says to diff the entries that flipped, never the totals.
 //
+// One definition worth stating outright, because recomputing it is the only other way to
+// find out: the precision this harness reports is the mean of the per-repeat precision
+// ratios — `scoreRun` computes precision within one repeat and `aggregateRuns` averages
+// those — not a single ratio pooled over every case-repeat pair. The two differ by up to
+// 1.8 points on the denominators this case set produces, so a figure from here should
+// never be compared against a pooled precision computed some other way.
+//
 // Roster order is fixed alphabetical rather than shuffled per repeat. Shuffling would fold
 // list-position noise into the floor and make it larger than the thing being measured; a
 // fixed order means the floor reports the judge's own instability against one presentation.
