@@ -48,12 +48,12 @@ function write(root, relPath, content) {
 
 // ---------------------------------------------------------------------------
 // The golden fixture: a plugin root that satisfies every rule the grader checks.
-// Real skill names are reused (the seven lanes plus seven real description-triggered skills)
+// Real skill names are reused (the seven lanes plus eight real description-triggered skills)
 // so the fixture reads like a miniature, honest plugin rather than an arbitrary shape.
 // ---------------------------------------------------------------------------
 
 const LANES = ['sprint-plan', 'sprint-start', 'fix', 'review', 'triage', 'status', 'verify'];
-const OTHER_SKILLS = ['red-green-refactor', 'tdd-plan', 'tdd-ci', 'safe-pr', 'safe-cleanup', 'monitor-design', 'worker-dispatch'];
+const OTHER_SKILLS = ['red-green-refactor', 'tdd-plan', 'tdd-ci', 'safe-pr', 'safe-cleanup', 'monitor-design', 'worker-dispatch', 'new-project'];
 const ALL_SKILLS = [...LANES, ...OTHER_SKILLS];
 
 function skillFrontmatter(name, { lane }) {
@@ -228,9 +228,9 @@ describe('inventory', () => {
     const root = makeGoldenPluginRoot();
     rmSync(path.join(root, 'skills', 'safe-cleanup'), { recursive: true, force: true });
     const report = gradePlugin(root);
-    const check = passedFor(report, 'ships exactly 14 skills')[0];
+    const check = passedFor(report, 'ships exactly 15 skills')[0];
     assert.equal(check.passed, false);
-    assert.match(check.evidence, /found 13/);
+    assert.match(check.evidence, /found 14/);
   });
 
   test('one agent short fails the agent-count expectation', () => {
@@ -718,7 +718,7 @@ describe('cross-cutting text scans', () => {
 describe('against this repo\'s real plugin/ tree', () => {
   test('inventory and hooks.json wiring hold', () => {
     const report = gradePlugin(path.join(repoRoot, 'plugin'));
-    assert.equal(passedFor(report, 'ships exactly 14 skills')[0].passed, true);
+    assert.equal(passedFor(report, 'ships exactly 15 skills')[0].passed, true);
     assert.equal(passedFor(report, 'ships exactly 5 agents')[0].passed, true);
     assert.equal(passedFor(report, 'hooks/hooks.json exists and parses')[0].passed, true);
   });
@@ -728,7 +728,7 @@ describe('against this repo\'s real plugin/ tree', () => {
   test('every shipped skill and agent frontmatter block parses', () => {
     const report = gradePlugin(path.join(repoRoot, 'plugin'));
     const checks = passedFor(report, 'frontmatter parses as YAML');
-    assert.equal(checks.length, 19, '14 skills plus 5 agents');
+    assert.equal(checks.length, 20, '15 skills plus 5 agents');
     for (const c of checks) assert.equal(c.passed, true, `${c.text}: ${c.evidence}`);
   });
 

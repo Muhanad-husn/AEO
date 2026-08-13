@@ -46,6 +46,38 @@ that halts on the question turns every question into an interruption, and severa
 agents halting serialize the whole fleet on one person. Batching keeps the approval
 requirement and drops the serialization: the founder answers a batch once.
 
+## D8 — The gates are Node, and a gate that cannot start fails open
+
+**Rule.** Every gate runs as `node "${CLAUDE_PLUGIN_ROOT}/hooks/<gate>.mjs"`. Node 18
+or newer on `PATH` is a prerequisite, not a nicety, and a session that cannot resolve
+it is told so at the start.
+
+**Why.** A hook whose runtime does not resolve exits non-zero but not 2, and Claude
+Code treats that as a non-blocking error: the tool call proceeds. The gate does not
+fail closed and it does not fail loudly. It fails open, and the install looks
+complete while enforcing nothing. Node was chosen over an interpreter that has to be
+found by three different names on a Windows machine, one of which is a zero-byte
+alias stub. Anything that scaffolds a project checks for node before it writes a
+line, for this reason and no other.
+
+## D10 — Stack detection, and no project config file
+
+**Rule.** The test command is resolved per change, by walking up from the changed
+files to the nearest project manifest and reading the command that manifest declares.
+There is no config file for a project to set. When detection resolves nothing, the
+gate blocks and names what it looked for.
+
+**Why.** Resolution per change is what makes a polyglot repository and a mono-repo
+work with no configuration at all: a change under one package resolves that package's
+manifest, not the root's. A repo-level profile cannot do that.
+
+The absent config file is deliberate. An option almost nobody sets rots and then
+lies, which is over-engineering tripwire 2 exactly. And the escape hatch has to be a
+block rather than a default, because a gate that runs nothing and reports OK is worse
+than no gate at all. If a real project turns up that detection cannot serve, that is
+evidence for a config file, and it gets its own decision then, with the failing case
+attached.
+
 ## D11 — Three concurrency lanes, and the write-actor number lives in one file
 
 **Rule.** Read-only fan-out (review, research, verification, evidence checks) is
