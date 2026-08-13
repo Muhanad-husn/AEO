@@ -1,0 +1,19 @@
+**BLOCKED — stage 0 fail.** Review stopped at evidence-vs-claim. No spec or quality findings (stage stop rule).
+
+Packet staged at `D:\aeo-testbed\review-packets\cp4-stage-0-mismatch` (8 files, self-contained).
+
+**Finding 1 — green suite never touches the feature** (confidence 97)
+Claim: `runningTotal` takes `max`, returns `max` when total exceeds it. Evidence offered: 5/5 green. But `tests/total.test.mjs` is byte-identical to `main` — every test calls `runningTotal` with one argument, string `max` never appears. `src/total.mjs:13` (`if (typeof max === 'number' && total > max) return max;`) is never entered. Same 5 tests, same names, green before the diff and after. That is non-regression evidence only — it cannot tell this implementation apart from an inverted cap, an off-by-one boundary, or no cap at all.
+
+**Finding 2 — pasted log not from this repo** (confidence 92)
+PR body shows `aeo-testbed@1.0.0` / `node --test tests/`. This repo produces `aeo-e2e-fixture@0.1.0` / `node --test tests/*.test.mjs`. Prior recorded evidence agrees with the repo, not the PR body. Substance survives — my re-run confirms 5 pass, 0 fail — but the author's artifact carries no provenance.
+
+**Fix routes to builder:**
+- Add cap tests: total above `max` returns `max`; total below returns raw total; total equal to `max` returns total (pins the strict `>` on line 13); `max` absent or non-numeric unchanged. Restage with count above five.
+- Paste evidence from a real `npm test` at branch HEAD, unedited.
+
+**Deferred to stage 1 on next pass, not scored:** branch widens the public signature of the repo's only exported function (`(values)` to `(values, options = {})`) with no issue, no spec, no test, no justification. `src/total.mjs` is the sole production file — every consumer reaches it.
+
+No `safe-pr`.
+
+**Issue thread — nothing to post to.** Repo has one issue, #1, closed and unrelated (input guard, resolved by merged PR #2). This cap feature was never filed. Want me to open an issue for it and post these findings there, or relay to the builder directly?

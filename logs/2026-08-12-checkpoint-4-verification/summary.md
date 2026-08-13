@@ -134,8 +134,13 @@ message does not already carry the path.
 diff, a plainly stated claim, and green evidence that is about something else. A
 stage-0 regression is otherwise expensive to reproduce.
 
-The staged packet is kept at `D:\aeo-testbed\review-packets\cp4-stage-0-mismatch`
-and the reviewer's return at `D:\aeo-testbed\cp4-stage0-review.txt`.
+The staged packet and the reviewer's return were originally kept only on the
+author's machine, at `D:\aeo-testbed\review-packets\cp4-stage-0-mismatch` and
+`D:\aeo-testbed\cp4-stage0-review.txt`. On 2026-08-13 both were copied verbatim
+into this repository so the record does not depend on a local path: the packet is
+at [`evidence/packet/`](evidence/packet/) and the return at
+[`evidence/cp4-stage0-review.txt`](evidence/cp4-stage0-review.txt). Nothing else
+in this record changed.
 
 The worktree, the branch it held, the production-data root and the empty evidence
 folder were all removed. `main` is unchanged.

@@ -1,0 +1,13 @@
+> runningTotal([1, "2", 3])
+4
+> runningTotal(null)
+TypeError: runningTotal: expected 'values' to be an array, received null
+> runningTotal(42)
+TypeError: runningTotal: expected 'values' to be an array, received 42
+> runningTotal({})
+TypeError: runningTotal: expected 'values' to be an array, received [object Object]
+> runningTotal(undefined)
+TypeError: runningTotal: expected 'values' to be an array, received undefined
+> runningTotal('abc')
+TypeError: runningTotal: expected 'values' to be an array, received abc
+exit=0
