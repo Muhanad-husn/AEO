@@ -1,0 +1,18 @@
+
+> aeo-e2e-fixture@0.1.0 test
+> node --test tests/*.test.mjs
+
+✔ sums a list (1.103ms)
+✔ ignores non-numeric entries instead of producing NaN (0.2428ms)
+✔ returns 0 when no entry is numeric (0.1293ms)
+✔ keeps negative, fractional, and infinite numbers (1.2533ms)
+✔ rejects non-array input with a clear TypeError (0.9074ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 130.9705
+exit=0

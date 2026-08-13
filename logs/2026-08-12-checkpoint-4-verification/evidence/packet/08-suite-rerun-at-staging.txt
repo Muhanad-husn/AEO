@@ -1,0 +1,25 @@
+Test suite re-run by the dispatching party at staging time, on branch
+cp4/stage-0-mismatch at HEAD a59f75b. Command: `npm test` in the repo root.
+Raw output follows, unedited.
+
+> aeo-e2e-fixture@0.1.0 test
+> node --test tests/*.test.mjs
+
+✔ sums a list (0.7947ms)
+✔ ignores non-numeric entries instead of producing NaN (0.1673ms)
+✔ returns 0 when no entry is numeric (0.106ms)
+✔ keeps negative, fractional, and infinite numbers (0.1282ms)
+✔ rejects non-array input with a clear TypeError (1.5137ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 239.2249
+
+Note on the package header: the PR body's pasted evidence block reads
+`aeo-testbed@1.0.0` / `node --test tests/`, while this repository's package.json
+produces `aeo-e2e-fixture@0.1.0` / `node --test tests/*.test.mjs`. The test names
+and counts match; the headers do not.
