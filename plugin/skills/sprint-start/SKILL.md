@@ -68,8 +68,11 @@ both short.
    dependency wiring: surface where a defect carries outsized blast
    radius. Otherwise CI plus the founder's PR read is the check.
 
-7. **Prepare the PR** with `safe-pr` and wait for CI green. The pipeline
-   stops here.
+7. **Prepare the PR** with `safe-pr` and wait for CI green. Where the risk
+   rubric calls for verification, stage the review packet — per `verify`'s
+   own step 2 — before the verifier is dispatched, never the other way
+   round: a verifier dispatched onto an unstaged repository is exactly what
+   `review-jail` exists to refuse. The pipeline stops here.
 
 8. **Wrap-up brief, then report and pause.** Post the PR link, report
    `DONE`. The orchestrator merges only on the founder's explicit
@@ -128,12 +131,15 @@ looks parallel.
    "done when" each, and what the group has in common. Not N briefs.
 
 6. **Cut each worktree and dispatch each actor.** Steps 4 through 7 of
-   the procedure, once per actor, each in its own worktree. An actor
-   reporting BLOCKED goes to the founder the way a single-issue session
-   does; the rest keep going. No actor runs the full battery: each runs
-   the fast tier over its own files and leaves the rest to CI. N actors
-   running the whole suite at once is N times the machine, for a signal
-   CI is already producing once per push.
+   the procedure, once per actor, each in its own worktree. Where an
+   actor's step 7 calls for verification, that actor stages its own
+   packet before its own verifier is dispatched — the ordering in step 7
+   holds per actor, not once for the group. An actor reporting BLOCKED
+   goes to the founder the way a single-issue session does; the rest keep
+   going. No actor runs the full battery: each runs the fast tier over
+   its own files and leaves the rest to CI. N actors running the whole
+   suite at once is N times the machine, for a signal CI is already
+   producing once per push.
 
 7. **The gates apply per actor.** A gate that fired once for the session
    has not cleared the others. Each actor's commits meet the commit
