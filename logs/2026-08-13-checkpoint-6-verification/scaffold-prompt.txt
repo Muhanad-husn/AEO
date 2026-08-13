@@ -1,0 +1,7 @@
+This directory is empty and I want to start a brand new project here from scratch. It is a small command-line tool, and the stack is Go — the product code will be Go, and the test suite is Go's own.
+
+Stand the whole thing up for me: the tree, the toolchain checks, the first commit, and whatever else a new project needs before any real work can start.
+
+If a GitHub remote comes into it, the repository should be Muhanad-husn/aeo-scaffold-proof and private.
+
+Work through it end to end and report what you did. Where a step needs a decision from me that I have not already answered above, say so rather than choosing for me.

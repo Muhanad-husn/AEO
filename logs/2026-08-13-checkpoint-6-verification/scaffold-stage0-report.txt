@@ -1,0 +1,40 @@
+Stage 0 done, local. Stopping at checkpoint before anything outward-facing.
+
+**Tree** (one commit `8375534` on `main`, nothing else):
+```
+logs/.gitkeep          specs/.gitkeep     plans/.gitkeep
+docs/tdd-evidence/.gitkeep                src/.gitkeep
+.gitignore  .claude/settings.json  README.md  go.mod  tests/baseline_test.go
+```
+`logs/` written before any product path, per plan order.
+
+**Stack** — resolver saw empty dir first, then after scaffold returned exactly one unit: `go` / `go.mod` / `go test ./...`. Baseline green: `ok github.com/Muhanad-husn/aeo-scaffold-proof/tests 0.420s`.
+
+**Module path** `github.com/Muhanad-husn/aeo-scaffold-proof`, matching remote you named.
+
+**`.claude/settings.json`** ships with `AEO_LIVE_DATA_ROOT` and `AEO_DATA_ROOT` both blank — `sandbox-guard` stays inert until you fill both (live root = absolute path to production data, data root = sandbox path outside it). Session hook already flagged this gap.
+
+---
+
+### Checkpoint — approval needed before I run these
+
+1. Create remote and push:
+```
+gh repo create Muhanad-husn/aeo-scaffold-proof --private --source=. --remote=origin --push
+```
+
+2. Branch protection on `main`:
+```
+gh api -X PUT repos/Muhanad-husn/aeo-scaffold-proof/branches/main/protection \
+  -H "Accept: application/vnd.github+json" \
+  -f 'required_pull_request_reviews[required_approving_review_count]=0' \
+  -F 'enforce_admins=true' -F 'required_status_checks=null' -F 'restrictions=null'
+```
+PR required before merge, direct push to `main` blocked including for you; 0 approving reviews because you cannot approve your own PR and 1 would deadlock; status checks null until `tdd-ci` names one.
+
+### Decisions I will not make for you
+
+- **Branch protection may be refused on a free private repo.** I could not read your plan tier — the token lacks the `user` scope, so `gh api user` returns `plan: null`. If the protection call 403s, your options are: make the repo public, upgrade the plan, or run without the server-side backstop and rely on the `block-merge` hook alone. Which do you want if that happens?
+- **README paragraph is a placeholder.** You said "small command-line tool" but not what it does. Give me a sentence and I will write it properly.
+
+Say go and I run both commands, then write `CLAUDE.md` on a branch and open a PR for your review of the wording. Private visibility already taken as answered.
