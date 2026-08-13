@@ -22,6 +22,7 @@ const repoRoot = path.resolve(import.meta.dirname, '../..');
 
 const PLUGIN_MANIFEST_PATH = path.join(repoRoot, 'plugin', '.claude-plugin', 'plugin.json');
 const MARKETPLACE_MANIFEST_PATH = path.join(repoRoot, '.claude-plugin', 'marketplace.json');
+const PACKAGE_JSON_PATH = path.join(repoRoot, 'package.json');
 const README_PATH = path.join(repoRoot, 'README.md');
 
 function readJson(file) {
@@ -42,6 +43,33 @@ describe('the plugin manifest declares what C-09 requires', () => {
     const manifest = readJson(PLUGIN_MANIFEST_PATH);
     assert.equal(typeof manifest.$schema, 'string');
     assert.notEqual(manifest.$schema.trim(), '');
+  });
+});
+
+describe('the version has exactly one copy (D27)', () => {
+  // Two manifests both carried `0.1.0` until the v0.1.0 release. Neither read the
+  // other, nothing checked they agreed, and a second copy that drifts is the defect
+  // class the actor-cap file and the risk rubric each exist to prevent. `plugin.json`
+  // must keep its copy (C-09, above). So `package.json` gives its up: the package is
+  // private and never published, and npm asks for a version only when publishing.
+
+  test('package.json declares no version', () => {
+    const pkg = readJson(PACKAGE_JSON_PATH);
+    assert.equal(
+      pkg.version,
+      undefined,
+      'package.json declares a version again; plugin.json is the only place it belongs',
+    );
+  });
+
+  test('package.json is private, which is what makes the omission legal', () => {
+    // Without `private: true` npm treats a missing version as an error on install of
+    // this tree as a dependency. Dropping the flag would make the omission a bug.
+    assert.equal(readJson(PACKAGE_JSON_PATH).private, true);
+  });
+
+  test('package.json says why it has no version, so the next reader does not re-add one', () => {
+    assert.match(readJson(PACKAGE_JSON_PATH).description ?? '', /version/i);
   });
 });
 

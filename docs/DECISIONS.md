@@ -15,6 +15,93 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-13 — Two decisions closing the backlog (#106)
+
+### D27 — `v0.1.0` ships, the tag documents rather than pins, and the version has one copy
+
+**Problem.** Three questions arrived together and only make sense answered together: what
+number to cut, what a tag on this repository actually promises, and where that number
+lives.
+
+**The number is `0.1.0`, not `1.0.0`.** All seven phases are closed and the install path
+is proven, but the plugin has been used in anger once — Phase 7's dry run on a Go product.
+`1.0.0` is a claim that the skill names, the command names and the hook contract are
+stable, and the evidence for that claim is one project. `0.1.0` costs nothing, says the
+true thing, and does not foreclose `1.0.0` the moment a second project supplies the
+evidence. This is the release number both manifests already carried; cutting it changes no
+file, it just makes the number mean something.
+
+**The tag is documentation. `main` is what ships.** `/plugin marketplace add
+Muhanad-husn/AEO` clones the repository and reads `.claude-plugin/marketplace.json` from
+the **default branch**. It does not resolve tags, and `marketplace.json` has no version
+field to resolve one with. So a GitHub release here is a marker for humans and an anchor
+for release notes — it pins nothing, and an installer who runs the command the day after a
+merge gets that merge.
+
+This is accepted rather than fixed. A solo-operator plugin with one consumer does not need
+pinnable installs, and the mechanism that would provide them — publishing built artifacts,
+or a release branch the marketplace points at — is a second distribution path to maintain
+for a problem nobody has. The failure mode this decision protects against is not an
+unpinned install; it is **release notes that imply a guarantee the mechanism does not
+give**. The notes and the README both say plainly that installs track `main`. Revisit when
+a second project depends on this and wants a fixed version, not before.
+
+**The version has one copy: `plugin/.claude-plugin/plugin.json`.** `package.json` gave up
+its copy in the same change. It must not be inferred from git — C-09 records that omitting
+`version` from `plugin.json` makes the installed commit SHA the version, so every commit
+reads as a new release to whoever installed it — and `package.json` has no such
+requirement, because that manifest exists only so the commit gate can detect this
+repository's test command (D10) and is `private`, never published. npm asks for a version
+when publishing, and this never publishes. `tests/skills/packaging-surface.test.mjs` fails
+if a version returns to `package.json` or if `private` is dropped, which is what would make
+the omission a real defect rather than a deliberate one.
+
+**No `CHANGELOG.md`.** GitHub release notes serve instead. The issue's own framing was
+"one or the other, not both", and a changelog file here would be the second record
+[D5](#d5--github-issues-are-the-single-source-of-truth) exists to kill: hand-maintained,
+derived from merged PRs that GitHub already lists, and stale the first time somebody
+forgets it. The release notes are written for a stranger — what this is, what it installs,
+what it needs, what it deliberately does not do — not as a list of PR numbers.
+
+**Impact.** One release exists. One file carries the version. Nothing claims installs are
+pinned. The cost is real and stated: a user cannot install a known-good older AEO, and if
+`main` breaks, every fresh install gets the break until it is fixed forward.
+
+### D28 — Whether AEO helps a project is measured from outside AEO, and only ever as a defect finder
+
+**Problem.** AEO is now something a project depends on, and nothing answers whether it is
+helping that project. The instruments AEO ships are the wrong ones for the question: the
+run record, `run-monitor.mjs` and the trigger eval are all AEO measuring AEO. They answer
+"is this job alive" and "does this description fire" well, and they are structurally unable
+to answer "is this project better off". A harness that scores itself reports that it ran.
+
+**Decision.** The mechanism is designed in [`MEASUREMENT.md`](MEASUREMENT.md) and is bound
+by three properties, each of which rules out an easier design:
+
+1. **It lives in the consuming project, not in the plugin.** Shipping it inside AEO makes
+   it AEO's self-report again, and makes it a thing every installer inherits whether or not
+   they want to be measured.
+2. **Its primary signals come from systems AEO does not write.** Git history, the GitHub
+   API and CI results are produced by other machinery and are hard for the harness to
+   flatter. AEO's run record is admissible as a secondary source and never as the only one.
+3. **It is a defect finder, not a scorecard.** It exists to surface where AEO wasted time.
+   Only negative findings are actionable, and it makes no causal claim at all.
+
+The third property is forced by a fact that no amount of care removes: **there is no
+control group.** One project, one operator, no baseline of the same work done without AEO.
+A trend instrument could honestly report cycle time drifting and could not honestly say
+AEO caused it, and a number that cannot support a causal claim but is presented next to a
+decision becomes a machine for confirming the decision already made. A defect finder is
+cheaper, is honest about the same limitation, and produces output somebody acts on.
+
+**Impact.** Nothing is built in this repository. The design names its signals, their
+sources, and what it refuses to claim, and it is deliberately buildable in the consuming
+project in an afternoon. The sequencing constraint is the part that binds: the signals it
+needs — first commits, first pull requests, first refusals — cannot be reconstructed after
+the fact, so the design exists now and the collection starts when a project starts.
+
+---
+
 ## 2026-08-13 — One decision from Checkpoint 6's follow-up
 
 ### D26 — The scaffolder and the status renderer keep an expensive test in CI and a cheap one in the gate

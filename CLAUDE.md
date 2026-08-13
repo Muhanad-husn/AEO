@@ -49,8 +49,11 @@ repo root makes it installable.
 | [docs/PLAN.md](docs/PLAN.md) | In what order, by whom, at which model tier, with the checkpoints |
 | [docs/EVIDENCE.md](docs/EVIDENCE.md) | What the build must not get wrong. **Read before writing any hook or agent** |
 | [docs/INVENTORY.md](docs/INVENTORY.md) | What was copied, from where, and what was left out |
+| [docs/MEASUREMENT.md](docs/MEASUREMENT.md) | How a *consuming* project would find out whether AEO helped it. A design; nothing is built |
 
-Five docs, five questions. Identifiers do not collide: **D*n*** decisions, **EN-*n***
+Five planning docs, five questions, plus `MEASUREMENT.md` — which is not a plan for this
+repository at all, but the design of an instrument that lives somewhere else.
+Identifiers do not collide: **D*n*** decisions, **EN-*n***
 enhancements, **C/V/L** evidence — currency, divergence, lesson. `DEC-*n*` belongs to
 the vendored skill and is only ever quoted.
 
@@ -59,6 +62,25 @@ permanent repository the plugin is exercised against, on disk and on GitHub, and
 it is not this one. Read it before running any lane end to end.
 
 ## Current stage
+
+**Shipped. `v0.1.0` is cut, the backlog is empty, and the migration is closed.** Nothing
+is in flight and nothing is deferred. The next change to this repository is whatever a
+consuming project's use of the plugin turns up — file it as an issue against AEO rather
+than fixing it locally.
+
+Three things the release decided, all in [D27](docs/DECISIONS.md): the number is `0.1.0`
+because one dry run is not evidence for a stability promise; the tag **documents and does
+not pin**, because `marketplace add` reads the default branch and never resolves a tag; and
+the version lives in `plugin/.claude-plugin/plugin.json` and nowhere else, with a test that
+fails if `package.json` takes a copy back. There is no `CHANGELOG.md` on purpose — the
+release notes are the record, and a second one would drift.
+
+[D28](docs/DECISIONS.md) answers the one question the release could not:
+[docs/MEASUREMENT.md](docs/MEASUREMENT.md) designs how a project that *depends* on AEO
+would find out whether AEO helped it. Nothing is built. It is deliberately not shipped in
+the plugin, its signals come from GitHub rather than from AEO's own logs, and it is a
+defect finder that refuses to make a causal claim, because there is no control group and
+never will be.
 
 **All seven phases complete.** The gates exist, in Node, wired through
 `hooks/hooks.json`. Five agent charters and all fifteen skills carry real content —

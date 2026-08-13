@@ -26,10 +26,19 @@ references (`agents`, `hooks`, `harness-and-sprint`, `directory-tree`,
 design lineage).
 
 **`axial/dot-claude/`** — the matured implementation, and the most load-bearing source
-here. Four role agents (builder, reviewer, spec-author, triage), five PowerShell hooks,
-ten skills, three Python tools.
+here. The harness DEC-70 retired had **five role agents** (builder, reviewer,
+peer-reviewer, spec-author, triage) and **six PowerShell hooks**, plus ten skills and
+three Python tools.
 
-Hook wiring, from `settings.json`:
+**The snapshot in `source/` holds four of those agents and five of those hooks.** It is
+missing `agents/peer-reviewer.md` and `hooks/seal-packet.ps1`, because the copy was taken
+before the retirement and those two files arrived after it. A reader who opens
+`source/axial/dot-claude/` and counts is counting the snapshot, not the harness, and will
+be one short on each. `source/` is verbatim by rule and is not edited to close the gap;
+[`MIGRATION.md`](MIGRATION.md)'s "Stale snapshots" section records the rest of the drift —
+seven files changed as well as these two absent.
+
+Hook wiring, from `settings.json` — five of the six:
 
 | Event | Matcher | Script | Enforces |
 | --- | --- | --- | --- |
@@ -38,6 +47,13 @@ Hook wiring, from `settings.json`:
 | PreToolUse | Bash, GitHub merge tools | `block-merge.ps1` | Blocks subagent merge, push-to-main, branch delete |
 | PreToolUse | Edit\|Write | `path-guard.ps1` | Blocks role subagents writing into `.claude/` |
 | PostToolUse | Edit\|Write | `format.ps1` | Runs `ruff format`; never blocks. **Not ported** — [D13](DECISIONS.md) |
+
+The sixth, `seal-packet.ps1`, is absent from this table because it was never in
+`settings.json`: it hung off `hooks:` frontmatter on `agents/peer-reviewer.md` and
+confined that one agent to its staged evidence packet. The agent was a deliberate drop —
+an academic judge for Axial's product, not an engineering role — but the seal was not.
+Plugin subagents cannot carry `hooks:` frontmatter (C-01), so it ports as
+`plugin/hooks/review-jail.mjs`, wired globally and self-scoping by role name.
 
 Each role agent re-declares `path-guard` and `block-merge` in its own frontmatter as
 defence-in-depth against a known Claude Code frontmatter-hook bug. That second layer is
