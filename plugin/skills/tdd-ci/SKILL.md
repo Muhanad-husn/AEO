@@ -1,6 +1,6 @@
 ---
 name: tdd-ci
-description: Once a slice is green locally, detect the stack and write the matching GitHub Actions workflow — a unit job plus an e2e or integration job, with artifacts uploaded on failure — so the same tests gate every pull request instead of only running on one machine. Trigger on a request to add CI, wire up GitHub Actions, or make tests a required check. Runs after red-green-refactor and before safe-pr.
+description: Use this skill when someone wants their tests to gate pull requests instead of only running on one machine — detect the stack, write the matching GitHub Actions workflow with a unit job and an e2e or integration job, then propose promoting those jobs to required status checks on the default branch. Use it whether the request is shaped like a file to write (add CI, wire up GitHub Actions) or like a repository setting to change (make the test job a required check, block merges on the suite); both are the same job and this skill covers it end to end. Do not use it to diagnose a test that is already failing or flaky, or to change repository settings that have nothing to do with the test suite. Runs after red-green-refactor, once a slice is green locally, and before safe-pr.
 ---
 
 # TDD CI — promote tests to CI

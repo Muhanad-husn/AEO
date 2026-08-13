@@ -1,6 +1,6 @@
 ---
 name: red-green-refactor
-description: Implement one slice with double-loop TDD — a failing outer acceptance test sets the goal, and inner unit-test red, green, refactor cycles build the code that makes it pass, worked outside-in until the acceptance test is green. Trigger on a request to TDD a slice, write a failing test first, or work through an existing slice plan. Refuses to write production code without a failing test written first.
+description: Use this skill to build one bounded change in an existing codebase test-first, driving it outside-in — a failing acceptance test sets the goal, and inner red, green, refactor unit cycles build the code that satisfies it. Use it for any request to implement, add, or change behaviour in code that already exists, whether or not the request mentions testing, and however many files the change happens to touch; a slice plan on disk is welcome but not required. Do not use it when the work has not been broken into pieces yet and the user is asking what to build first, when the user wants an existing failure diagnosed rather than new behaviour built, or when the job is bulk mechanical editing with no behaviour change. Refuses to write production code without a failing test written first.
 ---
 
 # Red-Green-Refactor — the double loop
