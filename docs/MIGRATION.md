@@ -110,7 +110,7 @@ four the harness never had: `monitor-design`, `verify`, `worker-dispatch`, and `
 | Path | Disposition | Plugin equivalent |
 | --- | --- | --- |
 | `tools/run-monitor.py` | Superseded | `plugin/scripts/run-monitor.mjs`, generalized off Axial's stage map. The Python file stays on disk in axial and is now dead |
-| `tools/axial-watch.py` | **Gap** | None. Per-unit cost, latency, token and ETA reporting. `monitor-design` is where such an overlay belongs, but no overlay ships, and the plugin has no cost accounting at all |
+| `tools/axial-watch.py` | **Dropped, decided** | None, and none planned. Per-unit cost, latency, token and ETA reporting. `monitor-design` remains where a per-job overlay belongs; the generic monitor stays free of cost accounting. The reason is in "Every gap, in one list" below |
 | `tools/snapshot-harness.py` | **Obsolete by design** | None needed. It existed because `.claude/` was gitignored and had no history (V-06). An installed plugin has version history by construction |
 
 **Handbook**
@@ -121,16 +121,30 @@ four the harness never had: `monitor-design`, `verify`, `worker-dispatch`, and `
 
 ### Every gap, in one list
 
-Three of the four were Phase 6's, and Phase 6 has since closed them. One remains.
+Three of the four were Phase 6's, and Phase 6 has since closed them. The fourth is
+decided rather than open. **Nothing on this list is undecided.**
 
 1. ~~**The scaffolder**~~ (`SKILL.md`, `directory-tree.md`, `claude-md-handbook.md`).
    **Closed by P6.1** — `plugin/skills/new-project/`. The plugin stands up a new project.
 2. ~~**Trigger measurement**~~ (`evals/evals.json`). **Closed by P6.4** —
    `evals/trigger-eval.mjs`, with P6.5's before-and-after ([D23](DECISIONS.md)).
-3. **Cost and ETA reporting** (`axial-watch.py`). No plugin equivalent, no phase owns it,
-   and `monitor-design` only describes where it would go. **This is the one gap still
-   open**, and now the only one — every phase is complete, so nothing is scheduled to
-   close it. Closing it is a founder decision, not a deferral.
+3. ~~**Cost and ETA reporting**~~ (`axial-watch.py`). **Dropped on 2026-08-13 by founder
+   decision** (#94). It never belonged to a phase: Phase 3 scoped the generic monitor to
+   progress, rate and the stall verdict and deliberately left cost out, and nothing since
+   picked it up.
+
+   The decision, and why it went this way rather than into the monitor:
+   `run-monitor.mjs` already answers the question that actually stops a founder — is this
+   thing working — and `monitor-design` covers a per-job overlay on the runs where spend
+   is genuinely wanted. Building it into the generic monitor would need a token-accounting
+   source the six-field run record does not carry, so it is a change to the record
+   envelope (EN-14) as well as to the monitor, touching everything that writes a run log.
+   That is the expensive part, and it buys a number that is wrong whenever a run is not
+   token-bound.
+
+   What this forecloses: the plugin has no cost accounting and no projected finish, in the
+   generic monitor or anywhere else. A founder who wants either writes a `monitor-design`
+   overlay for that job. Reopening the decision means reopening the envelope.
 4. ~~**`status`** as a stub~~. **Closed by P6.3** — it renders issues, PR check state and
    the Decision Log every run, sharing one renderer with `session-status.mjs`. It does not
    render the project's phase, and says why.
@@ -195,7 +209,7 @@ Compared against the harness as it was at retirement, not against the snapshot.
 | 1 | `format.ps1` reformatted every written file | Deliberate drop | [D13](DECISIONS.md). Never blocked, hard-coded `ruff`, and rewrote files the user did not ask it to touch. Formatting belongs to the project's own pre-commit or CI |
 | 2 | `spec-author` role | Deliberate drop | V-07. Referenced by no lane and no skill |
 | 3 | `peer-reviewer` role, an academic judge pinned to `claude-opus-5` | Deliberate drop | Product-specific to Axial. The plugin ports the seal, not the judge |
-| 4 | `axial-watch.py`: per-unit cost, latency, tokens, ETA, with a pinned price table | **Unshipped** | No plugin equivalent and no phase owns one. The price table was Axial-specific, which is why it was not ported; nothing replaced the capability |
+| 4 | `axial-watch.py`: per-unit cost, latency, tokens, ETA, with a pinned price table | **Deliberate drop**, decided 2026-08-13 (#94) | The price table was Axial-specific, which is why it was not ported. Shipping the capability generically means carrying token accounting in the run record envelope (EN-14), and the resulting number is wrong whenever a run is not token-bound. `run-monitor.mjs` answers the question that stops a founder; `monitor-design` covers a per-job overlay |
 | 5 | `snapshot-harness.py` mirrored `.claude/` into a sibling git repo | Obsolete | V-06. An installed plugin is versioned; there is nothing gitignored to mirror |
 | 6 | The seal was attached to one agent through `hooks:` frontmatter on `peer-reviewer.md` | **Re-implemented, not dropped** | Plugin subagents cannot carry `hooks:` frontmatter (C-01), so `review-jail.mjs` is wired globally and self-scopes by role name, anchored because a plugin subagent reports the namespaced `aeo:reviewer` (C-02). Same property, different mechanism |
 | 7 | Worktrees lived at `.claude/worktrees/<slug>` | Changed deliberately | The plugin cuts sibling worktrees (`../wt/<n>`). A worktree inside `.claude/` is a second full checkout inside the repo, and [D12](DECISIONS.md) keeps plugin-adjacent state out of that path |
@@ -350,9 +364,9 @@ waiting.
    the commit gate runs Axial's suite, not a guess at one.
 9. **Correct `docs/INVENTORY.md`** for the two stale snapshots, naming the six hooks and
    five agents the harness actually retired with. `source/` itself is not edited.
-10. **Decide the one remaining gap.** The scaffolder and the trigger eval were Phase 6
-    work and both landed. Cost and ETA reporting still has no owner and no phase left to
-    give it one. Either open an issue for it or record that it is dropped.
+10. ~~**Decide the one remaining gap.**~~ **Done.** The scaffolder and the trigger eval
+    were Phase 6 work and both landed. Cost and ETA reporting was dropped by founder
+    decision on 2026-08-13 (#94) and recorded in the gap list above. No gap is undecided.
 
 Steps 5 to 8 are reversible in one edit: remove `"aeo@aeo": true` and restart. That
 returns axial to its current state, not to its pre-retirement state. The tarball restore
