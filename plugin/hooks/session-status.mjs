@@ -13,126 +13,26 @@
 // header below says so explicitly and labels memory files and plan checkboxes as
 // neither ground truth, carrying the PowerShell original's rationale across.
 //
-// gh is called nowhere else in the plugin (lib.mjs's git() is git-only). Two rules
-// govern every call here: never report a gh failure as a confident zero -- the same
-// negative-signal discipline L-08 states for a monitor reporting IDLE applies to "gh
-// could not tell me" versus "gh told me there are none" -- and never let gh flood
-// stdout into the session's context (L-09).
+// gh is called nowhere else in the plugin outside status-render.mjs (lib.mjs's git() is
+// git-only). Two rules govern every gh call: never report a gh failure as a confident
+// zero -- the same negative-signal discipline L-08 states for a monitor reporting IDLE
+// applies to "gh could not tell me" versus "gh told me there are none" -- and never let
+// gh flood stdout into the session's context (L-09).
+//
+// ghJson, renderSection, and the issue/PR fetch helpers live in status-render.mjs now,
+// shared with the `status` skill's own script (issue #81, "one renderer, two callers").
+// AEO_GH_COMMAND / AEO_GH_PREFIX_ARGS / AEO_GH_TIMEOUT_MS are read there; nothing in
+// this file sets them directly any more, but this hook's own tests still set the same
+// env vars to reach the fake `gh` the shared module spawns.
 
-import { execFile } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { promisify } from 'node:util';
 
 import { currentBranch, git, preflight, resolveWorktree, runReporter } from './lib.mjs';
 import { LIVE_DATA_ROOT_ENV, resolveRoots } from './sandbox-guard.mjs';
+import { ISSUE_LIMIT, OPEN_PR_LIMIT, fetchOpenIssues, fetchOpenPrs, formatPrLine, ghJson, renderSection } from './status-render.mjs';
 
-const execFileAsync = promisify(execFile);
-
-// The command actually spawned for every gh call, and the args prepended ahead of the
-// real gh arguments. Both default to plain `gh` with nothing prepended -- production
-// behaviour is unchanged when neither is set. The seam exists because in-process
-// mocking cannot reach a subprocess CLI child (L-03's pattern, applied here to `gh`
-// instead of the sandbox guard's data path): tests point AEO_GH_COMMAND at `node` and
-// AEO_GH_PREFIX_ARGS at a fixture script, which is the only way to substitute a fake
-// `gh` that also runs correctly on Windows, where a `.cmd` shim is not directly
-// executable without a shell.
-const GH_COMMAND = process.env.AEO_GH_COMMAND || 'gh';
-// KNOWN GAP, left open deliberately: this JSON.parse runs at module scope, before
-// runReporter is entered, so a malformed AEO_GH_PREFIX_ARGS throws where nothing catches
-// it and Node exits 1 -- narrowing this file's header claim that the reporter always
-// exits 0. Exit 1 is a non-blocking hook error, so it costs a report and never a
-// session, and lib.mjs already names module-scope crashes as a class its guarantees do
-// not reach. The variable is a test seam that production never sets.
-const GH_PREFIX_ARGS = process.env.AEO_GH_PREFIX_ARGS ? JSON.parse(process.env.AEO_GH_PREFIX_ARGS) : [];
-
-// Three gh calls run concurrently (Promise.all below), so this is the worst-case added
-// latency at session start, not three times it. The override exists purely as a test
-// seam, not a supported setting -- a config nobody sets is exactly what D10 and L-08
-// warn against, so this is not exposed anywhere a user would find it.
-const GH_TIMEOUT_MS = Number(process.env.AEO_GH_TIMEOUT_MS) || 3000;
-// gh has no reason to emit more than this for the queries below. Anything past it is
-// truncated before it is even attempted to parse (L-09, "a CLI flooding stdout floods
-// an agent's context").
-const GH_MAX_BUFFER = 200_000;
 const RUN_LOG_HEAD_LINES = 8;
-
-// How many items each section asks gh for. The request sends one MORE than the number
-// rendered, which is the whole point: a list cut off at its cap is indistinguishable
-// from a list that happened to end there, and `Open issues (40)` in the one hook whose
-// job is to be believed over memory reads as "there are forty" (L-08 -- every cap that
-// drops input reports a count on both sides of the cut).
-// The merged-PR cap below stays a plain 10: that section is labelled "Last N merged",
-// which claims recency and never a total, so there is nothing there to misread.
-const ISSUE_LIMIT = 40;
-const OPEN_PR_LIMIT = 20;
-
-/**
- * One gh call, JSON out. Never throws.
- *
- * `ok: false` means "could not determine" -- missing binary, no auth, no remote, a
- * timeout, or output this cannot use -- and every caller renders that as unknown, never
- * as a confident zero. `ok: true, data: []` means gh answered with a list and the list
- * was empty; that is the only path that is allowed to say "none".
- *
- * Two shapes reach here as output rather than as an error, and both are "could not
- * determine" rather than zero. `gh ... --json` always emits at least `[]`, so silence on
- * a zero exit is not an empty answer, it is no answer. And a JSON object -- the shape
- * `{"message":"Not Found"}` arrives in -- parses fine and is still not a list; any gh on
- * PATH can produce it (a version change, an extension, a wrapper shim), and rendering it
- * as an empty array would state there are no open issues on the strength of an error
- * message.
- */
-async function ghJson(dir, args) {
-  try {
-    const { stdout } = await execFileAsync(GH_COMMAND, [...GH_PREFIX_ARGS, ...args], {
-      cwd: dir || undefined,
-      timeout: GH_TIMEOUT_MS,
-      maxBuffer: GH_MAX_BUFFER,
-      windowsHide: true,
-      encoding: 'utf8',
-    });
-    const text = stdout ?? '';
-    if (!text.trim()) return { ok: false, reason: 'gh exited 0 but printed nothing, where --json always prints at least []' };
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (err) {
-      return { ok: false, reason: `gh returned unparseable output (${err.message})` };
-    }
-    if (!Array.isArray(data)) {
-      return { ok: false, reason: `gh returned a JSON ${data === null ? 'null' : typeof data} where a list was expected` };
-    }
-    return { ok: true, data };
-  } catch (err) {
-    if (err?.code === 'ENOENT') return { ok: false, reason: 'gh is not installed or not on PATH' };
-    if (err?.killed || err?.signal) return { ok: false, reason: `gh did not answer within ${GH_TIMEOUT_MS}ms` };
-    const detail = String(err?.stderr || err?.message || 'unknown error')
-      .trim()
-      .split(/\r?\n/)[0];
-    return { ok: false, reason: (detail || `gh exited with an error`).slice(0, 200) };
-  }
-}
-
-/**
- * One gh-backed list section. Unknown, empty and populated are three distinct outputs;
- * none collapses into another.
- *
- * `limit` is how many items get rendered, and the caller has already asked gh for
- * `limit + 1`. Getting that extra one back is the proof the list was cut, and it is the
- * only way this hook can tell a repo with exactly `limit` open issues from a repo with
- * hundreds. When it is cut, the header says so instead of printing the cap as a total.
- */
-function renderSection(label, result, limit, formatItem) {
-  if (!result.ok) return [`**${label}:** unknown (${result.reason}).`, ''];
-  if (result.data.length === 0) return [`**${label}:** none.`, ''];
-  const shown = result.data.slice(0, limit);
-  const truncated = result.data.length > limit;
-  const header = truncated
-    ? `**${label} (showing ${shown.length} of more than ${limit}):**`
-    : `**${label} (${shown.length}):**`;
-  return [header, ...shown.map(formatItem), ''];
-}
 
 // A run log directory is named `<YYYY-MM-DD>-<job>`. That date is the primary ordering
 // key because mtime alone cannot order these at all: two summaries written in the same
@@ -366,10 +266,12 @@ async function run(payload) {
   lines.push(`**Branch:** ${branch ?? 'unknown (unborn HEAD, or git did not answer)'}  |  **HEAD:** ${head ?? 'unknown'}`, '');
 
   // One more than each cap is requested; renderSection renders the cap and uses the
-  // extra item only to know the list was cut.
+  // extra item only to know the list was cut. Issues and open PRs go through the
+  // shared fetch helpers (status-render.mjs) so this hook and the `status` skill read
+  // gh the same way; the merged-PR call stays here since only this hook renders it.
   const [issues, openPrs, mergedPrs] = await Promise.all([
-    ghJson(root, ['issue', 'list', '--state', 'open', '--limit', String(ISSUE_LIMIT + 1), '--json', 'number,title,labels']),
-    ghJson(root, ['pr', 'list', '--state', 'open', '--limit', String(OPEN_PR_LIMIT + 1), '--json', 'number,title,isDraft']),
+    fetchOpenIssues(root),
+    fetchOpenPrs(root),
     ghJson(root, ['pr', 'list', '--state', 'merged', '--limit', '10', '--json', 'number,title,mergedAt']),
   ]);
 
@@ -380,13 +282,11 @@ async function run(payload) {
     }),
   );
 
+  // showChecks stays false here: SessionStart has a stated latency budget and the
+  // stub this hook has always rendered against never promised check state. The
+  // `status` skill (on demand, no such budget) turns it on via the same formatter.
   lines.push(
-    ...renderSection(
-      'Open PRs -- awaiting founder approval',
-      openPrs,
-      OPEN_PR_LIMIT,
-      (p) => `- #${p.number} ${p.title}${p.isDraft ? ' (draft)' : ''}`,
-    ),
+    ...renderSection('Open PRs -- awaiting founder approval', openPrs, OPEN_PR_LIMIT, (p) => formatPrLine(p, { showChecks: false })),
   );
 
   // Merged PRs render inline rather than through renderSection: an empty result says

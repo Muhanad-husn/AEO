@@ -43,6 +43,64 @@ if (mode === 'error') {
   } else {
     process.stdout.write(JSON.stringify([{ number: 2, title: 'fixture open pr', isDraft: true }]));
   }
+} else if (mode === 'status-fixture') {
+  // Fixture data for the `status` skill's render (tests/skills/status.test.mjs, P6.3):
+  // one issue per triage bucket, and one open PR per check-state outcome. Never hits
+  // the merged-PR branch -- the status skill's own render never asks gh for it.
+  if (args[0] === 'issue') {
+    process.stdout.write(
+      JSON.stringify([
+        {
+          number: 10,
+          title: 'plain backlog issue',
+          labels: [{ name: 'bug' }],
+          assignees: [],
+          blockedBy: { nodes: [], totalCount: 0 },
+          closedByPullRequestsReferences: [],
+        },
+        {
+          number: 11,
+          title: 'assigned issue',
+          labels: [],
+          assignees: [{ login: 'octocat' }],
+          blockedBy: { nodes: [], totalCount: 0 },
+          closedByPullRequestsReferences: [],
+        },
+        {
+          number: 12,
+          title: 'issue with an open pr against it',
+          labels: [],
+          assignees: [],
+          blockedBy: { nodes: [], totalCount: 0 },
+          closedByPullRequestsReferences: [{ number: 20 }],
+        },
+        {
+          number: 13,
+          title: 'blocked issue',
+          labels: [],
+          assignees: [],
+          blockedBy: { nodes: [{ number: 9 }], totalCount: 1 },
+          closedByPullRequestsReferences: [],
+        },
+      ]),
+    );
+  } else if (args.includes('merged')) {
+    process.stdout.write('[]');
+  } else {
+    process.stdout.write(
+      JSON.stringify([
+        { number: 20, title: 'passing pr', isDraft: false, statusCheckRollup: [{ conclusion: 'SUCCESS' }] },
+        {
+          number: 21,
+          title: 'failing pr',
+          isDraft: false,
+          statusCheckRollup: [{ conclusion: 'FAILURE' }, { conclusion: 'SUCCESS' }],
+        },
+        { number: 22, title: 'pending draft pr', isDraft: true, statusCheckRollup: [{ status: 'IN_PROGRESS' }] },
+        { number: 23, title: 'no checks pr', isDraft: false, statusCheckRollup: [] },
+      ]),
+    );
+  }
 } else {
   process.stdout.write('[]');
 }
