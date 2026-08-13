@@ -71,15 +71,53 @@ exists to catch. Reproducing it costs more than keeping it.
   point; a run that needs a pristine base gets a new branch off `main`.
 - **Deleting it is a founder decision**, the same as creating it was.
 
-## Two things the permission classifier blocks
+## What blocks repository creation and merges — and what does not
 
-Creating a GitHub repository and attempting a real merge are both refused by the
-auto-mode permission classifier in this repository's own sessions, through `gh` and
-through the GitHub MCP tools alike. Neither is a plugin defect.
+This section used to say the auto-mode permission classifier refused both creating a
+GitHub repository and a real merge, in this repository's own sessions. A probe during
+the P7.4 dry run showed the first half was wrong, and re-checking the second found it
+rests on a different mechanism than the one named. Issue #63 has the full account.
 
-The first is why the testbed is permanent. The second is the merge seat: the founder
-merges, and `.claude/settings.local.json` denies `Bash(git merge:*)` on purpose. That
-rule stays. It is not a limit on what can be proved, and the next section says why.
+### Repository creation: not blocked
+
+**cited** — the P7.4 dry run ran `gh repo create aeo-dryrun --private --source=.
+--remote=origin --push` from a plugin session, with no prompt and no refusal; the
+repository was created
+(`logs/2026-08-13-p7.4-dry-run/summary.md`, finding D5). This repository's own
+`D:\AEO\.claude\settings.local.json` agrees: its `deny` list covers `git merge` and
+four GitHub MCP write tools, and matches nothing that would catch `gh repo create`.
+Nothing observed or configured stops it. The claim was wrong, not narrower than
+stated.
+
+The testbed's permanence does not rest on this. It rests on the argument already
+made above: a throwaway cannot be compared against a later run, and re-creating one
+is an outward-facing action a founder chooses to approve each time as a matter of
+practice — not because a rule forces the choice.
+
+### Merge: blocked, by a settings rule, not by the classifier or `block-merge`
+
+Not probed directly here — attempting a real merge is the founder's call, and this
+slice did not attempt one. What static inspection establishes:
+
+- `D:\AEO\.claude\settings.local.json` (this repository's own permission config,
+  gitignored, not checked in) denies `Bash(git merge:*)` and the GitHub MCP tool
+  `merge_pull_request` outright. That is a **settings deny rule**, evaluated
+  independently of any gate, and it is a property of this repository's own settings —
+  the thing the original claim said the classifier was.
+- `block-merge` is not that rule and does not stand in for it here. Its Bash arm
+  returns immediately when the caller is not an AEO role
+  (`plugin/hooks/block-merge.mjs:285`, the `isAnyAeoRole` check, comment:
+  "orchestrator's own approved path (C-02, F5)"). The founder's own main session is
+  exactly that orchestrator, so `block-merge` would not be what stops a merge
+  attempted from it — the settings deny rule above would.
+- Neither rule covers `gh pr merge` run via `Bash`; nothing in the deny list matches
+  it. Whether that surface is refused by the auto-mode classifier, some other
+  mechanism, or nothing, is not established by anything probed so far.
+
+The surviving claim is narrower than the original: a real merge via `git merge` or the
+GitHub MCP merge tool is refused by a settings rule specific to this repository, not by
+the classifier and not by `block-merge`. That rule stays, on purpose — the founder
+merges. Whether `gh pr merge` is refused by anything at all is untested.
 
 ## Proving a gate: fired, or invoked
 
