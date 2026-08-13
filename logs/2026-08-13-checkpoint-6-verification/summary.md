@@ -263,7 +263,7 @@ Every line of the render, against the `gh` answer captured at 07:29:52Z:
 | no Blocked section | every issue has `blockedBy.totalCount: 0` | ✅ an omitted bucket, not a silent one |
 | Open PRs (4): #12, #11, #10, #9 | four objects, none `isDraft` | ✅ |
 | `[checks: passing]` on all four | every `statusCheckRollup` entry `conclusion: SUCCESS`, `status: COMPLETED` — three per PR, two CI jobs plus GitGuardian | ✅ |
-| **Decision Log:** not found. Looked for `docs/DECISIONS.md`, `DECISIONS.md`, `docs/decisions.md`, `decisions.md` | `D:\aeo-testbed\repo\docs\` holds only `tdd-evidence` | ✅ **the missing-log case, run live** |
+| **Decision Log:** not found. Looked for `docs/DECISIONS.md`, `DECISIONS.md`, `docs/decisions.md`, `decisions.md` | **not a `gh` result, and not checkable by a reader** — a directory listing taken during the run, which found the testbed's `docs/` holding only `tdd-evidence`. The testbed is private ([TESTBED.md](../../docs/TESTBED.md)), so there is nothing to open; this row rests on the record's word | ✅ **the missing-log case, run live** |
 
 The testbed is the harder of the two directories, and it produced the "names what it looked
 for" behaviour without needing a fixture: it has a `docs/` directory and no decision log in
