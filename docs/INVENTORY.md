@@ -167,6 +167,85 @@ redactions were required.
   the source repo — `SKILL.md`, `tdd-harness/SKILL.md` and `README.md` all match `593e7ab`
   exactly. Preserving the CRLF working-tree artifact would have been *less* faithful.
 
+## Publish disposition
+
+Recorded for [#98](https://github.com/Muhanad-husn/AEO/issues/98), which asks whether
+`source/` can be published when the repository goes public. Every directory below was
+opened and read before it was dispositioned. The full reasoning, including what was
+checked against GitHub rather than assumed, is in
+[`logs/2026-08-13-issue-98-disclosure-review/summary.md`](../logs/2026-08-13-issue-98-disclosure-review/summary.md).
+
+**The finding that governs the rest: the two products this snapshot is drawn from are
+already public.** `github.com/Muhanad-husn/axial` and `github.com/Muhanad-husn/Zij` are
+both public repositories under the founder's own account, and Zij's README openly
+describes the product and states that it is archived. Issue #98's premise — that
+`source/axial/` holds "a private project's internals" — was out of date when it was
+written. What remains is the narrower question of which files here are *not* already
+public, and that set is engineering process only.
+
+| Directory | Disposition | Reason |
+| --- | --- | --- |
+| `source/global-skill/` | **Publishable** | The founder's own skill, and the artifact this plugin generalizes. Its two vendored dependencies are official Anthropic plugins under Apache-2.0 with their licence files intact |
+| `source/global-workspace/` | **Publishable** | Not private work. Zero references to axial, Zij, or any real product — the eval outputs grade a synthetic `ai-enterprise-template` scaffold. The only credential-shaped string is the placeholder already recorded below. Local paths under `D:\eval-scratch` are the only residue |
+| `source/axial/` | **Publishable** | Mixed, and the split matters. The product is public; the table below says which files are and are not already on `axial`'s default branch. Everything in the not-public half is engineering process — agents, hooks, skills, slice plans, a branch-cleanup log. No credentials, no corpus content, no third-party data. The operational numbers a reader might consider sensitive (the 69% waste share, the moderation-refusal exposure, the model-tier decision) are published by the founder himself in `axial/docs/postmortem/gold-run-2026-07/`. **One licence caveat applies — see below** |
+| `source/eval-tooling/` | **Publishable** | The official `skill-creator` plugin, Apache-2.0, licence file present |
+| `source/global-claude/` | **Publishable** | Three files, 1,337 bytes. The `CLAUDE.md` is a single paragraph of general engineering principle, cited by manifest 04 as principles lineage. `settings.json` discloses an enabled-plugin list, `effortLevel`, a `D:\AEO` marketplace path, and `skipDangerousModePermissionPrompt`. That last is a local interface preference and grants a reader nothing, but it is the one line in `source/` that describes the founder's own security posture rather than the work |
+| `source/v1-archive/` | **Publishable** | The largest genuinely-new disclosure here, and #98 did not name it. 174 files of Zij's v1 harness plus 74 pytest evidence transcripts, none of it on public Zij — it was recovered from the recycle bin, not from the repository. The product it belongs to is public and self-described; what this adds is the internal build record of a project the founder publicly archived. Evidence transcripts contain local paths including `C:\Users\mou97\AppData\Local\Temp`. **The same licence caveat applies** |
+| `source/plugin-format/` | **Publishable** | Three official Anthropic plugins plus the public marketplace catalogue. Apache-2.0, licence file with each plugin |
+| `source/upstream-red-green-refactor/` | **Publishable** | MIT, © john-adeojo, `LICENSE` shipped alongside. The upstream obligation was already met at copy time ([D2](DECISIONS.md)) |
+| `source/_manifests/` | **Publishable** | The provenance record, and the reason every disposition above could be checked. Its source paths carry the founder's Windows account name (`C:\Users\mou97\`) on most lines. That is an OS account name, not a credential, and the founder's GitHub identity is public already; redacting it would break the verbatim rule and destroy the record's value |
+
+Nothing is dispositioned **redact** or **drop**.
+
+### What is not already public
+
+Checked file by file against each repository's default branch through the GitHub API.
+
+| Path under `source/` | Public counterpart | Status |
+| --- | --- | --- |
+| `axial/dot-claude/` (33 files) | `axial/.claude/` is gitignored; its history lives in `Muhanad-husn/axial-harness`, which is **private** | Not public |
+| `axial/root/CLAUDE.local.md` | Gitignored in axial | Not public |
+| `axial/root/PR_BODY.generated.md` | Gitignored in axial | Not public |
+| `axial/root/.tdd-branch-cleanup.log` | Gitignored in axial | Not public |
+| `axial/docs/_found/` | Not at axial's HEAD | Not public at HEAD |
+| `axial/docs/phase-a-rerun-2026-07-24.md` | Not at axial's HEAD | Not public |
+| `v1-archive/` (all 174 files) | Zij's `.claude/`, `plans/` and `docs/tdd-evidence/` are absent from the public repo | Not public |
+
+Already public, and therefore not a disclosure at all: `axial/root/README.md`,
+`axial/root/CLAUDE.md`, `axial/docs/DECISIONS.md`, the whole
+`axial/docs/postmortem/gold-run-2026-07/` folder, `axial/root/pyproject.toml`,
+`axial/root/.github/workflows/ci.yml`.
+
+### The licence caveat
+
+The root `LICENSE` is MIT, matching what `package.json` declares. It covers AEO's own
+work. It does not resolve the licence layering underneath `source/`, and adding it does
+not create a conflict so much as leave one unstated:
+
+- `source/axial/` is copied from a repository published under **PolyForm Noncommercial
+  1.0.0**, not MIT.
+- `source/v1-archive/` is copied from Zij, which is public with **no licence file at
+  all** — that is all rights reserved.
+- `source/upstream-red-green-refactor/`, `source/plugin-format/`,
+  `source/eval-tooling/` and `source/global-skill/_deps/` each carry their own
+  third-party licence (MIT and Apache-2.0), which a root MIT would nominally sweep.
+
+The founder authored both axial and Zij and may relicense his own work at will, so nothing
+here is an infringement. It is a **statement** problem: a bare root MIT would represent
+terms for those trees that their upstream licences do not grant. A one-paragraph scope
+note saying the licence covers AEO's own work and that `source/` is a vendored snapshot
+under its own terms would close it. That note belongs in `README.md`, which #97 is already
+rewriting for a public reader, and is not written here.
+
+### History
+
+Nothing found under `source/` needs to be kept out of git history. No credential exists
+anywhere in the tree — a fresh sweep for key- and token-shaped strings returned only the
+`ghp_example_replace_me` placeholder already recorded above. The one personal identifier
+is a Windows account name with no access value. Everything not already public is process
+material belonging to two already-public products. **No history rewrite is required
+before publishing.**
+
 ## Provenance rules
 
 `source/` is a verbatim snapshot. No file content was edited during the copy. Do not edit
