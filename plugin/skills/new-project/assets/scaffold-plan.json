@@ -21,7 +21,13 @@
     "the only entry because node is the one toolchain this plugin already requires (D8), so it",
     "is the one stack a seed can assume is installed. Every other stack is written to its own",
     "conventions by the agent and then confirmed with hooks/stack.mjs, which is the check that",
-    "actually guarantees the commit gate will resolve a command."
+    "actually guarantees the commit gate will resolve a command.",
+    "",
+    "The .claude/settings.json step (P6.2, issue #64) declares AEO_LIVE_DATA_ROOT and",
+    "AEO_DATA_ROOT both blank. sandbox-guard.mjs reads an empty string as not-set and stays",
+    "inert until both are filled in, so a blank pair is the safe default rather than an",
+    "accidentally-enabled one. It is Claude Code's own settings file, not the project config",
+    "file D10 forbids, and it is tracked in git: .gitignore excludes only settings.local.json."
   ],
   "version": 1,
   "steps": [
@@ -37,6 +43,12 @@
       "role": "repository",
       "content": ".env\nsecrets/\nPR_BODY.md\n.claude/settings.local.json\n",
       "appendSeed": "gitignore"
+    },
+    {
+      "stage": 0,
+      "path": ".claude/settings.json",
+      "role": "repository",
+      "content": "{\n  \"env\": {\n    \"AEO_LIVE_DATA_ROOT\": \"\",\n    \"AEO_DATA_ROOT\": \"\"\n  }\n}\n"
     },
     {
       "stage": 0,

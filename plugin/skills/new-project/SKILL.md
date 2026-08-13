@@ -92,6 +92,16 @@ Bundled resource:
    you. `README.md` is one paragraph in the founder's own words: what this
    product is. `CLAUDE.md` is stage 1.
 
+   One of the tracked steps is `.claude/settings.json`, declaring
+   `AEO_LIVE_DATA_ROOT` and `AEO_DATA_ROOT` both blank. This is Claude Code's own
+   settings file, not the project config file D10 forbids, and `.gitignore` only
+   excludes `settings.local.json`, so this one lands in the first commit. A blank
+   pair leaves `sandbox-guard` inert — the same state as a fresh install with no
+   file at all — rather than accidentally refusing every command. Point the
+   founder at it in your Stage-0 report: filling in `AEO_LIVE_DATA_ROOT` with the
+   absolute path to wherever this project's production data lives, and
+   `AEO_DATA_ROOT` with a sandbox path outside it, is what turns the guard on.
+
 4. **Confirm the gate can see the project.** Run the same resolver again, now
    over the scaffolded tree. It must return exactly one unit with a command, and
    that command is what the commit gate will run on every commit from here on.
@@ -157,7 +167,9 @@ Bundled resource:
    without the server-side backstop and relying on the merge gate alone.
 
    Then report: the tree, the resolved test command, the green baseline, the one
-   commit, and whether protection is on.
+   commit, whether protection is on, and that `.claude/settings.json` declares
+   `AEO_LIVE_DATA_ROOT` and `AEO_DATA_ROOT` blank for the founder to fill in
+   whenever this project has production data to protect.
 
 ## Stage 1 — the project handbook
 
@@ -213,10 +225,12 @@ Cover these, briefly, in this order:
   `block-merge` refuses a role or the GitHub forge tool merging, deleting a
   branch, or pushing to the protected branch. `path-guard` refuses a role editing
   the harness's own `.claude/` configuration. `sandbox-guard` refuses anything
-  reaching declared production data. `review-jail` confines the reviewer and
-  verifier to reading their own staged evidence. `session-status` refuses
-  nothing; it reports which of the others are actually wired. Close with: if a
-  gate fires, fix the cause, never the hook.
+  reaching declared production data — `.claude/settings.json` ships with
+  `AEO_LIVE_DATA_ROOT` and `AEO_DATA_ROOT` blank, and the guard stays off until
+  you fill both in. `review-jail` confines the reviewer and verifier to reading
+  their own staged evidence. `session-status` refuses nothing; it reports which
+  of the others are actually wired. Close with: if a gate fires, fix the cause,
+  never the hook.
 
 - **Conventions**, in a few lines. Model tiering, the four statuses
   (`DONE`, `DONE_WITH_CONCERNS`, `BLOCKED`, `NEEDS_CONTEXT`), and the prose rules
