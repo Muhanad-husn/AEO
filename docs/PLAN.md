@@ -341,14 +341,23 @@ what produces the usage this phase needs to be worth doing.
 
 `P7.1` gates `P7.3`, which gates `P7.4`. `P7.2` and `P7.5` need nothing (3 parallel at peak).
 
-**The dry-run stack is an open question.** Only Node resolves on this machine — `go`,
-`cargo`, `mvn`, `gradle`, `ruby` and `dotnet` are all absent, and the testbed is already
-Node. A Node dry run satisfies "not Python" and proves nothing about generalization.
-P7.4 asks the founder before installing a toolchain.
+**The dry-run stack was Go, because it was the branch that had never run.** `stack.mjs`
+knows two kinds of test-command declaration: the project names its own command, or the
+toolchain defines it and there is nothing for the project to name. Every run since Phase 1
+was the first kind. Go is the second: `go.mod` says nothing about testing, and `go test
+./...` comes from the toolchain. Go was installed on the founder's authorization
+(`go1.26.5 windows/amd64`), and P7.4 resolved that branch in anger with nothing declared
+beyond `go.mod`.
 
 **Verify:** clean install from GitHub into an empty repo; the dry run reaches a merged PR
 with every gate exercised.
-**⛔ CHECKPOINT 7.**
+**⛔ CHECKPOINT 7.** Closed 2026-08-13 —
+[`logs/2026-08-13-checkpoint-7-verification/summary.md`](../logs/2026-08-13-checkpoint-7-verification/summary.md).
+Both clauses hold. The plugin installed from GitHub into a fresh repo, and all six wired
+gate scripts fired on real actions in a dry run that reached a founder-merged PR. Two
+things did not hold as first written: uninstall left an orphaned cache and clobbered a
+same-named local marketplace entry, and P7.4's log records a squash merge where the commit
+is a merge commit.
 
 ---
 
