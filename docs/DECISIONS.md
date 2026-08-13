@@ -15,6 +15,77 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-13 — One decision from Checkpoint 6's follow-up
+
+### D26 — The scaffolder and the status renderer keep an expensive test in CI and a cheap one in the gate
+
+**Problem.** Checkpoint 6's verification recorded that
+`tests/skills/new-project-scaffold.test.mjs` and `tests/skills/status.test.mjs` are both
+in the integration tier, and that the commit gate runs the fast tier only. Phase 6's two
+headline artifacts — the scaffolder and the shared status renderer — were therefore
+invisible to the gate. A commit that broke either one passed locally and was caught only
+by CI's `battery` job.
+
+The tier placement itself is right, and moving the files is the option to reject. Both
+spawn processes: the scaffolder's test writes a tree, runs `git init`, commits, and then
+runs the emitted suite; the renderer's test spawns the skill's script against a fake `gh`
+in a throwaway repository. That is exactly the cost [D17](#d17--two-test-tiers-in-process-is-the-commit-gates-process-level-is-cis)
+moved out of the gate, for the reason D17 gives: a gate that costs minutes per commit is
+a gate people work around. Buying coverage by making the gate slow trades a gate the
+founder trusts for one the founder bypasses.
+
+**Decision.** Each of the two artifacts carries a test in both tiers, and the two answer
+different questions.
+
+| Tier | Scaffolder | Status renderer | Question |
+|---|---|---|---|
+| Fast (`npm test`, the commit gate) | `new-project-plan-smoke.test.mjs` | `status-render-smoke.test.mjs` | Is this artifact grossly broken right now? |
+| Integration (`npm run test:integration`, CI) | `new-project-scaffold.test.mjs` | `status.test.mjs` | Does it behave correctly end to end? |
+
+The fast-tier files read a data file and call pure functions. Neither shells out to `git`,
+spawns a process, or touches the network.
+
+**What they cost, with the environment attached**, per D17's standing rule. The two files
+run alone take **0.42 s to 1.08 s** wall over five samples, on Windows under Git Bash on a
+16-core machine, node 24 — most of it the two `node --test` child processes rather than the
+seven assertions, which self-report 0.15 s to 0.48 s. The whole-tier delta could not be
+resolved at all: three concurrent write actors were live on the same machine, and the
+*unchanged* tier ranged from 8.9 s to 22.0 s across that session, so an 11 s swing sat on
+top of a sub-second signal. This is D17's 13x spread happening again, and the honest report
+is the isolated cost plus the reason the aggregate one is not quotable today.
+
+**What each smoke test is allowed to assert** is deliberately narrow, because a smoke test
+that grows into a copy of its integration counterpart inherits that counterpart's cost and
+ends up in the wrong tier. The scaffolder's smoke test asserts that `scaffold-plan.json`
+parses and that its declared step order still puts `logs/` ahead of every product-code
+step, which is EN-14's requirement and the one ordering property the manifest exists to
+hold. It asserts nothing about the emitted tree; that is the integration test's subject.
+The renderer's smoke test asserts that `plugin/hooks/status-render.mjs` imports, that the
+entry points its two callers use are still exported, and that each produces output against
+a literal fixture. It asserts nothing about either caller's process wiring, and it leaves
+the unknown-versus-zero distinction to the integration tier, where getting it wrong is a
+subtler failure than the module not working at all.
+
+**Impact.** A commit that breaks either artifact outright now fails the gate instead of
+reaching CI. The window narrows rather than closes: a correctness regression that leaves
+both artifacts loading and parsing still surfaces only in CI, which is
+[D24](#d24--a-tier-ci-already-ran-on-a-commit-is-cited-never-re-run-locally)'s shape and
+[L-06](EVIDENCE.md)'s accepted cost, unchanged.
+
+`tests/hooks/test-tiers.test.mjs` enforces the pairing. Its existing union check is
+satisfied by any placement, so it would accept a smoke file being quietly moved into the
+integration tier — which would restore the hole in silence. The added test names each
+pair and fails if the smoke file leaves the fast tier or the full test leaves the
+integration tier.
+
+**What this does not license.** Adding a fast-tier smoke test for every artifact by
+reflex. These two were chosen because Checkpoint 6 found them uncovered and named them
+Phase 6's headline artifacts, not because coverage in both tiers is the standard. Nor
+does it license the reverse reading: if either integration test ever becomes cheap enough
+for the fast tier, this decision needs revising and its smoke test becomes redundant.
+
+---
+
 ## 2026-08-13 — One decision from Phase 7
 
 ### D25 — The shell merge arm stays role-scoped, and the assumption is written down
