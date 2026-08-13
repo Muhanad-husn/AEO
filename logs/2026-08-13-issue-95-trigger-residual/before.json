@@ -1,0 +1,2454 @@
+{
+  "tool": "evals/trigger-eval.mjs",
+  "plugin_root": "D:\\AEO-wt\\95-trigger-eval-residual\\plugin",
+  "case_file": "D:\\AEO-wt\\95-trigger-eval-residual\\evals\\trigger-cases.json",
+  "model": "sonnet",
+  "sampling": "claude -p defaults; no temperature or seed control is exposed",
+  "judge_flags": [
+    "--safe-mode",
+    "--no-session-persistence",
+    "--strict-mcp-config",
+    "--tools \"\"",
+    "--system-prompt"
+  ],
+  "repeats": 5,
+  "started_at": "2026-08-13T17:26:27.911Z",
+  "finished_at": "2026-08-13T17:34:56.613Z",
+  "roster": [
+    {
+      "name": "monitor-design",
+      "description": "Use this skill when someone wants a monitoring view built for one particular long-running job — a progress readout, dashboard, or derived reading such as spend so far, pipeline stage, or shards left, computed from that job's run log on top of the generic monitor. Use it on any request to build, design, add, or hand over a readout or view for a named job, including while that job is already running, and whenever units, rate and the stall verdict do not answer what someone needs to know about it. Do not use it for a bare status question about a run — \"is it still working\", \"how far along is it\", \"did it stall\" — which want a number read back by running the generic run monitor, with no overlay built to answer them."
+    },
+    {
+      "name": "new-project",
+      "description": "Stand up a new project repository this plugin's lanes and gates can actually work in. Preflight the toolchain, resolve the stack, write the tree with logs/ before any product code, land one green commit on main, prepare the GitHub remote and branch protection for founder approval, then write the project handbook. Trigger on starting a new project, repo, or codebase from scratch, on scaffolding or bootstrapping an empty folder, on setting up the engineering org somewhere for the first time, or on asking what to do first after installing this plugin. To slice work inside a project that already exists, use tdd-plan instead."
+    },
+    {
+      "name": "red-green-refactor",
+      "description": "Use this skill to build one bounded change in an existing codebase test-first, driving it outside-in — a failing acceptance test sets the goal, and inner red, green, refactor unit cycles build the code that satisfies it. Use it for any request to implement, add, or change behaviour in code that already exists, whether or not the request mentions testing, and however many files the change happens to touch; a slice plan on disk is welcome but not required. Do not use it when the work has not been broken into pieces yet and the user is asking what to build first, when the user wants an existing failure diagnosed rather than new behaviour built, or when the job is bulk mechanical editing with no behaviour change. Refuses to write production code without a failing test written first."
+    },
+    {
+      "name": "safe-cleanup",
+      "description": "Safely retire local feature branches once their pull requests have merged or closed — classify every branch as merged, abandoned, open, or protected, report the classification, then delete only what's confirmed and log the SHA of everything removed. Never touches the remote, never deletes an unmerged branch without explicit sign-off. Trigger on a request to clean up branches, tidy the repo, or prune stale local work."
+    },
+    {
+      "name": "safe-pr",
+      "description": "Open a reviewable pull request once a slice is green — collect the test evidence (a unit summary, plus e2e screenshots and a recording for a UI slice, or terminal transcripts for a CLI, API, or service slice), secret-scan it, generate the PR body from a template, then push and open the PR. Never merges, never force-pushes, never targets a branch other than the repo's default. Trigger on a request to open a PR, raise a pull request, or ship a slice with evidence attached."
+    },
+    {
+      "name": "tdd-ci",
+      "description": "Use this skill when someone wants their tests to gate pull requests instead of only running on one machine — detect the stack, write the matching GitHub Actions workflow with a unit job and an e2e or integration job, then propose promoting those jobs to required status checks on the default branch. Use it whether the request is shaped like a file to write (add CI, wire up GitHub Actions) or like a repository setting to change (make the test job a required check, block merges on the suite); both are the same job and this skill covers it end to end. Do not use it to diagnose a test that is already failing or flaky, or to change repository settings that have nothing to do with the test suite. Runs after red-green-refactor, once a slice is green locally, and before safe-pr."
+    },
+    {
+      "name": "tdd-plan",
+      "description": "Use this skill when someone wants work broken down before any code is written — split a feature, product, rewrite, or fix into thin, independently valuable vertical slices and write one execution plan per slice to disk. Use it whenever the ask is for the breakdown itself — slice this up, what is the smallest first step, what order should these go in, plan it test-first. The resulting plan is the contract red-green-refactor executes next. Do not use it when the user is asking for the work to be carried out rather than planned, however large that work is and even when they want it parallelised; that is implementation. At sprint or epic scale, where several actors work in parallel or GitHub issues need filing, use `/aeo:sprint-plan` instead."
+    },
+    {
+      "name": "worker-dispatch",
+      "description": "Use this skill for a bulk mechanical chore one agent would otherwise grind through serially — fan it out across operation workers, many subagents writing into one checkout, in numbers the task sets, reaching exactly one commit. Use it when the work divides into many independent, near-identical units with no design decision left inside any of them, and the real question is how many workers, what each may write, and where the gates apply. Do not use it when the units add or change behaviour, need a test written first, or produce something a reviewer should read as a change; that is implementation work and it belongs to red-green-refactor however many files it spans. Do not use it for feature work that needs its own branch and pull request either; that is a development actor, one worktree each, and capped."
+    }
+  ],
+  "operator_lanes": [
+    "fix",
+    "review",
+    "sprint-plan",
+    "sprint-start",
+    "status",
+    "triage",
+    "verify"
+  ],
+  "cases": [
+    {
+      "id": "md-p1",
+      "kind": "positive",
+      "expect": "monitor-design",
+      "prompt": "The nightly reindex takes about six hours and all I get is a spinner. I want a readout that tells me which stage it is on and how much of the budget it has burned.",
+      "why": "The plainest statement of the job monitor-design exists for: one named long-running job, a derived reading the generic monitor does not compute."
+    },
+    {
+      "id": "md-p2",
+      "kind": "positive",
+      "expect": "monitor-design",
+      "prompt": "For the customer import job specifically, put together a view showing how many records are left and what it has cost so far.",
+      "why": "Same intent stated as a build request rather than a complaint, to check the description is not keyed to the complaint framing."
+    },
+    {
+      "id": "md-n1",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "monitor-design"
+      ],
+      "prompt": "Is the reindex still going, or has it wedged?",
+      "why": "monitor-design's description explicitly disclaims this question — it is answered by running the generic monitor, not by designing an overlay. A skill carrying an anti-trigger should be tested against it."
+    },
+    {
+      "id": "md-n2",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "monitor-design"
+      ],
+      "prompt": "How far along is the migration?",
+      "why": "The second question monitor-design's description disclaims by name, phrased the way it would actually be typed."
+    },
+    {
+      "id": "md-n3",
+      "kind": "near-miss",
+      "expect": "monitor-design",
+      "competes": [
+        "worker-dispatch"
+      ],
+      "prompt": "The four-hundred-file rename is running now. Give me a progress readout for that job.",
+      "why": "Sits between monitor-design and worker-dispatch. The subject is a fan-out job, but the ask is a view of it, not a dispatch. Tests whether worker-dispatch's vocabulary pulls a monitoring request across."
+    },
+    {
+      "id": "rgr-p1",
+      "kind": "positive",
+      "expect": "red-green-refactor",
+      "prompt": "Here is the slice plan for token refresh. Build it.",
+      "why": "The handoff red-green-refactor is specified to receive: an existing plan, now execute it."
+    },
+    {
+      "id": "rgr-p2",
+      "kind": "positive",
+      "expect": "red-green-refactor",
+      "prompt": "Fix the cart total rounding, but I want the test written before the code.",
+      "why": "Small change plus an explicit test-first demand. Also probes the boundary with the fix lane, which is operator-invoked: the test-first demand is what should tip it here rather than nowhere."
+    },
+    {
+      "id": "rgr-n1",
+      "kind": "near-miss",
+      "expect": "tdd-plan",
+      "competes": [
+        "red-green-refactor"
+      ],
+      "prompt": "I have a rough idea for offline mode. What is the smallest first piece worth shipping?",
+      "why": "The tdd-plan / red-green-refactor pair, on the planning side. Nothing exists yet, so implementing is wrong."
+    },
+    {
+      "id": "rgr-n2",
+      "kind": "near-miss",
+      "expect": "red-green-refactor",
+      "competes": [
+        "worker-dispatch"
+      ],
+      "prompt": "Add deleted_at handling to the three repository classes that need it.",
+      "why": "The red-green-refactor / worker-dispatch pair. Mechanical-sounding and spread across files, but three files is implementation work, not a fan-out."
+    },
+    {
+      "id": "sc-p1",
+      "kind": "positive",
+      "expect": "safe-cleanup",
+      "prompt": "My branch list is a mess. Get rid of the ones whose pull requests already landed.",
+      "why": "The core case, stated the way it is actually said."
+    },
+    {
+      "id": "sc-p2",
+      "kind": "positive",
+      "expect": "safe-cleanup",
+      "prompt": "I have about thirty local branches left over from last month. Delete the finished ones and leave anything still in flight.",
+      "why": "Same intent with the safety condition attached, which is the part the skill is built around."
+    },
+    {
+      "id": "sc-n1",
+      "kind": "near-miss",
+      "expect": "safe-pr",
+      "competes": [
+        "safe-cleanup"
+      ],
+      "prompt": "This branch is finished. Get it in front of me.",
+      "why": "The safe-cleanup / safe-pr pair. Both are end-of-branch work; only one of them opens anything."
+    },
+    {
+      "id": "sc-n2",
+      "kind": "near-miss",
+      "expect": "safe-cleanup",
+      "competes": [
+        "NONE"
+      ],
+      "prompt": "Delete the merged branches on GitHub as well as locally.",
+      "why": "Half the request is outside safe-cleanup's stated limits, which is exactly when a skill should still be selected and then refuse the out-of-bounds half. A description that goes quiet here leaves the founder with no handler at all."
+    },
+    {
+      "id": "pr-p1",
+      "kind": "positive",
+      "expect": "safe-pr",
+      "prompt": "The slice is green. Put the pull request up with the terminal output attached.",
+      "why": "The core case for a service-shaped slice."
+    },
+    {
+      "id": "pr-p2",
+      "kind": "positive",
+      "expect": "safe-pr",
+      "prompt": "Everything passes locally. Raise it for review and include the proof.",
+      "why": "Same intent without naming the evidence format, so the description cannot key on the word screenshot or transcript."
+    },
+    {
+      "id": "pr-n1",
+      "kind": "near-miss",
+      "expect": "tdd-ci",
+      "competes": [
+        "safe-pr"
+      ],
+      "prompt": "I want these tests blocking merges, not just running on my laptop.",
+      "why": "The safe-pr / tdd-ci pair. Both concern pull requests; only one writes a workflow."
+    },
+    {
+      "id": "pr-n2",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "safe-pr",
+        "red-green-refactor"
+      ],
+      "prompt": "Go over my diff and tell me what is wrong with it before I open anything.",
+      "why": "This is the review lane, which is operator-invoked and not in the roster. If safe-pr takes it, a description-triggered skill is poaching a lane's prompt."
+    },
+    {
+      "id": "pr-n3",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "safe-pr"
+      ],
+      "prompt": "Merge this once it is green.",
+      "why": "No roster skill merges anything, and safe-pr's description says so in as many words. Anything that fires here has read past its own limits."
+    },
+    {
+      "id": "ci-p1",
+      "kind": "positive",
+      "expect": "tdd-ci",
+      "prompt": "Add the GitHub Actions workflow so the unit tests and the browser tests both run on every pull request.",
+      "why": "The core case, named concretely."
+    },
+    {
+      "id": "ci-p2",
+      "kind": "positive",
+      "expect": "tdd-ci",
+      "prompt": "Set up continuous integration for this repo.",
+      "why": "The same ask at its vaguest. A description that only fires on the concrete phrasing is brittle."
+    },
+    {
+      "id": "ci-n1",
+      "kind": "near-miss",
+      "expect": "tdd-ci",
+      "competes": [
+        "NONE"
+      ],
+      "prompt": "Make the test job a required check on main.",
+      "why": "Phrased as a repository settings change rather than a file to write, which is where it could slide to NONE."
+    },
+    {
+      "id": "ci-n2",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "tdd-ci",
+        "red-green-refactor"
+      ],
+      "prompt": "The end-to-end suite is flaky in CI. Work out why and fix it.",
+      "why": "Carries tdd-ci's vocabulary but asks for debugging, which is the fix lane's job and the fix lane is operator-invoked. Tests whether tdd-ci fires on the word CI alone."
+    },
+    {
+      "id": "tp-p1",
+      "kind": "positive",
+      "expect": "tdd-plan",
+      "prompt": "New feature: saved searches. Break it into the thinnest pieces that each deliver something on their own.",
+      "why": "The core case."
+    },
+    {
+      "id": "tp-p2",
+      "kind": "positive",
+      "expect": "tdd-plan",
+      "prompt": "Before anyone writes code, cut this rewrite into steps and write each step down somewhere.",
+      "why": "Same intent emphasising the written output, which is the part that distinguishes it from a conversation."
+    },
+    {
+      "id": "tp-n1",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "tdd-plan"
+      ],
+      "prompt": "Turn section four of the spec into a backlog of GitHub issues for the coming sprint.",
+      "why": "This is the sprint-plan lane, which is operator-invoked. tdd-plan's own description points here, so the question is whether it points or grabs."
+    },
+    {
+      "id": "tp-n2",
+      "kind": "near-miss",
+      "expect": "red-green-refactor",
+      "competes": [
+        "tdd-plan"
+      ],
+      "prompt": "The plan for slice three is written. Start on it, test first.",
+      "why": "The tdd-plan / red-green-refactor pair from the other side: a plan is mentioned, but it already exists."
+    },
+    {
+      "id": "wd-p1",
+      "kind": "positive",
+      "expect": "worker-dispatch",
+      "prompt": "Rename userId to accountId across the codebase, roughly four hundred files. Spread it over several agents and land it as one commit.",
+      "why": "The core case, with the shape and the fan-out both stated."
+    },
+    {
+      "id": "wd-p2",
+      "kind": "positive",
+      "expect": "worker-dispatch",
+      "prompt": "All eighty fixture files need regenerating to the new schema. Split the work up between agents.",
+      "why": "Same shape, different domain, so the description cannot be keyed to renames."
+    },
+    {
+      "id": "wd-p3",
+      "kind": "positive",
+      "expect": "worker-dispatch",
+      "prompt": "Strip the deprecated licence header out of every file under src. There are hundreds of them.",
+      "why": "The fan-out is implied by the volume rather than requested outright, which is how it usually arrives."
+    },
+    {
+      "id": "wd-n1",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "worker-dispatch"
+      ],
+      "prompt": "Take the next four issues at the same time, each on its own branch with its own pull request.",
+      "why": "The sprint-start lane, which is operator-invoked, and the exact case worker-dispatch's description disclaims. The strongest single test of that anti-trigger."
+    },
+    {
+      "id": "wd-n2",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "worker-dispatch"
+      ],
+      "prompt": "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it.",
+      "why": "Asks for a fan-out in as many words, but the work is a feature that needs its own branch and pull request, which worker-dispatch excludes. Tests whether the request for parallelism overrides the exclusion."
+    },
+    {
+      "id": "np-p1",
+      "kind": "positive",
+      "expect": "new-project",
+      "prompt": "Empty folder, nothing in it yet. Stand me up a repository I can actually work in.",
+      "why": "The core case: no repository exists and the ask is to make one that the rest of the lanes can operate on."
+    },
+    {
+      "id": "np-p2",
+      "kind": "positive",
+      "expect": "new-project",
+      "prompt": "I have just installed this thing. What do I do first?",
+      "why": "The orientation question a first-time operator actually types. Nothing in it names a repository, a stack, or a commit."
+    },
+    {
+      "id": "np-p3",
+      "kind": "positive",
+      "expect": "new-project",
+      "prompt": "Bootstrap a new Go service from scratch, with the tests wired up and a first commit landed.",
+      "why": "Same intent with a stack named, so the description cannot be keyed only to the empty-folder framing."
+    },
+    {
+      "id": "np-n1",
+      "kind": "near-miss",
+      "expect": "tdd-plan",
+      "competes": [
+        "new-project"
+      ],
+      "prompt": "The repo already exists. Cut the payments feature into pieces before we start on it.",
+      "why": "The new-project / tdd-plan pair, on the side new-project's last sentence points away from. Both answer start some work; only one of them assumes there is nothing there yet."
+    },
+    {
+      "id": "np-n2",
+      "kind": "near-miss",
+      "expect": "new-project",
+      "competes": [
+        "tdd-plan"
+      ],
+      "prompt": "Brand new product, nothing written yet. Where do I start?",
+      "why": "The same pair from the other side. Reads like planning, but there is no repository to plan inside."
+    },
+    {
+      "id": "np-n3",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "new-project"
+      ],
+      "prompt": "Turn on branch protection for this repo.",
+      "why": "new-project prepares branch protection, but only while standing a project up. An existing repository needing one setting changed is nobody on the roster, and firing the scaffolder at it would be destructive."
+    },
+    {
+      "id": "cn-1",
+      "kind": "control-none",
+      "expect": "NONE",
+      "prompt": "What is the capital of Portugal?",
+      "why": "Judge-generosity control. L-10 records that judges are systematically generous; if the roster fires on this, no score below it is trustworthy."
+    },
+    {
+      "id": "cn-2",
+      "kind": "control-none",
+      "expect": "NONE",
+      "prompt": "Explain how a bloom filter works.",
+      "why": "Second control, technical enough to tempt a coding skill but asking for nothing to be done."
+    },
+    {
+      "id": "cn-3",
+      "kind": "control-none",
+      "expect": "NONE",
+      "prompt": "Read config.yaml and tell me what the request timeout is set to.",
+      "why": "Third control: real repository work that no skill covers. Distinguishes a roster that declines off-topic questions from one that declines only non-technical ones."
+    }
+  ],
+  "verdicts": [
+    [
+      "monitor-design",
+      "monitor-design",
+      "NONE",
+      "NONE",
+      "monitor-design",
+      "red-green-refactor",
+      "red-green-refactor",
+      "tdd-plan",
+      "red-green-refactor",
+      "safe-cleanup",
+      "safe-cleanup",
+      "safe-pr",
+      "safe-cleanup",
+      "safe-pr",
+      "safe-pr",
+      "tdd-ci",
+      "NONE",
+      "NONE",
+      "tdd-ci",
+      "tdd-ci",
+      "tdd-ci",
+      "NONE",
+      "tdd-plan",
+      "tdd-plan",
+      "NONE",
+      "red-green-refactor",
+      "worker-dispatch",
+      "worker-dispatch",
+      "worker-dispatch",
+      "NONE",
+      "tdd-plan",
+      "new-project",
+      "new-project",
+      "new-project",
+      "tdd-plan",
+      "new-project",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+    ],
+    [
+      "monitor-design",
+      "monitor-design",
+      "NONE",
+      "NONE",
+      "monitor-design",
+      "red-green-refactor",
+      "red-green-refactor",
+      "tdd-plan",
+      "red-green-refactor",
+      "safe-cleanup",
+      "safe-cleanup",
+      "safe-pr",
+      "safe-cleanup",
+      "safe-pr",
+      "safe-pr",
+      "tdd-ci",
+      "NONE",
+      "NONE",
+      "tdd-ci",
+      "tdd-ci",
+      "tdd-ci",
+      "NONE",
+      "tdd-plan",
+      "tdd-plan",
+      "NONE",
+      "red-green-refactor",
+      "worker-dispatch",
+      "worker-dispatch",
+      "worker-dispatch",
+      "NONE",
+      "red-green-refactor",
+      "new-project",
+      "new-project",
+      "new-project",
+      "tdd-plan",
+      "new-project",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+    ],
+    [
+      "monitor-design",
+      "monitor-design",
+      "NONE",
+      "NONE",
+      "monitor-design",
+      "red-green-refactor",
+      "red-green-refactor",
+      "tdd-plan",
+      "red-green-refactor",
+      "safe-cleanup",
+      "safe-cleanup",
+      "safe-pr",
+      "safe-cleanup",
+      "safe-pr",
+      "safe-pr",
+      "tdd-ci",
+      "NONE",
+      "NONE",
+      "tdd-ci",
+      "tdd-ci",
+      "tdd-ci",
+      "NONE",
+      "tdd-plan",
+      "tdd-plan",
+      "NONE",
+      "red-green-refactor",
+      "worker-dispatch",
+      "worker-dispatch",
+      "worker-dispatch",
+      "NONE",
+      "NONE",
+      "new-project",
+      "new-project",
+      "new-project",
+      "tdd-plan",
+      "new-project",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+    ],
+    [
+      "monitor-design",
+      "monitor-design",
+      "NONE",
+      "NONE",
+      "monitor-design",
+      "red-green-refactor",
+      "red-green-refactor",
+      "tdd-plan",
+      "red-green-refactor",
+      "safe-cleanup",
+      "safe-cleanup",
+      "safe-pr",
+      "NONE",
+      "safe-pr",
+      "safe-pr",
+      "tdd-ci",
+      "NONE",
+      "NONE",
+      "tdd-ci",
+      "tdd-ci",
+      "tdd-ci",
+      "NONE",
+      "tdd-plan",
+      "tdd-plan",
+      "NONE",
+      "red-green-refactor",
+      "worker-dispatch",
+      "worker-dispatch",
+      "worker-dispatch",
+      "NONE",
+      "tdd-plan",
+      "new-project",
+      "new-project",
+      "new-project",
+      "tdd-plan",
+      "new-project",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+    ],
+    [
+      "monitor-design",
+      "monitor-design",
+      "NONE",
+      "NONE",
+      "monitor-design",
+      "red-green-refactor",
+      "red-green-refactor",
+      "tdd-plan",
+      "red-green-refactor",
+      "safe-cleanup",
+      "safe-cleanup",
+      "safe-pr",
+      "safe-cleanup",
+      "safe-pr",
+      "safe-pr",
+      "tdd-ci",
+      "NONE",
+      "NONE",
+      "tdd-ci",
+      "tdd-ci",
+      "tdd-ci",
+      "NONE",
+      "tdd-plan",
+      "tdd-plan",
+      "NONE",
+      "red-green-refactor",
+      "worker-dispatch",
+      "worker-dispatch",
+      "worker-dispatch",
+      "NONE",
+      "tdd-plan",
+      "new-project",
+      "new-project",
+      "new-project",
+      "tdd-plan",
+      "new-project",
+      "NONE",
+      "NONE",
+      "NONE",
+      "NONE"
+    ]
+  ],
+  "raw": [
+    [
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      }
+    ],
+    [
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      }
+    ],
+    [
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      }
+    ],
+    [
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      }
+    ],
+    [
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "monitor-design\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "safe-cleanup\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "safe-pr\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-ci\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "red-green-refactor\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "worker-dispatch\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "tdd-plan\n",
+        "error": null
+      },
+      {
+        "raw": "new-project\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      },
+      {
+        "raw": "NONE\n",
+        "error": null
+      }
+    ]
+  ],
+  "aggregate": {
+    "repeats": 5,
+    "perRun": [
+      {
+        "overall": {
+          "total": 40,
+          "correct": 39,
+          "accuracy": 0.975
+        },
+        "none": {
+          "total": 12,
+          "correct": 11,
+          "accuracy": 0.9167
+        },
+        "perSkill": {
+          "monitor-design": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "new-project": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "red-green-refactor": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "safe-cleanup": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "safe-pr": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "tdd-ci": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "tdd-plan": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 1,
+            "falseFireRate": 0.0278,
+            "picked": 5,
+            "correctPicks": 4,
+            "precision": 0.8
+          },
+          "worker-dispatch": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          }
+        },
+        "wrongFirings": [
+          {
+            "id": "wd-n2",
+            "kind": "near-miss",
+            "prompt": "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it.",
+            "expected": "NONE",
+            "fired": "tdd-plan"
+          }
+        ],
+        "misses": [],
+        "unparseable": []
+      },
+      {
+        "overall": {
+          "total": 40,
+          "correct": 39,
+          "accuracy": 0.975
+        },
+        "none": {
+          "total": 12,
+          "correct": 11,
+          "accuracy": 0.9167
+        },
+        "perSkill": {
+          "monitor-design": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "new-project": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "red-green-refactor": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 1,
+            "falseFireRate": 0.0278,
+            "picked": 5,
+            "correctPicks": 4,
+            "precision": 0.8
+          },
+          "safe-cleanup": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "safe-pr": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "tdd-ci": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "tdd-plan": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "worker-dispatch": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          }
+        },
+        "wrongFirings": [
+          {
+            "id": "wd-n2",
+            "kind": "near-miss",
+            "prompt": "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it.",
+            "expected": "NONE",
+            "fired": "red-green-refactor"
+          }
+        ],
+        "misses": [],
+        "unparseable": []
+      },
+      {
+        "overall": {
+          "total": 40,
+          "correct": 40,
+          "accuracy": 1
+        },
+        "none": {
+          "total": 12,
+          "correct": 12,
+          "accuracy": 1
+        },
+        "perSkill": {
+          "monitor-design": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "new-project": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "red-green-refactor": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "safe-cleanup": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "safe-pr": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "tdd-ci": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "tdd-plan": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "worker-dispatch": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          }
+        },
+        "wrongFirings": [],
+        "misses": [],
+        "unparseable": []
+      },
+      {
+        "overall": {
+          "total": 40,
+          "correct": 38,
+          "accuracy": 0.95
+        },
+        "none": {
+          "total": 12,
+          "correct": 11,
+          "accuracy": 0.9167
+        },
+        "perSkill": {
+          "monitor-design": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "new-project": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "red-green-refactor": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "safe-cleanup": {
+            "shouldFire": 3,
+            "caught": 2,
+            "recall": 0.6667,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 2,
+            "correctPicks": 2,
+            "precision": 1
+          },
+          "safe-pr": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "tdd-ci": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "tdd-plan": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 1,
+            "falseFireRate": 0.0278,
+            "picked": 5,
+            "correctPicks": 4,
+            "precision": 0.8
+          },
+          "worker-dispatch": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          }
+        },
+        "wrongFirings": [
+          {
+            "id": "wd-n2",
+            "kind": "near-miss",
+            "prompt": "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it.",
+            "expected": "NONE",
+            "fired": "tdd-plan"
+          }
+        ],
+        "misses": [
+          {
+            "id": "sc-n2",
+            "kind": "near-miss",
+            "prompt": "Delete the merged branches on GitHub as well as locally.",
+            "expected": "safe-cleanup",
+            "fired": "NONE"
+          }
+        ],
+        "unparseable": []
+      },
+      {
+        "overall": {
+          "total": 40,
+          "correct": 39,
+          "accuracy": 0.975
+        },
+        "none": {
+          "total": 12,
+          "correct": 11,
+          "accuracy": 0.9167
+        },
+        "perSkill": {
+          "monitor-design": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "new-project": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "red-green-refactor": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "safe-cleanup": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "safe-pr": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          },
+          "tdd-ci": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 4,
+            "correctPicks": 4,
+            "precision": 1
+          },
+          "tdd-plan": {
+            "shouldFire": 4,
+            "caught": 4,
+            "recall": 1,
+            "shouldNotFire": 36,
+            "falseFires": 1,
+            "falseFireRate": 0.0278,
+            "picked": 5,
+            "correctPicks": 4,
+            "precision": 0.8
+          },
+          "worker-dispatch": {
+            "shouldFire": 3,
+            "caught": 3,
+            "recall": 1,
+            "shouldNotFire": 37,
+            "falseFires": 0,
+            "falseFireRate": 0,
+            "picked": 3,
+            "correctPicks": 3,
+            "precision": 1
+          }
+        },
+        "wrongFirings": [
+          {
+            "id": "wd-n2",
+            "kind": "near-miss",
+            "prompt": "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it.",
+            "expected": "NONE",
+            "fired": "tdd-plan"
+          }
+        ],
+        "misses": [],
+        "unparseable": []
+      }
+    ],
+    "overall": {
+      "accuracies": [
+        0.975,
+        0.975,
+        1,
+        0.95,
+        0.975
+      ],
+      "min": 0.95,
+      "max": 1,
+      "spread": 0.05,
+      "mean": 0.975,
+      "stdev": 0.0158
+    },
+    "noneAccuracy": {
+      "values": [
+        0.9167,
+        0.9167,
+        1,
+        0.9167,
+        0.9167
+      ],
+      "min": 0.9167,
+      "max": 1,
+      "spread": 0.0833,
+      "mean": 0.9334,
+      "stdev": 0.0333
+    },
+    "perSkill": {
+      "monitor-design": {
+        "shouldFire": 3,
+        "recalls": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "recall": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        },
+        "falseFireCounts": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "falseFire": {
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "mean": 0,
+          "stdev": 0
+        },
+        "precisions": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "precision": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        }
+      },
+      "new-project": {
+        "shouldFire": 4,
+        "recalls": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "recall": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        },
+        "falseFireCounts": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "falseFire": {
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "mean": 0,
+          "stdev": 0
+        },
+        "precisions": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "precision": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        }
+      },
+      "red-green-refactor": {
+        "shouldFire": 4,
+        "recalls": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "recall": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        },
+        "falseFireCounts": [
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "falseFire": {
+          "min": 0,
+          "max": 1,
+          "spread": 1,
+          "mean": 0.2,
+          "stdev": 0.4
+        },
+        "precisions": [
+          1,
+          0.8,
+          1,
+          1,
+          1
+        ],
+        "precision": {
+          "min": 0.8,
+          "max": 1,
+          "spread": 0.2,
+          "mean": 0.96,
+          "stdev": 0.08
+        }
+      },
+      "safe-cleanup": {
+        "shouldFire": 3,
+        "recalls": [
+          1,
+          1,
+          1,
+          0.6667,
+          1
+        ],
+        "recall": {
+          "min": 0.6667,
+          "max": 1,
+          "spread": 0.3333,
+          "mean": 0.9333,
+          "stdev": 0.1333
+        },
+        "falseFireCounts": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "falseFire": {
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "mean": 0,
+          "stdev": 0
+        },
+        "precisions": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "precision": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        }
+      },
+      "safe-pr": {
+        "shouldFire": 3,
+        "recalls": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "recall": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        },
+        "falseFireCounts": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "falseFire": {
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "mean": 0,
+          "stdev": 0
+        },
+        "precisions": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "precision": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        }
+      },
+      "tdd-ci": {
+        "shouldFire": 4,
+        "recalls": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "recall": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        },
+        "falseFireCounts": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "falseFire": {
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "mean": 0,
+          "stdev": 0
+        },
+        "precisions": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "precision": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        }
+      },
+      "tdd-plan": {
+        "shouldFire": 4,
+        "recalls": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "recall": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        },
+        "falseFireCounts": [
+          1,
+          0,
+          0,
+          1,
+          1
+        ],
+        "falseFire": {
+          "min": 0,
+          "max": 1,
+          "spread": 1,
+          "mean": 0.6,
+          "stdev": 0.4899
+        },
+        "precisions": [
+          0.8,
+          1,
+          1,
+          0.8,
+          0.8
+        ],
+        "precision": {
+          "min": 0.8,
+          "max": 1,
+          "spread": 0.2,
+          "mean": 0.88,
+          "stdev": 0.098
+        }
+      },
+      "worker-dispatch": {
+        "shouldFire": 3,
+        "recalls": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "recall": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        },
+        "falseFireCounts": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "falseFire": {
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "mean": 0,
+          "stdev": 0
+        },
+        "precisions": [
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "precision": {
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "mean": 1,
+          "stdev": 0
+        }
+      }
+    },
+    "stability": {
+      "cases": 40,
+      "unanimous": 38,
+      "flipped": 2,
+      "flipRate": 0.05,
+      "flippedCases": [
+        {
+          "id": "sc-n2",
+          "expect": "safe-cleanup",
+          "verdicts": [
+            "safe-cleanup",
+            "safe-cleanup",
+            "safe-cleanup",
+            "NONE",
+            "safe-cleanup"
+          ]
+        },
+        {
+          "id": "wd-n2",
+          "expect": "NONE",
+          "verdicts": [
+            "tdd-plan",
+            "red-green-refactor",
+            "NONE",
+            "tdd-plan",
+            "tdd-plan"
+          ]
+        }
+      ]
+    },
+    "wrongFirings": [
+      {
+        "id": "wd-n2",
+        "kind": "near-miss",
+        "prompt": "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it.",
+        "expected": "NONE",
+        "fired": "tdd-plan",
+        "runs": [
+          0,
+          3,
+          4
+        ],
+        "count": 3
+      },
+      {
+        "id": "wd-n2",
+        "kind": "near-miss",
+        "prompt": "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it.",
+        "expected": "NONE",
+        "fired": "red-green-refactor",
+        "runs": [
+          1
+        ],
+        "count": 1
+      }
+    ],
+    "misses": [
+      {
+        "id": "sc-n2",
+        "kind": "near-miss",
+        "prompt": "Delete the merged branches on GitHub as well as locally.",
+        "expected": "safe-cleanup",
+        "fired": "NONE",
+        "runs": [
+          3
+        ],
+        "count": 1
+      }
+    ]
+  }
+}

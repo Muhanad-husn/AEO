@@ -2,6 +2,13 @@
   "version": 1,
   "authored": "2026-08-13",
   "authored_for": "P6.4 (issue #82)",
+  "revised": [
+    {
+      "date": "2026-08-13",
+      "issue": 95,
+      "change": "wd-n2 re-framed: prompt replaced and 'expect' moved from NONE to red-green-refactor. Any number taken before this date is over a different set. See logs/2026-08-13-issue-95-trigger-residual/summary.md."
+    }
+  ],
   "note": "Authored from what a founder would plausibly type, not derived from the skill descriptions. Wording deliberately avoids the descriptions' own vocabulary: a case set written out of the text it scores measures the case set. 'expect' is a roster skill name or NONE. NONE is correct whenever the prompt belongs to an operator lane (those carry disable-model-invocation: true and are unreachable by description) or to no skill at all.",
   "cases": [
     {
@@ -238,10 +245,10 @@
     {
       "id": "wd-n2",
       "kind": "near-miss",
-      "expect": "NONE",
-      "competes": ["worker-dispatch"],
-      "prompt": "Rewrite the auth module from scratch. It is a big job, so throw a bunch of agents at it.",
-      "why": "Asks for a fan-out in as many words, but the work is a feature that needs its own branch and pull request, which worker-dispatch excludes. Tests whether the request for parallelism overrides the exclusion."
+      "expect": "red-green-refactor",
+      "competes": ["worker-dispatch", "tdd-plan"],
+      "prompt": "Rework the payment retry logic so failed charges back off instead of hammering the provider. There is a fair bit to it, so throw a bunch of agents at the job.",
+      "why": "Re-framed under issue #95; the original asked for a whole-module rewrite and expected NONE, which no roster description could deliver. Asks for a fan-out in as many words, but the units change behaviour, which worker-dispatch's description excludes and hands to red-green-refactor by name. Tests whether the request for parallelism overrides the exclusion."
     },
 
     {

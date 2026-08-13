@@ -1,0 +1,24 @@
+Trigger eval — 8 description-triggered skills, 40 cases, 5 repeats, judge sonnet
+
+NOISE FLOOR (read this before any score)
+  overall accuracy across repeats: 100.0%, 100.0%, 100.0%, 100.0%, 97.5%
+  spread 2.5% (min 97.5%, max 100.0%, stdev 1.0%)
+  cases whose verdict re-rolled: 1/40 (2.5%)
+
+PER SKILL
+  skill               n  recall (spread)        false fires (spread)
+  monitor-design      3  100.0% (±  0.0%)    0.0 (±0.0)
+  new-project         4  100.0% (±  0.0%)    0.0 (±0.0)
+  red-green-refactor  5  100.0% (±  0.0%)    0.0 (±0.0)
+  safe-cleanup        3   93.3% (± 33.3%)    0.0 (±0.0)
+  safe-pr             3  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-ci              4  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-plan            4  100.0% (±  0.0%)    0.0 (±0.0)
+  worker-dispatch     3  100.0% (±  0.0%)    0.0 (±0.0)
+
+FIRED WHERE IT SHOULD NOT — the P6.5 work order, first half
+  none
+
+DID NOT FIRE WHERE IT SHOULD — the second half
+  safe-cleanup missed sc-n2 (1/5 repeats), NONE took it instead
+      "Delete the merged branches on GitHub as well as locally."
