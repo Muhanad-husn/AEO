@@ -318,8 +318,10 @@ parsing), `settings.json` and three agent frontmatters (`Bash` to `Bash|PowerShe
 skills are untouched.
 
 Neither snapshot should be edited. `source/` is verbatim by rule. The correction belongs
-here and in `docs/INVENTORY.md`, which currently describes the axial harness as
-"four role agents ... five PowerShell hooks" and is one role and one hook short.
+here and in `docs/INVENTORY.md`, and **`INVENTORY.md` now carries it** (#106, 2026-08-13):
+it names five role agents and six PowerShell hooks, says which two files the snapshot is
+missing, and says why a reader who counts the snapshot will be one short on each. It had
+described the harness as "four role agents ... five PowerShell hooks".
 
 ## Order of operations
 
@@ -362,8 +364,9 @@ waiting.
 8. **Confirm the toolchain resolves.** Axial is a `uv`/`pytest`/`ruff` project, and the
    plugin resolves that per change through `stack.mjs` instead of hard-coding it. Check:
    the commit gate runs Axial's suite, not a guess at one.
-9. **Correct `docs/INVENTORY.md`** for the two stale snapshots, naming the six hooks and
-   five agents the harness actually retired with. `source/` itself is not edited.
+9. ~~**Correct `docs/INVENTORY.md`**~~ **Done 2026-08-13** (#106). It names the six hooks
+   and five agents the harness actually retired with, and names the two files the snapshot
+   is missing rather than only restating a corrected count. `source/` was not edited.
 10. ~~**Decide the one remaining gap.**~~ **Done.** The scaffolder and the trigger eval
     were Phase 6 work and both landed. Cost and ETA reporting was dropped by founder
     decision on 2026-08-13 (#94) and recorded in the gap list above. No gap is undecided.

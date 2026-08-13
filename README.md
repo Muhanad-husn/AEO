@@ -38,6 +38,21 @@ nothing to download by hand.
 The repository is public. Anyone can install it, and no account, token, or
 collaborator access is involved.
 
+### Versions: the tag documents, `main` ships
+
+The current release is **v0.1.0**. `0.1.0` rather than `1.0.0` on purpose: the
+gates and lanes work and the install path is proven, but the skill names,
+command names and hook contract have been exercised by one project, which is
+not enough evidence for a stability promise.
+
+**The tag does not pin your install.** `marketplace add` clones this
+repository and reads `.claude-plugin/marketplace.json` from the **default
+branch**; it does not resolve tags, and the manifest has no version field to
+resolve one with. So you always get the current `main`, and the GitHub release
+is a marker for humans and an anchor for its notes. If you need a fixed
+version, clone the tag yourself and add the clone as a directory marketplace.
+The reasoning, and what it costs, is [D27](docs/DECISIONS.md).
+
 From inside a Claude Code session:
 
 ```
