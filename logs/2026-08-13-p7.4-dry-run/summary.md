@@ -20,7 +20,7 @@ differ, 2 when the check itself could not run.
 | On disk | `D:\aeo-dryrun`, the main checkout, left in place |
 | Builder worktree | `D:\aeo-dryrun-wt\1`, branch `feat/sprint/1-envdiff`, left in place |
 | On GitHub | `https://github.com/Muhanad-husn/aeo-dryrun`, **private** |
-| The pull request | https://github.com/Muhanad-husn/aeo-dryrun/pull/2, CI green, squash-merged by the founder 2026-08-13T00:09:17Z as `a0912e9` |
+| The pull request | https://github.com/Muhanad-husn/aeo-dryrun/pull/2, CI green, merged by the founder 2026-08-13T00:09:17Z as the merge commit `a0912e9` |
 | Probe fixtures | `D:\aeo-dryrun-live` (fake production data), `D:\aeo-dryrun-sandbox` |
 
 Nothing here touches `D:\AEO`, the testbed at `D:\aeo-testbed`, `~/.claude/`, or
@@ -78,7 +78,7 @@ fired — commit-gate refused `git commit -m "probe: red suite"` on branch
         exit: 1", with the FAIL lines quoted back. HEAD stayed at 6212aca; no commit
         landed. Control: the same command with the test fixed to pass, same branch,
         commit 5e5051a landed. Second control, from the real run rather than a probe:
-        the gate ran on all five of the builder's commits and allowed each.
+        the gate ran on all six of the builder's commits and allowed each.
 
 fired — block-merge refused `gh pr merge 1 --squash` from a session launched with
         --agent aeo:builder: "BLOCKED: subagents never merge PRs. Prepare the PR; the
@@ -115,7 +115,7 @@ session, about 50 minutes wall clock. It cut a worktree at `D:\aeo-dryrun-wt\1`,
 the acceptance test first and watched it fail on `undefined: run`, implemented to green,
 committed test and code together, added a `SPEC.md` for the parsing questions the issue
 left open, added a CI workflow because the repository had none, pushed, waited for CI,
-and stopped at the PR. Five commits. `go vet ./...` and `go test ./...` green locally and
+and stopped at the PR. Six commits. `go vet ./...` and `go test ./...` green locally and
 in GitHub Actions (runs `31652221301` and `31652225031`, SHA `6212aca`, both `success`).
 
 Its own verification found four defects in the product and fixed three inline; the fourth
@@ -144,16 +144,23 @@ merge", the plugin's own sanctioned path. No approval was given to any session h
 nothing in the run merged anything. Every automated path ran out exactly one command short
 of merged, which is where the merge seat is specified to put it.
 
-The founder closed it from their own seat:
+The founder closed it from their own seat. The command they ran was not captured, so what
+follows is what the commit graph shows rather than a command this log can source:
 
 ```
-gh pr merge 2 --squash --repo Muhanad-husn/aeo-dryrun
+a0912e9  parents e49f86d 6212aca
+         Merge pull request #2 from Muhanad-husn/feat/sprint/1-envdiff
+         author Muhanad Abulhusn | committer GitHub | 2026-08-13T00:09:17Z
 ```
 
-Squash-merged at 2026-08-13T00:09:17Z as `a0912e9`. The head branch
-`feat/sprint/1-envdiff` still exists on the remote, so nothing deleted it. Retiring it,
-and the worktree at `D:/aeo-dryrun-wt/1`, is `/aeo:safe-cleanup`'s job on the founder's
-say-so.
+Two parents, and the subject GitHub writes for a merge commit. A squash lands one parent
+and carries the pull request title instead, so this was a merge, not a squash. The
+repository allows squash, merge and rebase, so nothing fell back to a method it was not
+asked for. All six of the branch's commits survive in history.
+
+The head branch `feat/sprint/1-envdiff` still exists on the remote, so nothing deleted it.
+Retiring it, and the worktree at `D:/aeo-dryrun-wt/1`, is `/aeo:safe-cleanup`'s job on the
+founder's say-so.
 
 **Checkpoint 7's second clause holds in full.** "The dry run reaches a merged pull request
 with every gate exercised": every gate fired, and the pull request is merged. The two
