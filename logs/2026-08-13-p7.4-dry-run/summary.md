@@ -3,8 +3,8 @@
 2026-08-13. Branch `feat/phase-7/p7.4-dry-run`, cut from `main` at `7dff879`. Issue #45.
 
 **Status: all six wired gates fired on a real action, and the product went from an idea
-to an open, green, mergeable pull request. It is not merged, because merging it needs the
-founder.**
+to a merged pull request. The lane took it to merge-ready and stopped there by design;
+the founder ran the merge. Checkpoint 7's second clause holds in full.**
 
 Stack: **Go**, and the branch of `stack.mjs` that had never run against a real project
 ran and resolved exactly what it predicts.
@@ -20,7 +20,7 @@ differ, 2 when the check itself could not run.
 | On disk | `D:\aeo-dryrun`, the main checkout, left in place |
 | Builder worktree | `D:\aeo-dryrun-wt\1`, branch `feat/sprint/1-envdiff`, left in place |
 | On GitHub | `https://github.com/Muhanad-husn/aeo-dryrun`, **private** |
-| The pull request | https://github.com/Muhanad-husn/aeo-dryrun/pull/2, open, CI green, `MERGEABLE`/`CLEAN` |
+| The pull request | https://github.com/Muhanad-husn/aeo-dryrun/pull/2, CI green, squash-merged by the founder 2026-08-13T00:09:17Z as `a0912e9` |
 | Probe fixtures | `D:\aeo-dryrun-live` (fake production data), `D:\aeo-dryrun-sandbox` |
 
 Nothing here touches `D:\AEO`, the testbed at `D:\aeo-testbed`, `~/.claude/`, or
@@ -130,30 +130,37 @@ pass."
 
 ## Where a human was needed
 
-Three places, and only the third is a stop.
+Three places, and the third is the merge seat.
 
 1. **Filing the issue.** `triage` proposes and never files, by design. I filed issue #1.
 2. **Creating the GitHub repository.** Outward-facing, done once at the start.
-3. **The merge.** The pull request is open, green and `MERGEABLE`. It is not merged.
+3. **The merge.** The lane took the pull request to open, green and `MERGEABLE`, and
+   stopped. The founder merged it.
 
-`block-merge` refuses a merge from any `aeo:<role>` subagent, which is the product working
-correctly and is evidence line four above. The main session is deliberately exempt (F5 in
-`block-merge.mjs`), so `sprint-start`'s wrap-up offered "On your approval I merge", the
-plugin's own sanctioned path. That approval does not exist, so nothing merged.
+That stop is the product, not a shortfall. `block-merge` refuses a merge from any
+`aeo:<role>` subagent, which is evidence line four above. The main session is deliberately
+exempt (F5 in `block-merge.mjs`), so `sprint-start`'s wrap-up offered "On your approval I
+merge", the plugin's own sanctioned path. No approval was given to any session here, so
+nothing in the run merged anything. Every automated path ran out exactly one command short
+of merged, which is where the merge seat is specified to put it.
 
-What the founder runs, from anywhere:
+The founder closed it from their own seat:
 
 ```
-gh pr merge 2 --squash --delete-branch --repo Muhanad-husn/aeo-dryrun
+gh pr merge 2 --squash --repo Muhanad-husn/aeo-dryrun
 ```
 
-After that, `git worktree remove D:/aeo-dryrun-wt/1` retires the actor's worktree, or
-`/aeo:safe-cleanup` does it and the local branch together.
+Squash-merged at 2026-08-13T00:09:17Z as `a0912e9`. The head branch
+`feat/sprint/1-envdiff` still exists on the remote, so nothing deleted it. Retiring it,
+and the worktree at `D:/aeo-dryrun-wt/1`, is `/aeo:safe-cleanup`'s job on the founder's
+say-so.
 
-**Checkpoint 7's second clause therefore does not fully hold.** "The dry run reaches a
-merged pull request with every gate exercised": every gate is exercised, and the pull
-request reaches merge-ready and stops one command short. The clause that did not hold is
-named here rather than smoothed over, which is the alternative the checkpoint allows.
+**Checkpoint 7's second clause holds in full.** "The dry run reaches a merged pull request
+with every gate exercised": every gate fired, and the pull request is merged. The two
+halves were produced by different hands on purpose. The lane produced a merge-ready,
+CI-green change and could go no further; a human command finished it. That division is
+what the clause is measuring, and it is the reason the clause holds rather than a caveat
+against it.
 
 ## Defects and issue candidates
 
