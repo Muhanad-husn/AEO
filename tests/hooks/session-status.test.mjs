@@ -149,7 +149,29 @@ function runHook({ cwd, payload, raw, env } = {}) {
     cwd: cwd ?? NEUTRAL_CWD,
     env: env ?? buildEnv(),
   });
-  return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
+  const stdout = r.stdout ?? '';
+  const stderr = r.stderr ?? '';
+
+  // L-08, one layer up from the hook's own output: the hook always prints something,
+  // even outside a git worktree and even with gh unreachable (renderDataRoot() alone
+  // survives every early return). So empty stdout here is never a real answer from the
+  // hook -- the spawn did not complete, or was killed -- and letting it flow into an
+  // assert.match against a content regex turns "the process produced nothing" into a
+  // report that reads as "the hook rendered the wrong thing." Fail loudly here, with
+  // what actually happened, instead of downstream with what didn't.
+  if (stdout === '') {
+    const how = r.error
+      ? `spawn error: ${r.error.message}`
+      : r.signal
+        ? `killed by signal ${r.signal}`
+        : `exited ${r.status}`;
+    throw new Error(
+      `session-status.mjs produced no stdout (${how}). This means the process did not run ` +
+      `to completion, not that it rendered the wrong log. stderr: ${stderr.trim() || '(none)'}`,
+    );
+  }
+
+  return { status: r.status, stdout, stderr };
 }
 
 // ---------------------------------------------------------------------------

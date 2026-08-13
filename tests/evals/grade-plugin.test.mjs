@@ -220,7 +220,7 @@ describe('plugin.json (C-09)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Inventory: fourteen skills, five agents, no commands/
+// Inventory: fifteen skills, five agents, no commands/
 // ---------------------------------------------------------------------------
 
 describe('inventory', () => {
@@ -251,7 +251,7 @@ describe('inventory', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Per-skill: SKILL.md frontmatter and the six-lane split
+// Per-skill: SKILL.md frontmatter and the seven-lane split
 // ---------------------------------------------------------------------------
 
 describe('skill frontmatter', () => {
