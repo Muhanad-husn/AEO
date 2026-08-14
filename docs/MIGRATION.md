@@ -83,7 +83,7 @@ measurement `evals/evals.json` used to feed now exists as `evals/trigger-eval.mj
 
 | Path | Disposition | Plugin equivalent |
 | --- | --- | --- |
-| `hooks/commit-gate.ps1` | Superseded | `plugin/hooks/commit-gate.mjs`, with the toolchain resolved by `stack.mjs` instead of hard-coded |
+| `hooks/commit-gate.ps1` | Superseded | `plugin/hooks/commit-gate.mjs`, running the command the project records in `aeo-tests.json` instead of a hard-coded one |
 | `hooks/block-merge.ps1` | Superseded | `plugin/hooks/block-merge.mjs` |
 | `hooks/path-guard.ps1` | Superseded | `plugin/hooks/path-guard.mjs` |
 | `hooks/session-status.ps1` | Superseded | `plugin/hooks/session-status.mjs` |
@@ -213,7 +213,7 @@ Compared against the harness as it was at retirement, not against the snapshot.
 | 5 | `snapshot-harness.py` mirrored `.claude/` into a sibling git repo | Obsolete | V-06. An installed plugin is versioned; there is nothing gitignored to mirror |
 | 6 | The seal was attached to one agent through `hooks:` frontmatter on `peer-reviewer.md` | **Re-implemented, not dropped** | Plugin subagents cannot carry `hooks:` frontmatter (C-01), so `review-jail.mjs` is wired globally and self-scopes by role name, anchored because a plugin subagent reports the namespaced `aeo:reviewer` (C-02). Same property, different mechanism |
 | 7 | Worktrees lived at `.claude/worktrees/<slug>` | Changed deliberately | The plugin cuts sibling worktrees (`../wt/<n>`). A worktree inside `.claude/` is a second full checkout inside the repo, and [D12](DECISIONS.md) keeps plugin-adjacent state out of that path |
-| 8 | Gates hard-coded `uv`, `pytest` and `ruff` | Replaced, not dropped | `stack.mjs` resolves the test command per change (V-05, [D10](DECISIONS.md)) |
+| 8 | Gates hard-coded `uv`, `pytest` and `ruff` | Replaced, not dropped | The project records its test command in `aeo-tests.json` and the gate runs it, resolved per change (V-05, [D10](DECISIONS.md), [D29](DECISIONS.md)). The first replacement was a per-stack detection table; #110 retired it |
 
 Nothing in the retired harness is unaccounted for. Rows 4 and 6 are the two a reader is
 most likely to be surprised by: one is a real capability loss with no owner, the other is
@@ -361,9 +361,15 @@ waiting.
    `enabledPlugins`, restart, and open a session in `D:\axial`. Check, in order: the
    session-start block prints branch, issues and PRs; no `GATES NOT ENFORCING` line
    appears; a deliberately red commit on a scratch branch is refused.
-8. **Confirm the toolchain resolves.** Axial is a `uv`/`pytest`/`ruff` project, and the
-   plugin resolves that per change through `stack.mjs` instead of hard-coding it. Check:
-   the commit gate runs Axial's suite, not a guess at one.
+8. **Record the test command in each consuming project.** The commit gate runs the
+   command a project states in `aeo-tests.json` at its own directory —
+   `{"test": "<the command that runs the fast suite>"}` — and blocks with that path
+   named when there is none ([D29](DECISIONS.md)). This is a one-line file per project
+   directory, committed like any other source, and it is the whole of what the gate
+   reads. Whoever installs the plugin into an existing project writes it, using the
+   command that project's contributors already type; a mono-repo writes one per project
+   directory. Check, in that project: `git commit` on a scratch branch runs that command
+   and nothing else.
 9. ~~**Correct `docs/INVENTORY.md`**~~ **Done 2026-08-13** (#106). It names the six hooks
    and five agents the harness actually retired with, and names the two files the snapshot
    is missing rather than only restating a corrected count. `source/` was not edited.
@@ -371,6 +377,7 @@ waiting.
     were Phase 6 work and both landed. Cost and ETA reporting was dropped by founder
     decision on 2026-08-13 (#94) and recorded in the gap list above. No gap is undecided.
 
-Steps 5 to 8 are reversible in one edit: remove `"aeo@aeo": true` and restart. That
+Steps 5 to 7 are reversible in one edit: remove `"aeo@aeo": true` and restart. That
 returns axial to its current state, not to its pre-retirement state. The tarball restore
-in "Rollback" is what returns it to the harness.
+in "Rollback" is what returns it to the harness. Step 8 is a committed file in a
+consuming project and is reverted there, by deleting it.

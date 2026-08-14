@@ -15,7 +15,8 @@ first if you haven't this session — it's the authoritative rulebook; what
 follows is a summary. For detecting and running the project's test tooling
 across stacks, read
 `${CLAUDE_PLUGIN_ROOT}/skills/red-green-refactor/references/test-strategy.md`
-— the commit gate mines the same detection table, so it isn't duplicated here.
+— it also carries the record the commit gate reads, which is where the command
+you settle on has to end up.
 
 ## Input
 

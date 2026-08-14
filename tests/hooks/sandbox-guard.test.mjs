@@ -67,8 +67,8 @@ function git(cwd, ...args) {
   return (r.stdout ?? '').trim();
 }
 
-/** A real repository on a feature branch, with a declared Node test command by default. */
-function makeRepo({ base = { 'package.json': JSON.stringify({ name: 'x', private: true, scripts: { test: 'echo ok' } }) }, branch = 'feat/slice', change = {} } = {}) {
+/** A real repository on a feature branch, recording a Node test command by default. */
+function makeRepo({ base = { 'aeo-tests.json': JSON.stringify({ test: 'npm test' }) }, branch = 'feat/slice', change = {} } = {}) {
   const dir = tempDir();
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.name', 'aeo-test');
@@ -183,7 +183,7 @@ const SENTINEL_UNREADABLE = /sentinel is present but unreadable/;
 const SENTINEL_DIR_UNREADABLE = /could not be read \(.*\), so the gate cannot tell whether a long job is running/;
 const CD_UNNAMEABLE = /changes directory to somewhere the guard cannot name/;
 const UNREADABLE_COMMAND = /could not be read as a sequence of shell commands/;
-const DETECTION_FAILED = /no test command could be resolved/;
+const NO_RECORD = /no test command is recorded/;
 
 // A sandbox and a production root that are real directories and are not related.
 function roots() {
@@ -245,7 +245,7 @@ describe('the verify line', () => {
   // on its own merits rather than inheriting somebody else's block.
   test('the same commit without a sentinel blocks for a different reason', () => {
     const repo = makeRepo({ base: {}, change: { 'a.js': 'export const a = 1;\n' } });
-    assertBlockedBecause(commitGate({ payload: bash('git commit -m "wip"', repo) }), DETECTION_FAILED, 'no sentinel');
+    assertBlockedBecause(commitGate({ payload: bash('git commit -m "wip"', repo) }), NO_RECORD, 'no sentinel');
   });
 });
 
@@ -970,8 +970,8 @@ describe('the sentinel', () => {
     }
   });
 
-  test('a live sentinel blocks a python project\'s own declared command', () => {
-    const repo = makeRepo({ base: { 'pyproject.toml': '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n' } });
+  test('a live sentinel blocks a python project\'s own recorded command', () => {
+    const repo = makeRepo({ base: { 'aeo-tests.json': JSON.stringify({ test: 'pytest' }) } });
     raise(repo);
     for (const command of ['pytest', 'pytest -k thing', 'python -m pytest tests/']) {
       assertBlockedBecause(guard({ payload: bash(command, repo) }), LIVE_RUN, command);
@@ -992,7 +992,7 @@ describe('the sentinel', () => {
   });
 
   test('a live sentinel blocks the declared suite\'s program wherever a command runs it', () => {
-    const repo = makeRepo({ base: { 'pyproject.toml': '[tool.pytest.ini_options]\ntestpaths = ["tests"]\n' } });
+    const repo = makeRepo({ base: { 'aeo-tests.json': JSON.stringify({ test: 'pytest' }) } });
     raise(repo);
     for (const command of ['pytest', 'pytest -k thing', 'cd sub && pytest', 'AEO_DATA_ROOT=/tmp/s pytest']) {
       assertBlockedBecause(guard({ payload: bash(command, repo) }), LIVE_RUN, command);

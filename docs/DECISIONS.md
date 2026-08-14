@@ -15,6 +15,83 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-14 — One decision from the first real use (#110, #111)
+
+### D29 — The project records its test command; the gate runs it and infers nothing
+
+**Problem.** [D10](#d10--stack-detection-with-no-project-config-file) promised that if a
+real project turned up that detection could not serve, that would be evidence for a
+config file and would get its own decision, with the failing case attached. #110 is that
+case, and it arrived on the first project the gates were installed in.
+
+The commit gate resolved its test command from an eleven-row table in
+`plugin/hooks/stack.mjs`. Python has no manifest field naming a test command, so the
+table guessed `uv run pytest`. On that project that is 3,528 tests and roughly 55 minutes
+against a 570-second budget, where the project's own pre-commit command runs 2,464 tests
+in 40 seconds. The gate was installed and unusable in the same session.
+
+Two costs sat behind the one incident. **Language coverage was a promise, not a
+property**: a C++, Zig or Elixir project blocked on every commit because the table had no
+row for it, and a minitest Ruby project blocked because `rubyCommand` only recognised
+rspec. And the table **shipped a compatibility matrix** that had to grow forever.
+
+The deeper problem is that the table was a second detection. By the time a commit fires,
+an actor has already inspected the repository, chosen the runner, run the suite, and
+could have installed a runner that was missing. The gate discarded all of that and
+re-derived a command in the one place that cannot ask a question.
+
+**Decision.** A tracked, project-local record states the command, and the gate runs it.
+
+| | |
+|---|---|
+| **Where** | `aeo-tests.json`, at each project directory, tracked in git |
+| **What** | JSON, one key: `{ "test": "npm test" }` |
+| **Who writes it** | the scaffolder at project creation; a builder that changes the test setup, in the same slice |
+| **What the gate does** | resolves the nearest record at or above each changed file and runs that command line through a shell |
+| **With no usable record** | blocks, naming the exact path to create |
+
+Four properties are load-bearing, and each rules out an easier design.
+
+1. **A command, never a verdict.** The gate still executes the suite, which keeps the
+   only protection the table was providing — catching an actor that skipped the tests —
+   while dropping the part that cost us.
+2. **A string, not an argv array.** Same shape as `scripts.test` and the same shape a
+   founder types, so `npm test && pytest` is how a project with two suites says so. That
+   replaces the old two-suites-at-one-root case, which is gone: `projectAt` now returns
+   one project or nothing.
+3. **No `dir` field.** A record runs where it sits, so a mono-repo says "two projects"
+   by holding two records. A directory field is the config option nobody sets.
+4. **Not under `.claude/`.** `path-guard` refuses a role every write inside that
+   directory, and a builder that changes the test setup has to be able to update the
+   record.
+
+**Impact.** `LOOKED_FOR`, the `STACKS` table and the per-stack resolvers are deleted.
+Every language works, including the ones nobody thought of, because the project answers
+for itself. AEO's own repository carries `aeo-tests.json` naming `npm test`, which is
+where [D17](#d17--two-test-tiers-in-process-is-the-commit-gates-process-level-is-cis)'s
+"the fast tier is `test`" binding now lives.
+
+The honest cost: **the gate now executes a shell string that comes from the repository.**
+The substantive trust level is unchanged — the table ran `npm test`, whose body is
+`scripts.test` in the repository's own `package.json`, so a repository could already
+decide what the gate executed — but the mechanism is stated at the spawn rather than
+implied. A stale record is the new failure mode, and it fails loudly: the recorded
+command blocks the commit the moment it stops working.
+
+**One thing measured rather than assumed.** With `shell: true` a missing program is not
+an `ENOENT` from `spawnSync`; the shell starts and reports the miss as an exit code. On
+POSIX `sh` that is 127. On Windows, `cmd.exe` sets `errorlevel` to 9009 but exits **1**
+to its parent, so a bare missing program there arrives as a red suite. Both directions
+block, and both put `cmd.exe`'s own "is not recognized" line in front of the reader,
+which is why the output tail now accompanies every one of these blocks — including the
+budget overrun, which previously printed none.
+
+`stack.mjs` keeps its name. It contains nothing about stacks now, but `docs/MIGRATION.md`
+and five files under `logs/` name it, and a rename would leave them pointing at nothing
+for no behavioural gain.
+
+---
+
 ## 2026-08-13 — Two decisions closing the backlog (#106)
 
 ### D27 — `v0.1.0` ships, the tag documents rather than pins, and the version has one copy
@@ -737,6 +814,13 @@ the original split. Skill descriptions become load-bearing for the five that tri
 description — hence the `skill-creator` pass in Phase 6.
 
 ### D10 — Stack detection, with no project config file
+
+> **Superseded in part by [D29](#d29--the-project-records-its-test-command-the-gate-runs-it-and-infers-nothing)
+> (2026-08-14).** The escape hatch below promised that a real project detection could not
+> serve would be evidence for a config file and would get its own decision with the failing
+> case attached. #110 was that case. Detection is gone; the project records its test command
+> and the gate runs it. What survives here is the block-never-guess direction and per-change
+> resolution.
 
 **Problem.** Three documents disagreed. The assessment said write a stack profile the
 scaffold emits once; the plan said detection *replaces* the profile; a later phase

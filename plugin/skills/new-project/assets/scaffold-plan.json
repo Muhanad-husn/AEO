@@ -23,6 +23,11 @@
     "conventions by the agent and then confirmed with hooks/stack.mjs, which is the check that",
     "actually guarantees the commit gate will resolve a command.",
     "",
+    "The aeo-tests.json step is the project's record of its own test command (D29). The commit",
+    "gate runs exactly what it names, so it is stack-specific and comes from the seed. Whoever",
+    "writes the manifest writes the record: for a stack with no seed the agent writes both, and",
+    "the command it records is the one it just ran green in step 5.",
+    "",
     "The .claude/settings.json step (P6.2, issue #64) declares AEO_LIVE_DATA_ROOT and",
     "AEO_DATA_ROOT both blank. sandbox-guard.mjs reads an empty string as not-set and stays",
     "inert until both are filled in, so a blank pair is the safe default rather than an",
@@ -86,6 +91,11 @@
     },
     {
       "stage": 0,
+      "from": "testRecord",
+      "role": "repository"
+    },
+    {
+      "stage": 0,
       "path": "src/.gitkeep",
       "role": "product",
       "content": ""
@@ -106,6 +116,10 @@
       "baselineTest": {
         "path": "tests/baseline.test.mjs",
         "content": "import test from 'node:test';\nimport assert from 'node:assert/strict';\n\ntest('the baseline suite runs', () => {\n  assert.ok(true);\n});\n"
+      },
+      "testRecord": {
+        "path": "aeo-tests.json",
+        "content": "{\n  \"test\": \"npm test\"\n}\n"
       },
       "gitignore": "node_modules/\n"
     }

@@ -3,8 +3,13 @@
 //   node --test                              # everything, from the repo root
 //   node --test "tests/hooks/*.test.mjs"     # this directory only
 //
-// These are filesystem tests against real directory trees, not mocks. Detection reads
+// These are filesystem tests against real directory trees, not mocks. Resolution reads
 // files, so a mock would only pin the mock.
+//
+// The record's name is written out literally in every fixture below rather than taken from
+// the module's own export. A founder creates that file by hand, so the name is part of the
+// contract; a test that took it from the module would agree with a rename and prove
+// nothing.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -12,7 +17,7 @@ import path from 'node:path';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LOOKED_FOR, projectAt, resolveTestPlan } from '../../plugin/hooks/stack.mjs';
+import { projectAt, resolveTestPlan } from '../../plugin/hooks/stack.mjs';
 
 const scratch = [];
 after(() => {
@@ -24,7 +29,7 @@ after(() => {
  * Returns the tree root, which the tests also use as the git toplevel.
  */
 function tree(files) {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'aeo-p13-stack-'));
+  const root = mkdtempSync(path.join(os.tmpdir(), 'aeo-record-'));
   scratch.push(root);
   for (const [rel, body] of Object.entries(files)) {
     const full = path.join(root, rel);
@@ -34,248 +39,179 @@ function tree(files) {
   return root;
 }
 
-const onWindows = process.platform === 'win32';
+/** What a project writes to say how it is tested. */
+const record = (command) => JSON.stringify({ test: command });
 
 // ---------------------------------------------------------------------------
-// One row per row of the vendored detection table (V-08)
+// One record, one command
 // ---------------------------------------------------------------------------
 
-describe('the detection table', () => {
-  test('node resolves the declared scripts.test through npm', () => {
-    const root = tree({ 'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }) });
-    assert.deepEqual(projectAt(root)[0].command, ['npm', 'test']);
-    assert.equal(projectAt(root)[0].stack, 'node');
+describe('the recorded command', () => {
+  test('a record resolves the command line it names', () => {
+    const root = tree({ 'aeo-tests.json': record('npm test') });
+    assert.equal(projectAt(root).command, 'npm test');
+    assert.equal(projectAt(root).root, root);
   });
 
-  test('python resolves pytest from a pyproject section', () => {
-    const root = tree({ 'pyproject.toml': '[tool.pytest.ini_options]\naddopts = "-q"\n' });
-    assert.deepEqual(projectAt(root)[0].command, ['pytest']);
-    assert.equal(projectAt(root)[0].stack, 'python');
+  test('the command is a command line, not a program and an argument list', () => {
+    // A root that needs two suites says so in one line. This is the whole reason the
+    // record holds a string and the gate spawns through a shell.
+    const root = tree({ 'aeo-tests.json': record('npm test && uv run pytest -q') });
+    assert.equal(projectAt(root).command, 'npm test && uv run pytest -q');
   });
 
-  test('go resolves the toolchain command', () => {
-    const root = tree({ 'go.mod': 'module example.com/x\n' });
-    assert.deepEqual(projectAt(root)[0].command, ['go', 'test', './...']);
+  test('a record is one project, never a list of them', () => {
+    const root = tree({ 'aeo-tests.json': record('go test ./...') });
+    const unit = projectAt(root);
+    assert.equal(Array.isArray(unit), false);
+    assert.equal(unit.command, 'go test ./...');
   });
 
-  test('rust resolves the toolchain command', () => {
-    const root = tree({ 'Cargo.toml': '[package]\nname = "x"\n' });
-    assert.deepEqual(projectAt(root)[0].command, ['cargo', 'test']);
+  test('surrounding whitespace is trimmed off the command', () => {
+    const root = tree({ 'aeo-tests.json': record('  pytest -q\n') });
+    assert.equal(projectAt(root).command, 'pytest -q');
   });
 
-  test('maven resolves the toolchain command', () => {
-    const root = tree({ 'pom.xml': '<project/>' });
-    assert.deepEqual(projectAt(root)[0].command, ['mvn', '-q', 'test']);
-  });
-
-  test('gradle without a wrapper falls to the installed gradle', () => {
-    const root = tree({ 'build.gradle': 'plugins { id "java" }\n' });
-    assert.deepEqual(projectAt(root)[0].command, ['gradle', 'test']);
-  });
-
-  test('gradle prefers the checked-in wrapper', () => {
-    const root = tree({ 'build.gradle.kts': '', [onWindows ? 'gradlew.bat' : 'gradlew']: '' });
-    assert.deepEqual(projectAt(root)[0].command, [onWindows ? 'gradlew.bat' : './gradlew', 'test']);
-  });
-
-  test('ruby resolves rspec when the Gemfile names it', () => {
-    const root = tree({ Gemfile: "source 'https://rubygems.org'\ngem 'rspec'\n" });
-    assert.deepEqual(projectAt(root)[0].command, ['bundle', 'exec', 'rspec']);
-  });
-
-  test('a directory with no manifest is not a project', () => {
+  test('a directory with no record is not a project', () => {
     assert.equal(projectAt(tree({ 'README.md': '# x' })), null);
   });
 });
 
 // ---------------------------------------------------------------------------
-// PHP and .NET were cut, and stay cut
+// The guessing is gone, and does not come back through a side door
 // ---------------------------------------------------------------------------
 
-describe('the two rows that were design rather than transcription are gone', () => {
-  test('a .csproj is not a project: dotnet test pointed at a library that has no test SDK', () => {
-    assert.equal(projectAt(tree({ 'App.csproj': '<Project/>' })), null);
-    assert.equal(projectAt(tree({ 'App.sln': '' })), null);
+describe('no command is inferred from a manifest (D29)', () => {
+  test('a package.json declaring scripts.test is not a project on its own', () => {
+    const root = tree({ 'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }) });
+    assert.equal(projectAt(root), null);
   });
 
-  test('composer.json is not a project', () => {
-    assert.equal(projectAt(tree({ 'composer.json': JSON.stringify({ scripts: { test: 'phpunit' } }) })), null);
+  test('a toolchain manifest is not a project on its own', () => {
+    for (const manifest of ['go.mod', 'Cargo.toml', 'pom.xml', 'pyproject.toml', 'Gemfile']) {
+      assert.equal(projectAt(tree({ [manifest]: 'x\n' })), null, `${manifest} resolved a project`);
+    }
   });
 
-  test('neither is advertised in LOOKED_FOR, so the block message cannot promise them', () => {
-    assert.ok(!LOOKED_FOR.some((n) => /composer|csproj|sln|fsproj|vbproj/i.test(n)), LOOKED_FOR.join(', '));
+  test('a record wins over every manifest beside it, and its command is used verbatim', () => {
+    const root = tree({
+      'aeo-tests.json': record('make check'),
+      'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
+      'go.mod': 'module x\n',
+    });
+    assert.equal(projectAt(root).command, 'make check');
   });
 });
 
 // ---------------------------------------------------------------------------
-// The lockfile states how the project invokes its tools
+// A record that cannot be used says why, and never falls through to a guess
 // ---------------------------------------------------------------------------
 
-describe('runner resolution from lockfiles', () => {
-  const pkg = JSON.stringify({ scripts: { test: 'jest' } });
-
-  test('pnpm', () => {
-    const root = tree({ 'package.json': pkg, 'pnpm-lock.yaml': '' });
-    assert.deepEqual(projectAt(root)[0].command, ['pnpm', 'test']);
-  });
-
-  test('yarn', () => {
-    const root = tree({ 'package.json': pkg, 'yarn.lock': '' });
-    assert.deepEqual(projectAt(root)[0].command, ['yarn', 'test']);
-  });
-
-  test('bun', () => {
-    const root = tree({ 'package.json': pkg, 'bun.lock': '' });
-    assert.deepEqual(projectAt(root)[0].command, ['bun', 'run', 'test']);
-  });
-
-  test('uv', () => {
-    const root = tree({ 'pyproject.toml': '[tool.pytest.ini_options]\n', 'uv.lock': '' });
-    assert.deepEqual(projectAt(root)[0].command, ['uv', 'run', 'pytest']);
-  });
-
-  test('poetry', () => {
-    const root = tree({ 'pyproject.toml': 'dependencies = ["pytest"]\n', 'poetry.lock': '' });
-    assert.deepEqual(projectAt(root)[0].command, ['poetry', 'run', 'pytest']);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Detection that cannot resolve says why (D10)
-// ---------------------------------------------------------------------------
-
-describe('unresolved projects carry a reason', () => {
-  test('package.json with no scripts.test', () => {
-    const [unit] = projectAt(tree({ 'package.json': JSON.stringify({ name: 'x' }) }));
-    assert.equal(unit.command, null);
-    assert.match(unit.reason, /scripts\.test/);
-  });
-
-  test('package.json with an empty scripts.test', () => {
-    const [unit] = projectAt(tree({ 'package.json': JSON.stringify({ scripts: { test: '  ' } }) }));
-    assert.equal(unit.command, null);
-  });
-
-  test('package.json that does not parse', () => {
-    const [unit] = projectAt(tree({ 'package.json': '{ not json' }));
+describe('an unusable record carries a reason', () => {
+  test('a record that does not parse', () => {
+    const unit = projectAt(tree({ 'aeo-tests.json': '{ "test": "npm test"' }));
     assert.equal(unit.command, null);
     assert.match(unit.reason, /does not parse/);
   });
 
-  test('a python project that names no runner', () => {
-    const [unit] = projectAt(tree({ 'pyproject.toml': '[project]\nname = "x"\n' }));
+  test('a record with no test key', () => {
+    const unit = projectAt(tree({ 'aeo-tests.json': JSON.stringify({ dir: 'services/api' }) }));
     assert.equal(unit.command, null);
-    assert.match(unit.reason, /pytest/);
+    assert.match(unit.reason, /"test"/);
   });
 
-  test('a Gemfile that names no runner', () => {
-    const [unit] = projectAt(tree({ Gemfile: "gem 'rails'\n" }));
+  test('an empty command', () => {
+    const unit = projectAt(tree({ 'aeo-tests.json': record('   ') }));
     assert.equal(unit.command, null);
-    assert.match(unit.reason, /rspec/);
+    assert.match(unit.reason, /"test"/);
   });
 
-  test('one resolvable manifest wins over an unresolvable sibling', () => {
-    const root = tree({ 'package.json': JSON.stringify({ name: 'x' }), 'go.mod': 'module x\n' });
-    assert.deepEqual(projectAt(root)[0].command, ['go', 'test', './...']);
+  test('a command that is not a string', () => {
+    const unit = projectAt(tree({ 'aeo-tests.json': JSON.stringify({ test: ['npm', 'test'] }) }));
+    assert.equal(unit.command, null);
   });
 
-  test('two resolvable manifests at one level resolve to two suites, not to the first', () => {
-    // A Django-plus-React root. Returning jest alone and reporting green is the quiet
-    // pass L-08 forbids: pytest would never run.
+  test('an unusable record names its own file, so the message can point at it', () => {
+    const root = tree({ 'aeo-tests.json': '{ not json' });
+    assert.equal(projectAt(root).record, path.join(root, 'aeo-tests.json'));
+  });
+
+  test('an unusable record does not fall through to a manifest beside it', () => {
     const root = tree({
-      'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
-      'pyproject.toml': '[tool.pytest.ini_options]\n',
+      'aeo-tests.json': '{ not json',
+      'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
     });
-    const units = projectAt(root);
-    assert.equal(units.length, 2);
-    assert.deepEqual(units.map((u) => u.stack).sort(), ['node', 'python']);
-    assert.deepEqual(units.map((u) => u.command).sort(), [['npm', 'test'], ['pytest']]);
+    assert.equal(projectAt(root).command, null);
   });
 
-  test('a resolvable manifest beside an unresolvable one still returns only the resolvable', () => {
+  test('an unusable record stops the walk rather than adopting the parent\'s suite', () => {
     const root = tree({
-      'package.json': JSON.stringify({ name: 'x' }),
-      'pyproject.toml': '[tool.pytest.ini_options]\n',
+      'aeo-tests.json': record('npm test'),
+      [path.join('services', 'api', 'aeo-tests.json')]: '{ not json',
     });
-    assert.deepEqual(projectAt(root).map((u) => u.command), [['pytest']]);
-  });
-
-  test('two config files naming the same runner resolve that runner once', () => {
-    const root = tree({ 'pyproject.toml': '[tool.pytest.ini_options]\n', 'tox.ini': '[testenv]\ndeps = pytest\n' });
-    assert.deepEqual(projectAt(root).map((u) => u.command), [['pytest']]);
-  });
-
-  test('when nothing at the level resolves, every reason is reported', () => {
-    const [unit] = projectAt(tree({ 'package.json': JSON.stringify({ name: 'x' }), Gemfile: "gem 'rails'\n" }));
-    assert.equal(unit.command, null);
-    assert.match(unit.reason, /scripts\.test/);
-    assert.match(unit.reason, /rspec/);
+    const plan = resolveTestPlan({ toplevel: root, files: ['services/api/src/a.ts'] });
+    assert.equal(plan.units.length, 1);
+    assert.equal(plan.units[0].command, null);
+    assert.equal(plan.units[0].root, path.join(root, 'services', 'api'));
   });
 });
 
 // ---------------------------------------------------------------------------
-// Resolution is per change, which is what makes polyglot and mono-repos work (D10)
+// Resolution is per project directory, which is what makes a mono-repo work
 // ---------------------------------------------------------------------------
 
 describe('resolveTestPlan', () => {
-  const polyglot = () =>
+  const monorepo = () =>
     tree({
-      'package.json': JSON.stringify({ scripts: { test: 'root' } }),
-      [path.join('services', 'api', 'package.json')]: JSON.stringify({ scripts: { test: 'vitest run' } }),
-      [path.join('libs', 'calc', 'pyproject.toml')]: '[tool.pytest.ini_options]\n',
-      [path.join('svc', 'go.mod')]: 'module x\n',
+      'aeo-tests.json': record('npm run test:root'),
+      [path.join('services', 'api', 'aeo-tests.json')]: record('npm test'),
+      [path.join('libs', 'calc', 'aeo-tests.json')]: record('uv run pytest'),
+      [path.join('svc', 'aeo-tests.json')]: record('go test ./...'),
     });
 
-  test('a change resolves the nearest manifest, not the repo root', () => {
-    const root = polyglot();
+  test('a change resolves the nearest record, not the repo root', () => {
+    const root = monorepo();
     const plan = resolveTestPlan({ toplevel: root, files: ['services/api/src/a.ts'] });
     assert.equal(plan.units.length, 1);
     assert.equal(plan.units[0].root, path.join(root, 'services', 'api'));
-    assert.equal(plan.units[0].stack, 'node');
+    assert.equal(plan.units[0].command, 'npm test');
   });
 
-  test('a change spanning two stacks resolves both', () => {
-    const root = polyglot();
+  test('a change spanning two projects resolves both', () => {
+    const root = monorepo();
     const plan = resolveTestPlan({ toplevel: root, files: ['services/api/src/a.ts', 'libs/calc/calc.py'] });
-    assert.deepEqual(plan.units.map((u) => u.stack).sort(), ['node', 'python']);
+    assert.deepEqual(plan.units.map((u) => u.command).sort(), ['npm test', 'uv run pytest']);
   });
 
   test('many files in one project resolve that project once', () => {
-    const root = polyglot();
-    const plan = resolveTestPlan({ toplevel: root, files: ['svc/a.go', 'svc/b.go', 'svc/internal/c.go'] });
+    const root = monorepo();
+    const files = Array.from({ length: 20 }, (_, i) => `svc/internal/f${i}.go`);
+    const plan = resolveTestPlan({ toplevel: root, files: [...files, 'svc/main.go'] });
     assert.equal(plan.units.length, 1);
-    assert.deepEqual(plan.units[0].command, ['go', 'test', './...']);
+    assert.equal(plan.units[0].command, 'go test ./...');
   });
 
-  test('a change under a two-stack root plans both of that root\'s suites', () => {
-    const root = tree({
-      'package.json': JSON.stringify({ scripts: { test: 'jest' } }),
-      'pyproject.toml': '[tool.pytest.ini_options]\n',
-    });
-    const plan = resolveTestPlan({ toplevel: root, files: ['app/views.py'] });
-    assert.deepEqual(plan.units.map((u) => u.command).sort(), [['npm', 'test'], ['pytest']]);
-  });
-
-  test('a file with no manifest above it lands in missing, not in a guess', () => {
-    const root = tree({ 'README.md': '# x' });
+  test('a file with no record above it lands in missing, not in a guess', () => {
+    const root = tree({ 'package.json': JSON.stringify({ scripts: { test: 'jest' } }) });
     const plan = resolveTestPlan({ toplevel: root, files: ['src/a.js'] });
     assert.equal(plan.units.length, 0);
     assert.equal(plan.missing.length, 1);
   });
 
   test('an empty file set resolves from the toplevel rather than resolving nothing', () => {
-    const root = polyglot();
+    const root = monorepo();
     const plan = resolveTestPlan({ toplevel: root, files: [] });
     assert.equal(plan.units.length, 1);
     assert.equal(plan.units[0].root, path.resolve(root));
+    assert.equal(plan.units[0].command, 'npm run test:root');
   });
 
   test('the walk stops at the toplevel and never escapes the repo', () => {
-    // The parent of the tree holds a manifest. A change inside the tree must not adopt
-    // it, because a directory above the git toplevel is not part of this repository.
-    const outer = mkdtempSync(path.join(os.tmpdir(), 'aeo-p13-outer-'));
+    // The parent of the tree holds a record. A change inside the tree must not adopt it,
+    // because a directory above the git toplevel is not part of this repository.
+    const outer = mkdtempSync(path.join(os.tmpdir(), 'aeo-record-outer-'));
     scratch.push(outer);
-    writeFileSync(path.join(outer, 'go.mod'), 'module outer\n');
+    writeFileSync(path.join(outer, 'aeo-tests.json'), record('go test ./...'));
     const inner = path.join(outer, 'repo');
     mkdirSync(path.join(inner, 'src'), { recursive: true });
     const plan = resolveTestPlan({ toplevel: inner, files: ['src/a.go'] });
@@ -290,10 +226,4 @@ describe('resolveTestPlan', () => {
     assert.ok(searched.includes(path.resolve(root, 'a', 'b')));
     assert.ok(searched.includes(path.resolve(root)));
   });
-});
-
-test('LOOKED_FOR names every manifest the table can match', () => {
-  for (const name of ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', 'Gemfile']) {
-    assert.ok(LOOKED_FOR.includes(name), `${name} is missing from LOOKED_FOR`);
-  }
 });

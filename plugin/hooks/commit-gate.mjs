@@ -15,17 +15,19 @@
 //    commit is ever genuinely required, the answer is a test marked expected-to-fail,
 //    which is green to the gate and visible in the repo.
 //
-// 2. THE TEST COMMAND IS DETECTED, NOT HARD-CODED (V-05, D10). `uv run pytest` and
-//    `ruff` are gone. See stack.mjs. When detection resolves nothing the gate blocks
-//    and names what it looked for; it never guesses and never passes quietly.
+// 2. THE TEST COMMAND IS THE PROJECT'S OWN RECORD, NOT A GUESS (V-05, D10, D29).
+//    `uv run pytest` and `ruff` are gone, and so is the table that replaced them. The
+//    gate reads `aeo-tests.json` at the project nearest the change and runs the command
+//    it names. See stack.mjs. With no record the gate blocks and names the exact path to
+//    create; it never guesses and never passes quietly.
 //
 // 3. THE DOCS-ONLY PATH NO LONGER OPENS THE PROTECTED BRANCH. The original let a
 //    docs-only commit land on main with no branch, which was a founder policy for one
 //    repo. Here the protected branch blocks unconditionally. The suite skip survives,
 //    narrowed: see isDocumentation.
 //
-// WHAT THIS GATE RUNS, AND WHAT IT DOES NOT. It runs the project's own declared test
-// command at the manifest nearest the change. It does not run the repo-wide tree in a
+// WHAT THIS GATE RUNS, AND WHAT IT DOES NOT. It runs the command recorded at the project
+// nearest the change. It does not run the repo-wide tree in a
 // mono-repo, and it does not run an acceptance or e2e layer the project keeps behind a
 // separate script. That is PLAN's efficiency spine item 1, and L-06 is its stated cost:
 // an acceptance regression is then only ever discovered in CI. The countermeasure is
@@ -48,7 +50,7 @@ import {
   runGate,
 } from './lib.mjs';
 import { projectAnchor, runInProgress } from './sentinel.mjs';
-import { LOOKED_FOR, resolveTestPlan } from './stack.mjs';
+import { RECORD_FILE, RECORD_KEY, resolveTestPlan } from './stack.mjs';
 
 /**
  * The `timeout` P1.7 must write into this gate's hooks.json entry, in seconds.
@@ -74,7 +76,7 @@ export const HOOK_TIMEOUT_SECONDS = 600;
  * Per suite, that argument holds for one unit and fails for two. A mono-repo commit
  * touching a Node package and a Python package could spend the full budget on each,
  * clear the hook timeout between them, be cancelled, and land untested, in exactly the
- * polyglot case D10 names as detection's reason for existing. So the deadline is taken
+ * mono-repo case a per-directory record exists to serve. So the deadline is taken
  * once, at gate entry, and each suite is given what is left of it.
  *
  * The margin is 5% of the hook timeout, which is time for the gate to write its reason
@@ -162,19 +164,21 @@ function isDocumentation(toplevel, file) {
   return !opensWithFrontMatter(path.resolve(toplevel, file));
 }
 
-function detectionFailure(plan, toplevel) {
+function noRecordFailure(plan, toplevel) {
   const lines = [
-    'no test command could be resolved for this change, so the gate cannot confirm the suite is green.',
+    'no test command is recorded for this change, so the gate cannot confirm the suite is green.',
     `  repository:   ${toplevel}`,
     `  searched:     ${plan.searched.join(', ') || '(nothing)'}`,
-    `  looked for:   ${LOOKED_FOR.join(', ')}`,
   ];
   for (const unit of plan.units) {
-    if (unit.command === null) lines.push(`  at ${unit.root}: ${unit.reason}`);
+    if (unit.command === null) lines.push(`  at ${unit.record}: ${unit.reason}`);
   }
-  for (const dir of plan.missing) lines.push(`  at ${dir}: no manifest at or above it`);
+  for (const dir of plan.missing) {
+    lines.push(`  at ${dir}: no ${RECORD_FILE} there or in any directory above it`);
+  }
   lines.push(
-    'Declare the project\'s test command in its manifest (for example "scripts.test" in package.json, or a pytest section in pyproject.toml), or commit documentation only.',
+    `Create ${path.join(toplevel, RECORD_FILE)} holding {"${RECORD_KEY}": "<the command that runs this project's fast suite>"} and commit it.`,
+    `The command runs with that file's own directory as its working directory. A mono-repo puts one record in each project directory, and the nearest record above a changed file is the one that runs.`,
   );
   return lines.join('\n');
 }
@@ -189,8 +193,8 @@ function tail(text) {
  * runner that is missing, a suite that overruns and a suite that fails all fail closed.
  */
 function runSuite(unit, deadline) {
-  const shown = unit.command.join(' ');
-  const result = spawnSync(unit.command[0], unit.command.slice(1), {
+  const shown = unit.command;
+  const result = spawnSync(unit.command, [], {
     cwd: unit.root,
     encoding: 'utf8',
     windowsHide: true,
@@ -199,13 +203,21 @@ function runSuite(unit, deadline) {
     // through the one path below rather than through a second copy of it.
     timeout: Math.max(deadline - Date.now(), 1),
     maxBuffer: MAX_SUITE_OUTPUT,
-    // Windows cannot spawn npm, gradlew or any other .cmd shim without a shell. Every
-    // argument here comes from stack.mjs's own table, never from the model or the
-    // repo, so there is nothing to quote-escape.
-    shell: process.platform === 'win32',
+    // The recorded command is a command LINE, not a program and an argv, so it has to go
+    // through a shell: `npm test && pytest` is one thing a project can record. Windows
+    // needs a shell for npm, gradlew and every other .cmd shim in any case.
+    //
+    // WHAT THIS TRUSTS, STATED HONESTLY. The string comes from a tracked file in the
+    // repository, so this gate executes shell that the repository controls. The
+    // substantive trust level is unchanged: the table this replaced ran `npm test`, whose
+    // body is `scripts.test` in the repository's own package.json, so a repository could
+    // already decide what the gate executed. What moved is where that decision is
+    // written — one visible line in one file, instead of behind a package manager.
+    shell: true,
   });
 
   const output = tail(`${result.stdout ?? ''}${result.stderr ?? ''}`);
+  const seen = output === '' ? '' : `\n--- last ${LOG_TAIL_LINES} lines ---\n${output}`;
 
   // Read before the overrun test: a maxBuffer overflow also kills the child, so it
   // arrives as a signalled exit and was reported as a timeout, which it is not.
@@ -214,15 +226,30 @@ function runSuite(unit, deadline) {
   }
   if (result.error?.code === 'ETIMEDOUT' || (result.status === null && result.signal)) {
     block(
-      `\`${shown}\` in ${unit.root} did not finish within the gate's ${Math.round(SUITE_BUDGET_MS / 1000)}s budget for this commit, so the gate cannot confirm the suite is green. This is the project's fast tier; if it takes this long, it is an acceptance suite and belongs in CI.`,
+      `\`${shown}\` in ${unit.root} did not finish within the gate's ${Math.round(SUITE_BUDGET_MS / 1000)}s budget for this commit, so the gate cannot confirm the suite is green. This is the project's fast tier; if it takes this long, it is an acceptance suite and belongs in CI.${seen}`,
     );
   }
-  if (result.error) {
-    block(`\`${shown}\` could not be started in ${unit.root} (${result.error.message}). The gate cannot confirm the suite is green.`);
+  // A command that is not on PATH. With `shell: true` that is NOT an ENOENT from
+  // spawnSync: the shell starts fine and reports the miss as its own exit code — 127 from
+  // POSIX `sh`, 9009 from a Windows batch runner that propagates its errorlevel, which is
+  // the shape of most toolchain shims.
+  //
+  // MEASURED, NOT ASSUMED, AND ONLY HALF TRUE ON WINDOWS. `cmd.exe` sets `errorlevel` to
+  // 9009 for a command it cannot find, but exits 1 to its parent, so a bare missing
+  // program on Windows arrives here as a red suite. That is why the tail matters more
+  // than the label: `cmd.exe`'s own "is not recognized as an internal or external
+  // command" line is in the output either way, and both paths block. Keying on these two
+  // codes is message quality and never a fail-open, and the tail goes with the message so
+  // a suite that genuinely exited 127 still reads correctly.
+  if (result.error || result.status === 127 || result.status === 9009) {
+    const cause = result.error
+      ? result.error.message
+      : `exit ${result.status}: the shell could not find the command`;
+    block(`\`${shown}\` could not be started in ${unit.root} (${cause}). The gate cannot confirm the suite is green.${seen}`);
   }
   if (result.status !== 0) {
     block(
-      `the ${unit.stack ?? 'project'} test suite is red. Get to green before committing.\n  ran: ${shown}\n  in:  ${unit.root}\n  exit: ${result.status}\n--- last ${LOG_TAIL_LINES} lines ---\n${output}`,
+      `the project's test suite is red. Get to green before committing.\n  ran: ${shown}\n  in:  ${unit.root}\n  exit: ${result.status}\n--- last ${LOG_TAIL_LINES} lines ---\n${output}`,
     );
   }
 }
@@ -278,7 +305,7 @@ export function commitGate(payload) {
 
   // Fails safe in every direction: an empty set, any non-documentation file, any path
   // under a dot-directory, any file that opens with front matter, or a git failure that
-  // empties the set all fall through to detection and the suite.
+  // empties the set all fall through to the record and the suite.
   const files = changedFiles(toplevel, command);
   if (files.length > 0 && files.every((file) => isDocumentation(toplevel, file))) {
     note(`commit-gate: documentation only (${files.length} file(s)); no code changed, so the suite is not run.`);
@@ -301,7 +328,7 @@ export function commitGate(payload) {
 
   const plan = resolveTestPlan({ toplevel, files });
   if (plan.missing.length > 0 || plan.units.some((u) => u.command === null)) {
-    block(detectionFailure(plan, toplevel));
+    block(noRecordFailure(plan, toplevel));
   }
 
   for (const unit of plan.units) runSuite(unit, deadline);

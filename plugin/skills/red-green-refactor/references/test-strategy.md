@@ -43,6 +43,10 @@ Inspect the repo before assuming. Common signals:
 
 **Rule:** prefer the script the project already defines (`package.json` `test`, a `Makefile` target) over inventing a command — it encodes the project's intended invocation. If there is **no** unit runner and the project needs one, installing and wiring it is legitimate work for the slice (especially a walking skeleton). Always run a single test file/case during the inner loop for speed; run the **full** suite before committing.
 
+**Then record it.** Whatever command you settle on, `aeo-tests.json` at the project directory has to name it: one key, `test`, holding the command line — `{"test": "npm test"}`. That file is the only thing the commit gate reads, and it runs the command from the record's own directory ([D10](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). A mono-repo carries one record per project directory. Two suites at one root is one command line: `npm test && pytest`.
+
+If your slice changes the test setup — a new runner, a renamed script, a suite that moves — update the record in the same slice, alongside the change that moved it. A record left behind blocks the next commit, which is the safe direction and still somebody's wasted half hour.
+
 ## 3. Detecting / setting up the e2e layer (Playwright)
 
 The harness standardises on **Playwright** for end-to-end web tests because it captures the screenshots, videos, and traces that make a PR reviewable.
