@@ -1,40 +1,47 @@
-// AEO stack detection: which test command a change must run, resolved per change.
+// AEO test-command resolution: the command a change must run, read from the project's
+// own record rather than guessed from its manifests.
 //
-// Why this exists (V-05, D10). The vendored harness calls itself "profile-driven" and
-// "stack-agnostic" and then hard-codes `uv run pytest` and `ruff` in the commit gate.
-// There is no second implementation and no detection anywhere. This module is that
-// detection, and the rule it follows comes from the vendored table it was mined from
-// (`red-green-refactor/references/test-strategy.md`, V-08):
+// WHY THIS EXISTS (V-05, D10, D29). The vendored harness hard-coded `uv run pytest` and
+// `ruff` in the commit gate. The first replacement was an eleven-row table that inferred a
+// command from whichever manifest sat nearest the change. That table was a second
+// detection, performed in the one place that cannot ask a question, and it failed the way
+// a guess fails. On a real Python project it inferred `uv run pytest`: 3,528 tests and
+// roughly 55 minutes against a 570-second budget, where that project's own pre-commit
+// command runs 2,464 tests in 40 seconds (issue #110). Every stack the table had no row
+// for blocked on every commit, however correctly the project had been built and tested.
 //
-//   "prefer the script the project already defines over inventing a command -- it
-//   encodes the project's intended invocation."
+// So the command is recorded, not inferred. `aeo-tests.json` at a project directory holds
+// one key:
 //
-// Two kinds of declaration count, and nothing else does.
+//   { "test": "npm test" }
 //
-//   1. The project names its own command. `scripts.test` in package.json, a pytest
-//      section or a pytest dependency.
-//   2. The toolchain defines the command and there is nothing for the project to
-//      name. `go test ./...`, `cargo test`, `mvn test`. Reading the manifest that
-//      pins the toolchain IS reading the declaration.
+// By the time a commit fires, an actor has already inspected the repository, chosen the
+// runner, and run the suite. The record is where that answer is written down. The gate
+// still RUNS the command itself and never trusts a recorded verdict, so it keeps the one
+// protection the table was providing: catching an actor that skipped the tests.
 //
-// When neither holds, this module resolves nothing and says what it looked for. It
-// never falls back to a guess. D10 is explicit about that, and L-08 is why: a gate
-// that runs nothing and reports OK is worse than no gate.
+// THE COMMAND IS A STRING RUN THROUGH A SHELL, not a program and an argv array. That is
+// the same shape as `scripts.test` in package.json and the same shape a founder types, so
+// `npm test && pytest` is how a project with two suites says so and nothing here has to
+// model shell quoting. What executing a repository-controlled string costs is stated where
+// it is spawned, in commit-gate.mjs.
 //
-// PHP and .NET are deliberately absent, and are not to be added back without evidence.
-// They were the two rows that stopped transcribing the vendored table and started
-// designing. .NET was broken: nearest-manifest resolution points `dotnet test` at a
-// library `.csproj` with no test SDK, which exits non-zero, so every commit under `src/`
-// blocked permanently with a message that misdescribed the cause. PHP synthesised a
-// `vendor/bin/phpunit` path, with a `.bat` variant no other row needs.
+// THERE IS NO `dir` FIELD. A record's own directory is where its command runs, so a
+// mono-repo says "two projects" by holding two records. A directory field would be a
+// config option almost nobody sets, which is the tripwire D10 rejected a config file over
+// in the first place.
 //
-// There is no config file, by decision (D10). Resolution is per change rather than per
-// repo, which is what makes a polyglot repo and a mono-repo work with no configuration:
-// a change under `services/api` resolves `services/api`'s manifest, not the repo root's.
+// A MISSING RECORD IS A BLOCK, never a fallback to a guess (L-08: a gate that runs nothing
+// and reports OK is worse than no gate). There is no per-language table anywhere, and a
+// record that does not parse is a failure with a message rather than a reason to look
+// somewhere else.
 //
-// Why a separate module rather than lib.mjs: P1.4 and P1.5 both consume this, so it is
-// shared code rather than gate-local code, and widening lib.mjs would edit a file two
-// other in-flight slices import.
+// THE FILE NAME `stack.mjs` IS NOW A MISNOMER, and it is kept anyway. docs/MIGRATION.md
+// and five files under logs/ name it; renaming would leave those pointing at nothing for
+// no behavioural gain.
+//
+// Why a separate module rather than lib.mjs: the commit gate and the sandbox guard both
+// consume this, so it is shared code rather than gate-local code.
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -42,178 +49,60 @@ import path from 'node:path';
 import { isPathInside } from './lib.mjs';
 
 /**
- * Every manifest name this module knows, in the order a directory is examined.
- * Exported so a gate's "here is what I looked for" message and this table cannot
- * drift apart.
+ * The record a project writes to say how it is tested. Tracked in git, at the project
+ * directory, never under `.claude/` — a builder that changes the test setup has to be able
+ * to update it, and path-guard refuses a role every write inside `.claude/`.
  */
-export const LOOKED_FOR = [
-  'package.json',
-  'pyproject.toml',
-  'pytest.ini',
-  'setup.cfg',
-  'tox.ini',
-  'go.mod',
-  'Cargo.toml',
-  'pom.xml',
-  'build.gradle',
-  'build.gradle.kts',
-  'Gemfile',
-];
+export const RECORD_FILE = 'aeo-tests.json';
 
-const PYTHON_CONFIGS = ['pyproject.toml', 'pytest.ini', 'setup.cfg', 'tox.ini'];
-
-const isWindows = () => process.platform === 'win32';
-
-function readIfPresent(file) {
-  try {
-    return readFileSync(file, 'utf8');
-  } catch {
-    return null;
-  }
-}
-
-function readJson(file) {
-  const text = readIfPresent(file);
-  if (text === null) return { error: 'is unreadable' };
-  try {
-    return { value: JSON.parse(text) };
-  } catch (err) {
-    return { error: `does not parse (${err.message})` };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Per-stack resolution
-// ---------------------------------------------------------------------------
-
-// The lockfile is the project's own statement of which package manager runs its
-// scripts. `npm test` in a bun or pnpm workspace is a different command with a
-// different result, so this is reading a declaration rather than choosing a default.
-function nodeRunner(dir) {
-  if (existsSync(path.join(dir, 'pnpm-lock.yaml'))) return ['pnpm'];
-  if (existsSync(path.join(dir, 'yarn.lock'))) return ['yarn'];
-  if (existsSync(path.join(dir, 'bun.lockb')) || existsSync(path.join(dir, 'bun.lock'))) return ['bun', 'run'];
-  return ['npm'];
-}
-
-function nodeCommand(dir, file) {
-  const { value, error } = readJson(file);
-  if (error) return { reason: `package.json ${error}` };
-  const script = value?.scripts?.test;
-  if (typeof script !== 'string' || script.trim() === '') {
-    return { reason: 'package.json declares no "scripts.test"' };
-  }
-  return { command: [...nodeRunner(dir), 'test'] };
-}
-
-// Python has no manifest field that names a test command, so the declaration is the
-// presence of pytest in the project's own configuration. One token, checked across all
-// four config files, covers both a `[tool.pytest.ini_options]` section and a pytest
-// dependency without this module carrying a TOML parser.
-function pythonCommand(dir) {
-  const present = PYTHON_CONFIGS.filter((name) => existsSync(path.join(dir, name)));
-  const declares = present.some((name) => (readIfPresent(path.join(dir, name)) ?? '').includes('pytest'));
-  if (!declares) {
-    return { reason: `${present.join(', ')} names no test runner (looked for pytest)` };
-  }
-  // Same reading as nodeRunner: the lockfile states how the project invokes its tools.
-  if (existsSync(path.join(dir, 'uv.lock'))) return { command: ['uv', 'run', 'pytest'] };
-  if (existsSync(path.join(dir, 'poetry.lock'))) return { command: ['poetry', 'run', 'pytest'] };
-  return { command: ['pytest'] };
-}
-
-// Relative, never absolute: the child runs with cwd set to the project root, and on
-// Windows the suite is spawned through cmd.exe, which mishandles an absolute program
-// path containing spaces.
-function gradleCommand(dir) {
-  const wrapper = isWindows() ? 'gradlew.bat' : 'gradlew';
-  if (existsSync(path.join(dir, wrapper))) return { command: [isWindows() ? wrapper : './gradlew', 'test'] };
-  return { command: ['gradle', 'test'] };
-}
-
-function rubyCommand(dir, file) {
-  if ((readIfPresent(file) ?? '').includes('rspec')) return { command: ['bundle', 'exec', 'rspec'] };
-  return { reason: 'Gemfile names no test runner (looked for rspec)' };
-}
-
-const fixed = (...command) => () => ({ command });
-
-// Mined from test-strategy.md's detection table (V-08), one row per row. Nothing is
-// here that the table does not justify.
-const STACKS = [
-  { stack: 'node', manifest: 'package.json', resolve: nodeCommand },
-  { stack: 'python', manifest: 'pyproject.toml', resolve: pythonCommand },
-  { stack: 'python', manifest: 'pytest.ini', resolve: pythonCommand },
-  { stack: 'python', manifest: 'setup.cfg', resolve: pythonCommand },
-  { stack: 'python', manifest: 'tox.ini', resolve: pythonCommand },
-  { stack: 'go', manifest: 'go.mod', resolve: fixed('go', 'test', './...') },
-  { stack: 'rust', manifest: 'Cargo.toml', resolve: fixed('cargo', 'test') },
-  { stack: 'java', manifest: 'pom.xml', resolve: fixed('mvn', '-q', 'test') },
-  { stack: 'java', manifest: 'build.gradle', resolve: gradleCommand },
-  { stack: 'java', manifest: 'build.gradle.kts', resolve: gradleCommand },
-  { stack: 'ruby', manifest: 'Gemfile', resolve: rubyCommand },
-];
-
-// ---------------------------------------------------------------------------
-// The walk
-// ---------------------------------------------------------------------------
+/** The one key the record carries. */
+export const RECORD_KEY = 'test';
 
 /**
  * A resolved project.
- * @typedef {{root: string, stack: string|null, manifest: string|null,
- *            command: string[]|null, reason: string|null}} Unit
+ * @typedef {{root: string, record: string, command: string|null, reason: string|null}} Unit
  */
 
 /**
- * The projects rooted at exactly `dir`, or null when `dir` holds no manifest.
+ * The project rooted at exactly `dir`, or null when `dir` holds no record.
  *
- * The nearest manifest defines the project, and every manifest at that level that
- * declares a command is returned, not just the first. A Django-plus-React root carries
- * both package.json and pyproject.toml; running jest, reporting green and never running
- * pytest is the quiet pass L-08 forbids, and blocking instead would be a permanent block
- * on a repository that has declared everything it can. Identical commands collapse, so a
- * project holding both a pyproject.toml and a tox.ini that name pytest runs pytest once.
+ * One record, one command, one Unit. A root that needs two suites says so in one command
+ * line — `npm test && pytest` — rather than by holding two records, which is why this
+ * returns a Unit and not an array.
  *
- * A manifest that is present but declares no command yields one Unit with `command: null`
- * and a reason; the walk does not continue past it, because a project that cannot say how
- * it is tested is a block, not a reason to adopt its parent's suite.
+ * A record that is present but unusable yields a Unit with `command: null` and a reason.
+ * The walk does not continue past it: a project that has stated how it is tested and
+ * stated it wrongly is a block, not a reason to adopt its parent's suite.
  *
- * @returns {Unit[]|null}
+ * @returns {Unit|null}
  */
 export function projectAt(dir) {
-  const candidates = [];
-  for (const entry of STACKS) {
-    const file = path.join(dir, entry.manifest);
-    if (existsSync(file)) candidates.push({ ...entry, file });
+  const file = path.join(dir, RECORD_FILE);
+  if (!existsSync(file)) return null;
+
+  const unit = (command, reason) => ({ root: dir, record: file, command, reason });
+
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (err) {
+    return unit(null, `${RECORD_FILE} cannot be read (${err.message})`);
   }
-  if (candidates.length === 0) return null;
 
-  const attempts = candidates.map((entry) => {
-    const outcome = entry.resolve(dir, entry.file) ?? {};
-    return {
-      root: dir,
-      stack: entry.stack,
-      manifest: entry.manifest,
-      command: outcome.command ?? null,
-      reason: outcome.reason ?? null,
-    };
-  });
-
-  const byCommand = new Map();
-  for (const attempt of attempts) {
-    if (attempt.command === null) continue;
-    const key = attempt.command.join(' ');
-    if (!byCommand.has(key)) byCommand.set(key, attempt);
+  let value;
+  try {
+    // JSON rather than a bare line of text, so a truncated or half-edited record is a
+    // named failure with a parser message instead of a command nobody meant to run.
+    value = JSON.parse(text);
+  } catch (err) {
+    return unit(null, `${RECORD_FILE} does not parse as JSON (${err.message})`);
   }
-  if (byCommand.size > 0) return [...byCommand.values()];
 
-  return [{
-    root: dir,
-    stack: null,
-    manifest: attempts.map((a) => a.manifest).join(', '),
-    command: null,
-    reason: attempts.map((a) => a.reason).filter(Boolean).join('; '),
-  }];
+  const command = value?.[RECORD_KEY];
+  if (typeof command !== 'string' || command.trim() === '') {
+    return unit(null, `${RECORD_FILE} declares no "${RECORD_KEY}" command`);
+  }
+  return unit(command.trim(), null);
 }
 
 function* walkUp(startDir, toplevel) {
@@ -233,14 +122,14 @@ function* walkUp(startDir, toplevel) {
  * The suites this change must run.
  *
  * `files` are repo-relative paths, as git reports them. Each one resolves against the
- * nearest manifest at or above its own directory, stopping at `toplevel`. Distinct
- * suites are returned once each, so a change touching twenty files in one package runs
- * that package's suite once.
+ * nearest record at or above its own directory, stopping at `toplevel`. Distinct projects
+ * are returned once each, so a change touching twenty files in one package runs that
+ * package's suite once.
  *
- * An empty `files` set resolves from `toplevel` instead of resolving nothing. That is
- * the fail-safe direction: `git commit --amend`, `--allow-empty`, and a commit issued
- * with nothing staged all present an empty set, and the widest suite the repo can
- * resolve is the right answer when the change cannot be scoped.
+ * An empty `files` set resolves from `toplevel` instead of resolving nothing. That is the
+ * fail-safe direction: `git commit --amend`, `--allow-empty`, and a commit issued with
+ * nothing staged all present an empty set, and the widest suite the repo can resolve is
+ * the right answer when the change cannot be scoped.
  *
  * @param {{toplevel: string, files: string[]}} input
  * @returns {{units: Unit[], missing: string[], searched: string[]}}
@@ -271,10 +160,7 @@ export function resolveTestPlan({ toplevel, files }) {
       }
     }
     if (found) {
-      for (const unit of found) {
-        const key = `${unit.root}\0${unit.manifest}`;
-        if (!units.has(key)) units.set(key, unit);
-      }
+      if (!units.has(found.root)) units.set(found.root, found);
     } else {
       missing.push(start);
     }

@@ -108,17 +108,20 @@ describe('the two Phase 6 artifacts keep a smoke check in the fast tier (D26)', 
 });
 
 describe('the commit gate resolves the fast tier', () => {
-  // The whole point of D17 turns on which command detection picks. `scripts.test` is
-  // what stack.mjs resolves for a package.json project (D10, no config file), so the
-  // fast tier has to BE `test` rather than sit beside it under another name. This
-  // asserts that against the real repo root and the real detection code.
-  test('detection on this repo resolves npm test', () => {
+  // The whole point of D17 turns on which command the gate runs on this repository. It
+  // runs whatever aeo-tests.json records (D29), so the fast tier has to BE `npm test`
+  // rather than sit beside it under another name, and the record has to say so. This
+  // asserts that against the real repo root and the real resolver, not against the
+  // record's text.
+  test('this repository records npm test, and that is what the gate would run', () => {
     const plan = resolveTestPlan({ toplevel: repoRoot, files: ['plugin/hooks/lib.mjs'] });
-    assert.deepEqual(plan.missing, []);
     assert.deepEqual(
-      plan.units.map((u) => u.command),
-      [['npm', 'test']],
+      plan.missing,
+      [],
+      'no aeo-tests.json resolves at this repository root, so AEO\'s own commit gate blocks every commit here',
     );
+    assert.deepEqual(plan.units.map((u) => u.command), ['npm test']);
+    assert.equal(plan.units[0].root, repoRoot);
   });
 });
 

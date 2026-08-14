@@ -41,33 +41,26 @@ Bundled resource:
    prerequisite. A missing or unauthenticated `gh` does not stop Stage 0's local
    work, but it does stop the checkpoint, so raise it now rather than at step 7.
 
-2. **Resolve the stack, never guess it.** Run the resolver the commit gate uses,
-   from the target directory:
+2. **Settle the stack and the test command, never guess either.** Two outcomes,
+   and they lead different places.
 
-   ```
-   node --input-type=module -e "import { pathToFileURL } from 'node:url'; const m = await import(pathToFileURL('${CLAUDE_PLUGIN_ROOT}/hooks/stack.mjs')); console.log(JSON.stringify(m.resolveTestPlan({ toplevel: process.cwd(), files: [] }), null, 2));"
-   ```
+   - **The directory is empty**, which is the ordinary case. Ask the founder
+     which stack the product is in. One question, answered before anything is
+     written. Do not infer a stack from the product description and do not
+     default to one.
+   - **The directory already holds a project.** The scaffold wraps the
+     organization around what is there. Find how it is already tested — the
+     script its manifest defines, a Makefile target, whatever a contributor
+     actually types — and confirm that command with the founder. Skip the seed
+     entirely: do not write a second manifest over a project that has one.
 
-   The `pathToFileURL` wrapper is not decoration. A bare dynamic import of an
-   absolute Windows path is read as a `d:` URL scheme and refused.
-
-   Two outcomes, and they lead different places.
-
-   - It resolves a command. The directory already holds a project, and the
-     scaffold wraps the organization around what is there. Keep that command and
-     skip the seed entirely: do not write a second manifest over a project that
-     has one.
-   - It resolves nothing. The directory is empty, which is the ordinary case.
-     Ask the founder which stack the product is in. One question, answered before
-     anything is written. Do not infer a stack from the product description and
-     do not default to one.
-
-   If the resolver reports a manifest it found but could not read a command out
-   of, report that verbatim, name what it looked for from the module's
-   `LOOKED_FOR` list, and stop. There is no project config file to fall back on
-   and there is not going to be one ([D10](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md));
-   what detection cannot infer, the gate reports. A gate that runs nothing and
-   says OK is worse than no gate.
+   Either way you finish this step holding one command line: the thing that runs
+   this project's fast suite. That is what step 3 records and what the commit
+   gate will run on every commit from here on
+   ([D10](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). The gate never invents a command
+   and never falls back to one, so a project with no record blocks every commit
+   until the record exists. A gate that runs nothing and says OK is worse than no
+   gate.
 
 3. **Write the tree, in the plan's order.** Walk `scaffold-plan.json`'s `steps`
    array from the top, taking every step whose `stage` is 0, and create each path
@@ -79,14 +72,24 @@ Bundled resource:
    Nothing under `src/`, no project manifest, and no test file is created before
    `logs/` exists on disk.
 
-   For the two steps carrying `from`, take the path and the content from the
+   For the three steps carrying `from`, take the path and the content from the
    seed for the chosen stack. Node is the only seeded stack, because node is the
    one toolchain this plugin already requires, so it is the only one a seed can
-   assume is installed. For any other stack, write the project's manifest and one
-   trivial passing test to that stack's own conventions: a `go.mod` and a
-   `_test.go`, a `Cargo.toml` and a `#[test]`, a `pyproject.toml` naming pytest.
-   Step 4 is what confirms you got it right, so write the smallest thing that
-   could work and let the check tell you.
+   assume is installed. For any other stack, write the project's manifest, one
+   trivial passing test, and `aeo-tests.json` yourself, to that stack's own
+   conventions: a `go.mod` and a `_test.go` with `{"test": "go test ./..."}`, a
+   `Cargo.toml` and a `#[test]` with `{"test": "cargo test"}`. Step 4 is what
+   confirms you got it right, so write the smallest thing that could work and let
+   the check tell you.
+
+   `aeo-tests.json` is the project's record of its own test command, and it is
+   the whole of what the commit gate reads. One key, `test`, holding a command
+   line rather than a list — a project that needs two suites writes
+   `npm test && pytest`. There is no directory field, because the record runs
+   where it sits; a mono-repo puts one record in each project directory and the
+   nearest one above a changed file is the one that runs. It is tracked in git
+   and it is deliberately not under `.claude/`, so that a builder who changes the
+   test setup can update it in the same slice.
 
    The two steps marked `authored` are yours to write, not the plan's to hand
    you. `README.md` is one paragraph in the founder's own words: what this
@@ -94,7 +97,7 @@ Bundled resource:
 
    One of the tracked steps is `.claude/settings.json`, declaring
    `AEO_LIVE_DATA_ROOT` and `AEO_DATA_ROOT` both blank. This is Claude Code's own
-   settings file, not the project config file D10 forbids, and `.gitignore` only
+   settings file, not a place to configure this plugin, and `.gitignore` only
    excludes `settings.local.json`, so this one lands in the first commit. A blank
    pair leaves `sandbox-guard` inert — the same state as a fresh install with no
    file at all — rather than accidentally refusing every command. Point the
@@ -102,15 +105,23 @@ Bundled resource:
    absolute path to wherever this project's production data lives, and
    `AEO_DATA_ROOT` with a sandbox path outside it, is what turns the guard on.
 
-4. **Confirm the gate can see the project.** Run the same resolver again, now
-   over the scaffolded tree. It must return exactly one unit with a command, and
-   that command is what the commit gate will run on every commit from here on.
-   If it returns nothing, the manifest you just wrote does not declare a test
-   command in a form detection reads. Fix the manifest, do not add a config file,
-   and do not proceed on the assumption that it will sort itself out later.
+4. **Confirm the gate can see the project.** Run the resolver the commit gate
+   uses, from the target directory:
+
+   ```
+   node --input-type=module -e "import { pathToFileURL } from 'node:url'; const m = await import(pathToFileURL('${CLAUDE_PLUGIN_ROOT}/hooks/stack.mjs')); console.log(JSON.stringify(m.resolveTestPlan({ toplevel: process.cwd(), files: [] }), null, 2));"
+   ```
+
+   The `pathToFileURL` wrapper is not decoration. A bare dynamic import of an
+   absolute Windows path is read as a `d:` URL scheme and refused.
+
+   It must return exactly one unit whose `command` is the command line you
+   settled in step 2. Anything else means the record is missing, in the wrong
+   place, or does not parse — the output says which. Fix the record and do not
+   proceed on the assumption that it will sort itself out later.
 
 5. **Run that command and require green.** Not a command you think is
-   equivalent; the one the resolver returned. A red or erroring baseline means
+   equivalent; the one the record names. A red or erroring baseline means
    the first commit installs a suite the commit gate will refuse, and the founder
    discovers it on their first real change instead of now.
 
@@ -183,7 +194,7 @@ Bundled resource:
      command and rerun it, and do not present a cost decision the account is not
      actually facing.
 
-   Then report: the tree, the resolved test command, the green baseline, the one
+   Then report: the tree, the recorded test command, the green baseline, the one
    commit, whether protection is on, and that `.claude/settings.json` declares
    `AEO_LIVE_DATA_ROOT` and `AEO_DATA_ROOT` blank for the founder to fill in
    whenever this project has production data to protect.
@@ -239,7 +250,7 @@ Cover these, briefly, in this order:
 
 - **The gates, and what each refuses.** These are hooks with exit-code
   enforcement, not advice. `commit-gate` refuses a commit on the protected branch
-  and a commit while the suite is red or its command cannot be detected.
+  and a commit while the suite is red or `aeo-tests.json` records no command.
   `block-merge` refuses a role or the GitHub forge tool merging, deleting a
   branch, or pushing to the protected branch. `path-guard` refuses a role editing
   the harness's own `.claude/` configuration. `sandbox-guard` refuses anything
@@ -263,9 +274,9 @@ minute. Then stop for the founder's approval of the wording.
 
 - Scaffold only into the directory the founder named. Never into this plugin's
   own repository, and never into `~/.claude`.
-- One question about the stack, asked before anything is written. Never a guess,
-  never a silent default, and never a project config file to paper over a
-  detection failure.
+- One question about the stack, asked before anything is written. Never a guess
+  and never a silent default. The test command is recorded because somebody
+  settled it, never because a table produced it.
 - The first commit lands green or it does not land.
 - `gh repo create` and the branch-protection call are outward-facing and wait for
   an explicit approval. Prepared by this skill, run by the main session, never

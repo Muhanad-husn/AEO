@@ -47,8 +47,10 @@
 // with a message naming the fix is a one-time setup block, not a per-command tax. Once
 // the project sets both variables in .claude/settings.json the rule never fires again.
 //
-// The sentinel rule does need to recognise a suite, and it takes that from stack.mjs's
-// detection rather than from a table of its own. Its recognition is deliberately generous
+// The sentinel rule does need to recognise a suite, and it takes that from the project's
+// own recorded test command (stack.mjs) rather than from a table of its own. A project
+// with no record declares no suite here, and the commit gate blocks such a commit anyway
+// before anything runs. Its recognition is deliberately generous
 // and its misses are backstopped by the commit gate, which refuses to cross a live
 // sentinel with no recognition involved at all.
 //
@@ -214,8 +216,8 @@ function isOrderedSubsequence(tokens, wanted) {
  * gate is trying not to cause.
  *
  * A KNOWN MISS, in the other direction: `node --test` is not recognised, and it is how
- * this project's own suite runs. The declared command is `npm test`, and what
- * `scripts.test` expands to is stack.mjs's to read, not this function's to guess. During
+ * this project's own suite runs. The recorded command is `npm test`, and what that
+ * expands to is the package manager's business, not this function's to guess. During
  * a live run a hand-typed `node --test` is not held; a commit that would run it is,
  * because the commit gate refuses to cross a live sentinel with no recognition involved.
  */
@@ -365,9 +367,12 @@ export function sandboxGuard(payload) {
       const { reason, notes } = runInProgress(anchor);
       for (const line of notes) note(`sandbox-guard: ${line}`);
       if (reason === null) continue;
+      // The record states one command line per project; this rule matches on tokens, so
+      // the line is tokenised here rather than stored pre-split.
       const declared = resolveTestPlan({ toplevel: anchor, files: [] })
         .units.map((u) => u.command)
-        .filter((c) => Array.isArray(c));
+        .filter((c) => typeof c === 'string')
+        .map((c) => shellTokens(c));
       const invoked = invokesDeclaredSuite(command, declared);
       if (invoked !== null) block(`\`${invoked}\` will not run: ${reason}\n${NO_OVERRIDE}`);
     }

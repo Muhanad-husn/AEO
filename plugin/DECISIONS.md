@@ -60,23 +60,29 @@ found by three different names on a Windows machine, one of which is a zero-byte
 alias stub. Anything that scaffolds a project checks for node before it writes a
 line, for this reason and no other.
 
-## D10 — Stack detection, and no project config file
+## D10 — The project records its test command, and the gate runs it
 
-**Rule.** The test command is resolved per change, by walking up from the changed
-files to the nearest project manifest and reading the command that manifest declares.
-There is no config file for a project to set. When detection resolves nothing, the
-gate blocks and names what it looked for.
+**Rule.** A project states how it is tested in `aeo-tests.json` at its own directory,
+tracked in git: one key, `test`, holding a command line. The commit gate resolves the
+nearest record at or above each changed file and **runs that command itself** — it
+trusts a recorded command, never a recorded verdict. With no usable record the gate
+blocks and names the exact path to create. There is no fallback, no per-language table,
+and nothing else in the file: no directory field, because a record runs where it sits.
 
-**Why.** Resolution per change is what makes a polyglot repository and a mono-repo
-work with no configuration at all: a change under one package resolves that package's
-manifest, not the root's. A repo-level profile cannot do that.
+**Why.** The command is settled by an actor that inspected the repository, chose the
+runner and ran the suite. Re-deriving it at commit time is a second guess made in the
+one place that cannot ask a question, and it was wrong in both directions: it invented
+a 55-minute command for a project whose real one takes 40 seconds, and it blocked every
+commit in any language its table had no row for.
 
-The absent config file is deliberate. An option almost nobody sets rots and then
-lies, which is over-engineering tripwire 2 exactly. And the escape hatch has to be a
-block rather than a default, because a gate that runs nothing and reports OK is worse
-than no gate at all. If a real project turns up that detection cannot serve, that is
-evidence for a config file, and it gets its own decision then, with the failing case
-attached.
+Resolution stays per change, which is what makes a mono-repo work with no central
+configuration: a change under one package resolves that package's record, not the
+root's. A record that is present and unusable is a block, not a reason to adopt the
+parent's suite, because a gate that runs nothing and reports OK is worse than no gate.
+
+This is not a config file by the back door. It carries one value that only the project
+can know, it has no defaults to rot, and a project with a wrong record finds out on its
+next commit.
 
 ## D11 — Three concurrency lanes, and the write-actor number lives in one file
 

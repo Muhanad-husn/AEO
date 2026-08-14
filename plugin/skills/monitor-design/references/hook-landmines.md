@@ -61,14 +61,15 @@ branch, and then resolves and runs the project's fast test suite there before le
 command through.
 
 So a snapshot step that runs `cd <mirror> && git commit -m "snapshot"` hands the gate a
-repository nobody meant it to govern. A mirror of a project carries the project's manifest,
-so detection succeeds and the whole fast suite runs inside the mirror. A mirror freshly
-created by `git init` is usually sitting on its own default branch, so the gate refuses the
-commit outright. And a mirror with no manifest fails detection, which is also a refusal.
+repository nobody meant it to govern. A mirror of a project carries the project's test
+record, so the gate resolves a command and the whole fast suite runs inside the mirror. A
+mirror freshly created by `git init` is usually sitting on its own default branch, so the
+gate refuses the commit outright. And a mirror with no record resolves nothing, which is
+also a refusal.
 
 **What the author sees.** A snapshot or archive step that hangs for as long as the project's
 test suite takes, against the gate's own timeout. Or a block whose message is about direct
-commits on a default branch, or about declaring the project's test command, naming a
+commits on a default branch, or about recording the project's test command, naming a
 directory that is not the project. Nothing in the message mentions the snapshot tool, so it
 reads as a broken gate rather than as a tool that walked into one.
 

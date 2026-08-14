@@ -10,8 +10,13 @@
 //
 // Test suites are stood up as shim executables on PATH so a red suite, a green suite
 // and a suite that overruns are all deterministic and fast. Two cases use the real
-// `npm` instead, because "a Node repo detects and runs its own test command" is a
-// named verify item in PLAN's Phase 1 and a shimmed npm would not prove it.
+// `npm` instead, because "a Node repo runs its own test command" is a named verify item
+// in PLAN's Phase 1 and a shimmed npm would not prove it.
+//
+// Every fixture that expects a suite to run carries an `aeo-tests.json`, which is how a
+// project states its test command (D29). It is written out literally rather than taken
+// from the module's export: a founder creates that file by hand, so its name is part of
+// the contract.
 
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -100,20 +105,27 @@ function makeRepo({ base = {}, defaultBranch = 'main', branch = 'feat/slice', ch
   return dir;
 }
 
-/** A fake executable on PATH, so a suite's outcome is a decision rather than a hope. */
+/**
+ * A fake executable on PATH, so a suite's outcome is a decision rather than a hope.
+ *
+ * The shim announces itself BEFORE it sleeps, deliberately. A suite that overruns the
+ * budget is killed mid-run, and the block for that case reports the output captured so
+ * far; a shim that printed nothing until it finished could not tell a missing tail from
+ * an empty one.
+ */
 function shimDir(shims) {
   const bin = tempDir('aeo-p13-bin-');
   for (const [name, { exit = 0, sleepSeconds = 0 }] of Object.entries(shims)) {
     if (onWindows) {
-      const lines = ['@echo off'];
+      const lines = ['@echo off', `echo ${name} shim ran with args: %*`];
       if (sleepSeconds) lines.push(`ping -n ${sleepSeconds + 1} 127.0.0.1 >nul`);
-      lines.push(`echo ${name} shim ran with args: %*`, `exit /b ${exit}`);
+      lines.push(`exit /b ${exit}`);
       writeFileSync(path.join(bin, `${name}.cmd`), `${lines.join('\r\n')}\r\n`);
     } else {
       const file = path.join(bin, name);
-      const lines = ['#!/bin/sh'];
+      const lines = ['#!/bin/sh', `echo "${name} shim ran with args: $@"`];
       if (sleepSeconds) lines.push(`sleep ${sleepSeconds}`);
-      lines.push(`echo "${name} shim ran with args: $@"`, `exit ${exit}`);
+      lines.push(`exit ${exit}`);
       writeFileSync(file, `${lines.join('\n')}\n`);
       chmodSync(file, 0o755);
     }
@@ -152,6 +164,21 @@ function runGate(payload, { bin = null, env = {} } = {}) {
 
 const npmPackage = (script) => JSON.stringify({ name: 'x', private: true, scripts: { test: script } });
 
+/** The project's record of its own test command, as it lands on disk. */
+const testRecord = (command) => `${JSON.stringify({ test: command }, null, 2)}\n`;
+
+/** A record naming a command that appends one byte to `ran.txt` in its own directory. */
+const countingRecord = () => testRecord(`node -e "require('fs').appendFileSync('ran.txt','x')"`);
+
+/** How many times a counting record's command ran in that project directory. */
+function timesRan(dir) {
+  try {
+    return readFileSync(path.join(dir, 'ran.txt'), 'utf8').length;
+  } catch {
+    return 0;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The gate acts only on a commit
 // ---------------------------------------------------------------------------
@@ -185,6 +212,23 @@ describe('the protected branch is resolved, never assumed', () => {
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 2);
     assert.match(result.stderr, /BLOCKED: no direct commits on main/);
+  });
+
+  test('the branch block fires before anything is resolved or run', () => {
+    // The repo carries a counting record and a code change, so a gate that reached the
+    // suite would leave a trace on disk. Nothing about the record may appear either: the
+    // branch arm decides on its own, and it decides first.
+    const dir = makeRepo({
+      branch: 'main',
+      defaultBranch: 'main',
+      base: { 'aeo-tests.json': countingRecord() },
+      change: { 'src/a.js': 'const a = 1;\n' },
+    });
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /no direct commits on main/);
+    assert.doesNotMatch(result.stderr, /aeo-tests\.json|test suite is red/);
+    assert.equal(timesRan(dir), 0, 'the suite ran on a protected-branch commit');
   });
 
   // C-07. This gate never read tool_name — it decides from tool_input.command alone — so
@@ -342,13 +386,16 @@ describe('the protected branch is resolved, never assumed', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Detection, and running the project's own command (V-05, D10)
+// Running the command the project recorded (V-05, D10, D29)
 // ---------------------------------------------------------------------------
 
-describe('a Node repo detects and runs its own test command', () => {
+describe('a Node repo runs the command it recorded', () => {
   test('a green npm test allows the commit', () => {
     const dir = makeRepo({
-      base: { 'package.json': npmPackage('node -e "process.exit(0)"') },
+      base: {
+        'aeo-tests.json': testRecord('npm test'),
+        'package.json': npmPackage('node -e "process.exit(0)"'),
+      },
       change: { 'index.js': 'export const a = 1;\n' },
     });
     const result = runGate(commitPayload(dir));
@@ -357,7 +404,10 @@ describe('a Node repo detects and runs its own test command', () => {
 
   test('a red npm test blocks the commit', () => {
     const dir = makeRepo({
-      base: { 'package.json': npmPackage('node -e "process.exit(1)"') },
+      base: {
+        'aeo-tests.json': testRecord('npm test'),
+        'package.json': npmPackage('node -e "process.exit(1)"'),
+      },
       change: { 'index.js': 'export const a = 1;\n' },
     });
     const result = runGate(commitPayload(dir));
@@ -367,102 +417,179 @@ describe('a Node repo detects and runs its own test command', () => {
   });
 });
 
-describe('a Python repo detects and runs its own test command', () => {
-  test('a green pytest allows the commit', () => {
+describe('a recorded command that fails blocks and shows how far it got', () => {
+  test('a red suite blocks, naming the command and the tail of its output', () => {
     const dir = makeRepo({
-      base: { 'pyproject.toml': '[tool.pytest.ini_options]\naddopts = "-q"\n' },
-      change: { 'app.py': 'x = 1\n' },
-    });
-    const result = runGate(commitPayload(dir), { bin: shimDir({ pytest: { exit: 0 } }) });
-    assert.equal(result.status, 0, result.stderr);
-  });
-
-  test('a red pytest blocks the commit', () => {
-    const dir = makeRepo({
-      base: { 'pyproject.toml': '[tool.pytest.ini_options]\n' },
+      base: { 'aeo-tests.json': testRecord('pytest -q') },
       change: { 'app.py': 'x = 1\n' },
     });
     const result = runGate(commitPayload(dir), { bin: shimDir({ pytest: { exit: 1 } }) });
     assert.equal(result.status, 2);
     assert.match(result.stderr, /test suite is red/);
-    assert.match(result.stderr, /pytest/);
+    assert.match(result.stderr, /pytest -q/);
     assert.match(result.stderr, /shim ran/); // the tail of the real output is reported
   });
 
-  test('uv is used when the project declares it, and the suite is still run', () => {
+  test('the recorded command is run as written, flags and all', () => {
     const dir = makeRepo({
-      base: { 'pyproject.toml': '[tool.pytest.ini_options]\n', 'uv.lock': 'version = 1\n' },
+      base: { 'aeo-tests.json': testRecord('uv run pytest -k smoke') },
       change: { 'app.py': 'x = 1\n' },
     });
     const result = runGate(commitPayload(dir), { bin: shimDir({ uv: { exit: 1 } }) });
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /uv run pytest/);
+    assert.match(result.stderr, /uv run pytest -k smoke/);
+    assert.match(result.stderr, /args: run pytest -k smoke/);
+  });
+
+  test('a command that is not on PATH blocks, and the block carries the shell saying so', () => {
+    // With `shell: true` this is never an ENOENT from spawnSync: the shell starts fine
+    // and reports the miss itself. What it reports differs by platform, which is why this
+    // asserts the outcome a reader acts on rather than the label. `sh` exits 127 and the
+    // gate calls it a startup failure; `cmd.exe` exits 1 with its "is not recognized"
+    // line on stderr and the gate calls it a red suite. Both block, and both put the
+    // shell's own sentence in front of the reader.
+    const dir = makeRepo({
+      base: { 'aeo-tests.json': testRecord('aeo-no-such-runner --quiet') },
+      change: { 'app.py': 'x = 1\n' },
+    });
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /aeo-no-such-runner --quiet/);
+    assert.match(result.stderr, /not found|not recognized/i);
+  });
+
+  test('a runner exiting with the shell\'s not-found code is a startup failure, not a red suite', () => {
+    // 127 from POSIX `sh`; 9009 from a Windows batch runner propagating its errorlevel,
+    // which is the shape of most toolchain shims. A real suite can also exit 127, so the
+    // output tail goes with the message rather than replacing it.
+    const dir = makeRepo({
+      base: { 'aeo-tests.json': testRecord('pytest') },
+      change: { 'app.py': 'x = 1\n' },
+    });
+    const result = runGate(commitPayload(dir), {
+      bin: shimDir({ pytest: { exit: onWindows ? 9009 : 127 } }),
+    });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /could not be started/);
+    assert.match(result.stderr, /shim ran/);
+    assert.doesNotMatch(result.stderr, /test suite is red/);
   });
 });
 
-describe('detection that cannot resolve blocks and says what it looked for', () => {
-  test('a repo with no manifest at all', () => {
+describe('a missing or unusable record blocks and names the file to create', () => {
+  test('a repo with no record at all', () => {
     const dir = makeRepo({ change: { 'src/a.js': 'const a = 1;\n' } });
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /no test command could be resolved/);
-    assert.match(result.stderr, /looked for:.*package\.json/);
-    assert.match(result.stderr, /pyproject\.toml/);
-    assert.match(result.stderr, /go\.mod/);
+    assert.match(result.stderr, /no test command is recorded/);
     assert.match(result.stderr, /searched:/);
+    // The exact path to create, inside this repository, not a bare filename.
+    assert.match(result.stderr, new RegExp(`Create .*${path.basename(dir)}[\\\\/]aeo-tests\\.json`));
     assert.doesNotMatch(result.stderr, /test suite is red/);
   });
 
-  test('a manifest that declares no test command names the manifest and the field', () => {
+  test('a manifest declaring a test script is not a record, and does not stand in for one', () => {
+    // The table this replaced would have inferred `npm test` here and run it.
     const dir = makeRepo({
-      base: { 'package.json': JSON.stringify({ name: 'x' }) },
+      base: { 'package.json': npmPackage('node -e "process.exit(0)"') },
       change: { 'index.js': 'const a = 1;\n' },
     });
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /scripts\.test/);
+    assert.match(result.stderr, /no test command is recorded/);
   });
 
-  test('an unresolvable second project blocks even when the first resolves', () => {
+  test('a record that does not parse blocks, and nothing is guessed or run', () => {
     const dir = makeRepo({
       base: {
-        'services/api/package.json': npmPackage('node -e "process.exit(0)"'),
-        'libs/calc/package.json': JSON.stringify({ name: 'calc' }),
+        'aeo-tests.json': '{ "test": "npm test"',
+        'package.json': npmPackage('node -e "process.exit(0)"'),
       },
+      change: { 'index.js': 'const a = 1;\n' },
+    });
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /does not parse/);
+    assert.match(result.stderr, /aeo-tests\.json/);
+    assert.doesNotMatch(result.stderr, /test suite is red/);
+  });
+
+  test('a record with an empty command blocks', () => {
+    const dir = makeRepo({
+      base: { 'aeo-tests.json': testRecord('   ') },
+      change: { 'index.js': 'const a = 1;\n' },
+    });
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /declares no "test" command/);
+  });
+
+  test('a second project with no record blocks even when the first has one', () => {
+    const dir = makeRepo({
+      base: { 'services/api/aeo-tests.json': countingRecord() },
       change: { 'services/api/a.js': '1\n', 'libs/calc/b.js': '2\n' },
     });
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /no test command could be resolved/);
+    assert.match(result.stderr, /no test command is recorded/);
+    assert.equal(timesRan(path.join(dir, 'services', 'api')), 0, 'a suite ran before the block');
   });
 });
 
-describe('resolution is per change, not per repo', () => {
-  const polyglot = () =>
+describe('resolution is per project directory, not per repo', () => {
+  const monorepo = () =>
     makeRepo({
       base: {
-        'services/api/package.json': npmPackage('node -e "process.exit(0)"'),
-        'libs/calc/pyproject.toml': '[tool.pytest.ini_options]\n',
+        'services/api/aeo-tests.json': countingRecord(),
+        'libs/calc/aeo-tests.json': countingRecord(),
       },
       change: {},
     });
 
-  test('a change in the Node package does not run the Python package', () => {
-    const dir = polyglot();
+  test('a change in one project does not run the other', () => {
+    const dir = monorepo();
     writeInto(dir, { 'services/api/a.js': '1\n' });
     run(dir, 'add', '-A');
-    // pytest is deliberately absent from PATH: if the gate ran it, this would block.
-    const result = runGate(commitPayload(dir), { bin: shimDir({ npm: { exit: 0 } }) });
+    const result = runGate(commitPayload(dir));
     assert.equal(result.status, 0, result.stderr);
+    assert.equal(timesRan(path.join(dir, 'services', 'api')), 1);
+    assert.equal(timesRan(path.join(dir, 'libs', 'calc')), 0);
   });
 
-  test('a change spanning both packages runs both, and a red one blocks', () => {
-    const dir = polyglot();
-    writeInto(dir, { 'services/api/a.js': '1\n', 'libs/calc/b.py': 'x = 1\n' });
+  test('a change spanning both projects runs both suites, once each', () => {
+    const dir = monorepo();
+    writeInto(dir, { 'services/api/a.js': '1\n', 'services/api/b.js': '2\n', 'libs/calc/c.py': 'x = 1\n' });
     run(dir, 'add', '-A');
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(timesRan(path.join(dir, 'services', 'api')), 1);
+    assert.equal(timesRan(path.join(dir, 'libs', 'calc')), 1);
+  });
+
+  test('twenty files in one project run that project\'s suite once', () => {
+    const dir = monorepo();
+    const files = Object.fromEntries(
+      Array.from({ length: 20 }, (_, i) => [`services/api/src/f${i}.js`, `export const f${i} = ${i};\n`]),
+    );
+    writeInto(dir, files);
+    run(dir, 'add', '-A');
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(timesRan(path.join(dir, 'services', 'api')), 1);
+  });
+
+  test('a red suite in the second project blocks the commit', () => {
+    const dir = makeRepo({
+      base: {
+        'services/api/aeo-tests.json': testRecord('npm test'),
+        'libs/calc/aeo-tests.json': testRecord('pytest'),
+      },
+      change: { 'services/api/a.js': '1\n', 'libs/calc/b.py': 'x = 1\n' },
+    });
     const result = runGate(commitPayload(dir), { bin: shimDir({ npm: { exit: 0 }, pytest: { exit: 1 } }) });
     assert.equal(result.status, 2);
     assert.match(result.stderr, /pytest/);
+    assert.match(result.stderr, /test suite is red/);
   });
 });
 
@@ -473,7 +600,7 @@ describe('resolution is per change, not per repo', () => {
 describe('the red-commit escape hatch (V-01)', () => {
   test('.claude/allow-red-commit does not bypass a red suite', () => {
     const dir = makeRepo({
-      base: { 'pyproject.toml': '[tool.pytest.ini_options]\n' },
+      base: { 'aeo-tests.json': testRecord('pytest') },
       change: { 'app.py': 'x = 1\n' },
     });
     writeInto(dir, { '.claude/allow-red-commit': '' });
@@ -505,20 +632,33 @@ describe('the red-commit escape hatch (V-01)', () => {
 // ---------------------------------------------------------------------------
 
 describe('the documentation fast path', () => {
-  test('a documentation-only commit skips detection entirely', () => {
-    // No manifest anywhere. Without the fast path this would block on detection, so
-    // this also pins that the skip happens before detection rather than after.
+  test('a documentation-only commit skips the record and the suite entirely', () => {
+    // No record anywhere. Without the fast path this would block for a missing record,
+    // so this also pins that the skip happens before resolution rather than after.
     const dir = makeRepo({ change: { 'README.md': '# x', 'notes/design.rst': 'x' } });
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stderr, /documentation only \(2 file\(s\)\)/);
   });
 
+  test('a documentation-only commit does not run a recorded suite either', () => {
+    // The same skip in a repo that HAS a record, so the outcome cannot be explained by
+    // there being nothing to run.
+    const dir = makeRepo({
+      base: { 'aeo-tests.json': countingRecord() },
+      change: { 'README.md': '# x' },
+    });
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /documentation only/);
+    assert.equal(timesRan(dir), 0, 'a documentation-only commit ran the suite');
+  });
+
   test('one non-documentation file takes the strict path', () => {
     const dir = makeRepo({ change: { 'README.md': '# x', 'src/a.js': '1\n' } });
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /no test command could be resolved/);
+    assert.match(result.stderr, /no test command is recorded/);
   });
 
   test('markdown under .claude is configuration, not documentation', () => {
@@ -527,7 +667,7 @@ describe('the documentation fast path', () => {
     const dir = makeRepo({ change: { '.claude/agents/builder.md': '# builder' } });
     const result = runGate(commitPayload(dir));
     assert.equal(result.status, 2);
-    assert.match(result.stderr, /no test command could be resolved/);
+    assert.match(result.stderr, /no test command is recorded/);
   });
 
   test('markdown under any dot-directory is configuration', () => {
@@ -538,7 +678,7 @@ describe('the documentation fast path', () => {
   test('an empty file set is not documentation-only', () => {
     // `git commit --amend` and `--allow-empty` present no staged files. The fast path
     // must not treat "nothing to classify" as "nothing to test".
-    const dir = makeRepo({ base: { 'package.json': npmPackage('node -e "process.exit(1)"') } });
+    const dir = makeRepo({ base: { 'aeo-tests.json': testRecord('npm test') } });
     const result = runGate(commitPayload(dir, 'git commit --amend --no-edit'), {
       bin: shimDir({ npm: { exit: 1 } }),
     });
@@ -557,7 +697,7 @@ describe('the documentation fast path', () => {
     assert.equal(withoutAll.status, 0, withoutAll.stderr);
     const withAll = runGate(commitPayload(dir, 'git commit -am x'));
     assert.equal(withAll.status, 2);
-    assert.match(withAll.stderr, /no test command could be resolved/);
+    assert.match(withAll.stderr, /no test command is recorded/);
   });
 
   test('--all folds unstaged tracked edits too', () => {
@@ -579,7 +719,7 @@ describe('executable configuration that happens to be documentation', () => {
   // that reaches the suite blocks and anything classified as prose exits 0. That is the
   // probe the review ran, and it is the only way these two outcomes are told apart.
   const red = () => shimDir({ npm: { exit: 1 } });
-  const redRepo = (change) => makeRepo({ base: { 'package.json': npmPackage('always red') }, change });
+  const redRepo = (change) => makeRepo({ base: { 'aeo-tests.json': testRecord('npm test') }, change });
 
   test('an agent definition is configuration, not documentation', () => {
     // The dogfooding case: a commit rewriting the builder's charter ran nothing, because
@@ -620,7 +760,7 @@ describe('executable configuration that happens to be documentation', () => {
     assert.equal(runGate(commitPayload(dir), { bin: red() }).status, 0);
   });
 
-  test('a repo with no manifest can still commit its README rather than hitting detection', () => {
+  test('a repo with no record can still commit its README rather than hitting the block', () => {
     // The second thing the fast path buys, and the reason it is not simply deleted.
     const dir = makeRepo({ change: { 'README.md': '# new project\n' } });
     assert.equal(runGate(commitPayload(dir)).status, 0);
@@ -650,8 +790,8 @@ describe('the budget is the whole commit\'s, never one per suite', () => {
   test('two suites cannot each spend the full budget', () => {
     const dir = makeRepo({
       base: {
-        'services/api/package.json': npmPackage('slow'),
-        'libs/calc/pyproject.toml': '[tool.pytest.ini_options]\n',
+        'services/api/aeo-tests.json': testRecord('npm test'),
+        'libs/calc/aeo-tests.json': testRecord('pytest'),
       },
       change: { 'services/api/a.js': '1\n', 'libs/calc/b.py': 'x = 1\n' },
     });
@@ -664,7 +804,7 @@ describe('the budget is the whole commit\'s, never one per suite', () => {
     // The control. Without it the case above is also green for a budget that is simply
     // too short for one suite, which is what it looks like with the deadline reverted.
     const dir = makeRepo({
-      base: { 'services/api/package.json': npmPackage('slow') },
+      base: { 'services/api/aeo-tests.json': testRecord('npm test') },
       change: { 'services/api/a.js': '1\n' },
     });
     const result = runGate(commitPayload(dir), { bin: slow(), env: budget });
@@ -673,14 +813,14 @@ describe('the budget is the whole commit\'s, never one per suite', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Two declared suites at one root
+// A root that needs two suites records one command line
 // ---------------------------------------------------------------------------
 
-test('a root declaring two suites runs both, and a red second one blocks', () => {
-  // Django plus React. Node is examined first, so before the fix jest ran, reported
-  // green, and pytest never ran at all.
+test('a root recording two commands runs both, and a red second one blocks', () => {
+  // Django plus React, in one record. `&&` is how a project says "both"; the record
+  // holds one command line per project directory rather than a list of suites.
   const dir = makeRepo({
-    base: { 'package.json': npmPackage('jest'), 'pyproject.toml': '[tool.pytest.ini_options]\n' },
+    base: { 'aeo-tests.json': testRecord('npm test && pytest') },
     change: { 'app/views.py': 'x = 1\n' },
   });
   const result = runGate(commitPayload(dir), { bin: shimDir({ npm: { exit: 0 }, pytest: { exit: 1 } }) });
@@ -695,7 +835,7 @@ test('a root declaring two suites runs both, and a red second one blocks', () =>
 
 describe('the reviewer exemption', () => {
   const asRole = (dir, role) => ({ ...commitPayload(dir), agent_type: role });
-  const repo = () => makeRepo({ base: { 'package.json': npmPackage('always red') }, change: { 'index.js': '1\n' } });
+  const repo = () => makeRepo({ base: { 'aeo-tests.json': testRecord('npm test') }, change: { 'index.js': '1\n' } });
 
   test('a jailed reviewer\'s commit starts no suite', () => {
     // review-jail seals the commit in the same concurrent group. The seal holds either
@@ -725,6 +865,45 @@ describe('the reviewer exemption', () => {
 });
 
 // ---------------------------------------------------------------------------
+// L-02: a live run is a hard stop, before anything is resolved or run
+// ---------------------------------------------------------------------------
+
+describe('the run-in-progress sentinel', () => {
+  /** A sentinel with no recorded owner, which is the fail-closed case: it blocks. */
+  function raise(repo, id = 'ingest') {
+    const file = path.join(repo, '.aeo', 'runs', `${id}.json`);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(
+      file,
+      JSON.stringify({ id, what: 'a long job', started: '2026-08-04T09:00:00Z', pid: null, host: os.hostname() }),
+    );
+  }
+
+  test('a live run blocks the commit and runs no suite', () => {
+    const dir = makeRepo({
+      base: { 'aeo-tests.json': countingRecord() },
+      change: { 'src/a.js': 'const a = 1;\n' },
+    });
+    raise(dir);
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /a long job|run in progress|\.aeo[\\/]runs/i);
+    assert.equal(timesRan(dir), 0, 'the suite ran across a live sentinel');
+  });
+
+  test('the sentinel stops the commit before the record is even looked at', () => {
+    // No record at all. The message must be the live run, not the missing record: the
+    // sentinel is a hard stop placed ahead of resolution, and a reader who sees the
+    // wrong reason goes and writes a file that was never the problem.
+    const dir = makeRepo({ change: { 'src/a.js': 'const a = 1;\n' } });
+    raise(dir);
+    const result = runGate(commitPayload(dir));
+    assert.equal(result.status, 2);
+    assert.doesNotMatch(result.stderr, /no test command is recorded/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Worktree resolution is the library's, and the gate uses it
 // ---------------------------------------------------------------------------
 
@@ -744,7 +923,7 @@ test('a leading cd wins over the payload cwd', () => {
 describe('a suite that overruns fails closed', () => {
   test('an overrunning suite blocks instead of being killed into a silent pass', () => {
     const dir = makeRepo({
-      base: { 'pyproject.toml': '[tool.pytest.ini_options]\n' },
+      base: { 'aeo-tests.json': testRecord('pytest') },
       change: { 'app.py': 'x = 1\n' },
     });
     const result = runGate(commitPayload(dir), {
@@ -753,6 +932,25 @@ describe('a suite that overruns fails closed', () => {
     });
     assert.equal(result.status, 2);
     assert.match(result.stderr, /did not finish within/);
+  });
+
+  test('the overrun block prints how far the suite got', () => {
+    // The red-suite block always carried a tail; this one carried none, so a reader
+    // could not tell a suite that hung at startup from one that hung on its last test.
+    // The shim prints before it sleeps, so anything captured is output the suite really
+    // produced before the budget expired.
+    const dir = makeRepo({
+      base: { 'aeo-tests.json': testRecord('pytest -q') },
+      change: { 'app.py': 'x = 1\n' },
+    });
+    const result = runGate(commitPayload(dir), {
+      bin: shimDir({ pytest: { exit: 0, sleepSeconds: 5 } }),
+      env: { AEO_TEST_SUITE_BUDGET_MS: '1500' },
+    });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /did not finish within/);
+    assert.match(result.stderr, /--- last \d+ lines ---/);
+    assert.match(result.stderr, /shim ran/);
   });
 
   test('the declared hook timeout is the documented default, and the suite budget sits inside it', () => {

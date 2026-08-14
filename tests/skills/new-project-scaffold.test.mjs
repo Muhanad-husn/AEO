@@ -22,7 +22,8 @@
 // The stack under test is Node. It is the only stack the manifest seeds, because node is
 // the one toolchain this plugin already requires (D8) and therefore the only toolchain a
 // test can assume is installed. Go, Rust and the rest are written by the agent to their
-// own conventions and confirmed with hooks/stack.mjs, which is step 4 of Stage 0.
+// own conventions — manifest, first test, and the aeo-tests.json recording how to run it —
+// and confirmed with hooks/stack.mjs, which is step 4 of Stage 0.
 //
 // Everything happens under os.tmpdir(). Nothing here touches this repository or the
 // testbed (D21).
@@ -252,17 +253,24 @@ describe('the emitted tree has the declared shape', () => {
     );
   });
 
-  test('no project config file is emitted (D10)', () => {
-    // Detection, no config file. A file the plugin reads per project is the tripwire-2
-    // case D10 rejected outright, and it would be easiest to add here.
+  test('the only file this plugin reads per project is the test record (D10)', () => {
+    // A general per-project config file is the tripwire-2 case D10 rejected outright, and
+    // it would be easiest to add here. The record is the one exception D29 argued for,
+    // and it is bounded by holding exactly one key.
     const forbidden = ['aeo.config.json', 'aeo.config.js', '.aeorc', '.aeo.json', 'aeo.json'];
     for (const name of forbidden) {
       assert.equal(
         existsSync(path.join(scaffolded.root, name)),
         false,
-        `${name} was emitted; D10 says detection, no project config file`,
+        `${name} was emitted; D10 ships a recorded test command, not a project config file`,
       );
     }
+    const record = JSON.parse(readFileSync(path.join(scaffolded.root, 'aeo-tests.json'), 'utf8'));
+    assert.deepEqual(
+      Object.keys(record),
+      ['test'],
+      'aeo-tests.json carries a key beyond the recorded command; that is the config file D10 refuses',
+    );
   });
 });
 
@@ -376,33 +384,35 @@ describe('the scaffold lands exactly one commit on main', () => {
 // The gate can see the project, and the suite it resolves is green
 // ---------------------------------------------------------------------------
 
-describe('the emitted tree is detectable and green', () => {
-  test('stack.mjs resolves exactly one test command from the scaffold', () => {
+describe('the emitted tree records a test command, and that command is green', () => {
+  test('stack.mjs resolves exactly one recorded command from the scaffold', () => {
     // Step 4 of Stage 0. If this resolves nothing, the commit gate blocks every commit
     // in the new project and the founder finds out on their first change.
     const { units, missing } = scaffolded.detected;
-    assert.deepEqual(missing, [], `stack.mjs found no manifest for: ${missing.join(', ')}`);
+    assert.deepEqual(missing, [], `stack.mjs found no aeo-tests.json for: ${missing.join(', ')}`);
     assert.equal(units.length, 1, `expected one resolved unit, got ${units.length}`);
-    assert.ok(
-      Array.isArray(units[0].command) && units[0].command.length > 0,
+    assert.equal(
+      typeof units[0].command === 'string' && units[0].command.length > 0,
+      true,
       `stack.mjs resolved no command: ${units[0].reason}`,
     );
+    assert.equal(units[0].root, scaffolded.root, 'the record resolves somewhere other than the project root');
   });
 
   test('that command runs green', () => {
-    const [program, ...args] = scaffolded.detected.units[0].command;
-    const result = spawnSync(program, args, {
+    const command = scaffolded.detected.units[0].command;
+    const result = spawnSync(command, [], {
       cwd: scaffolded.root,
       encoding: 'utf8',
       windowsHide: true,
-      // Windows cannot spawn npm or any other .cmd shim without a shell, the same
+      // The recorded command is a command line, so it goes through a shell — the same
       // reasoning commit-gate.mjs records at its own spawn.
-      shell: process.platform === 'win32',
+      shell: true,
     });
     assert.equal(
       result.status,
       0,
-      `${[program, ...args].join(' ')} exited ${result.status}\n${result.stdout}\n${result.stderr}`,
+      `${command} exited ${result.status}\n${result.stdout}\n${result.stderr}`,
     );
   });
 });
