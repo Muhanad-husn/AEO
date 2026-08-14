@@ -293,6 +293,29 @@ describe('#113: a linked worktree parked under .claude/worktrees/', () => {
     const target = path.join(project, 'src', 'index.js');
     assertAllowed(runHook(roleCall('Write', target)));
   });
+
+  // The gap the review named (Finding 1): a bypass that RETURNED out of the whole
+  // loop would silently drop every fence beyond the level it fired at. Here a
+  // genuinely separate repository `vendored` is nested under project `O`'s .claude/
+  // (case #2, the one this change must not move), and `vendored` itself has a real
+  // linked worktree parked under ITS OWN .claude/worktrees/. Writing into that
+  // worktree escalates worktree -> vendored (bypassed: the worktree IS vendored's
+  // own checkout) -> O (NOT bypassed: vendored is a separate repo, not a worktree of
+  // O). Only a loop that keeps walking past the first bypass reaches O's own fence.
+  test('a vendored repository with its own linked worktree is still fenced by the project enclosing it', () => {
+    const project = makeRepo();
+    const vendored = path.join(project, '.claude', 'skills', 'rgr');
+    mkdirSync(vendored, { recursive: true });
+    initRepoAt(vendored);
+
+    const innerWorktree = path.join(vendored, '.claude', 'worktrees', 'inner');
+    mkdirSync(path.dirname(innerWorktree), { recursive: true });
+    git(vendored, 'worktree', 'add', '-q', '-b', 'feat/inner', innerWorktree);
+
+    const target = path.join(innerWorktree, 'src', 'index.js');
+    const r = runHook(roleCall('Write', target));
+    assertBlocked(r, HARNESS_FENCE);
+  });
 });
 
 // ---------------------------------------------------------------------------

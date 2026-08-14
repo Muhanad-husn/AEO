@@ -46,12 +46,15 @@
 // ordinary checkout of the SAME one, and `--git-common-dir` says so where `--show-toplevel`
 // cannot: a linked worktree's common directory resolves to the MAIN checkout's `.git`,
 // while a genuinely separate repository's (case #2) resolves to its own. So the loop
-// checks that one further thing, but only at the exact moment it would otherwise block on
-// containment during escalation (isLinkedWorktreeOf): if the root the loop escalated FROM
-// is a linked worktree of the root it escalated TO, this is case #3, and the write is
-// allowed. The worktree's own `.claude/` is unaffected -- that containment check fires on
-// the FIRST iteration, before any escalation has happened, so there is no inner root yet
-// to be a worktree of anything.
+// checks that one further thing at the moment it would otherwise block on containment at
+// each level (isLinkedWorktreeOf): when the root the loop escalated FROM is a linked
+// worktree of the root it escalated TO, THIS level's containment does not block, and the
+// loop keeps walking outward exactly as if this level had found no containment at all --
+// it must NOT return allowed outright, because a genuine case #2 can still sit one level
+// further out (a vendored repository whose own worktree is nested under it), and only
+// continuing the escalation lets that outer fence still fire. The worktree's own
+// `.claude/` is unaffected -- that containment check fires on the FIRST iteration, before
+// any escalation has happened, so there is no inner root yet to be a worktree of anything.
 //
 // The loop is gated on an exactly necessary precondition, so an ordinary project pays
 // one string scan and NO extra git call: it turns only while `.claude` is a whole
@@ -228,13 +231,20 @@ await runGate({
         block(`${FENCE_REASON} (tried: ${rel}).`);
       }
       if (isPathInside(path.join(root, HARNESS_DIRNAME), full)) {
-        // Case #3 (#113): `child` is a linked worktree of THIS root, so containment here
-        // only holds because the worktree happens to be parked under root/.claude/ --
-        // the write itself is ordinary project content of `child`'s own checkout, not
-        // harness config of `root`'s.
-        if (child && isLinkedWorktreeOf(child, root)) return;
-        const rel = path.relative(root, full).split(path.sep).join('/');
-        block(`${FENCE_REASON} (tried: ${rel}).`);
+        // Case #3 (#113): `child` is a linked worktree of THIS root, so containment
+        // here only holds because the worktree happens to be parked under
+        // root/.claude/ -- the write itself is ordinary project content of `child`'s
+        // own checkout, not harness config of `root`'s. That bypasses THIS level's
+        // block only: it must not return out of the loop, because an outer root
+        // beyond `root` can still be a genuine vendored-repo case (#2) that a bare
+        // `return` here would silently skip -- a hole, not a narrowing. So the loop
+        // falls through to the escalation step below exactly as it would if this
+        // level had found no containment at all.
+        const bypassed = child && isLinkedWorktreeOf(child, root);
+        if (!bypassed) {
+          const rel = path.relative(root, full).split(path.sep).join('/');
+          block(`${FENCE_REASON} (tried: ${rel}).`);
+        }
       }
       if (!hasHarnessSegment(root)) return; // no outer root can change either answer
       const parent = path.dirname(root);
