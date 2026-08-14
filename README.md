@@ -77,7 +77,7 @@ into whichever repository you happen to be working in.
 
 ### What that installs
 
-Fifteen skills, five agent charters, and six gate scripts wired to two hook
+Fifteen skills, five agent charters, and five gate scripts wired to two hook
 events — `SessionStart` and `PreToolUse`.
 
 **Seven of the fifteen skills are operator-invoked only.** They run when you
@@ -198,20 +198,21 @@ Five agent charters back these lanes: `builder`, `reviewer`, `triage`,
 
 ## The gates
 
-Six hooks are wired through `hooks/hooks.json`. Five refuse specific
-actions; the sixth never blocks anything — it reports.
+Five hooks are wired through `hooks/hooks.json`. Four refuse specific
+actions; the fifth never blocks anything — it reports. A local commit gate
+used to sit here too; it duplicated a check GitHub's own branch protection
+already makes server-side, and it is deleted (see "Who merges" below).
 
 | Hook | What it refuses |
 | --- | --- |
 | `sandbox-guard` | Any command or file read/write that would reach declared production data, and running the suite over a job that's still live. |
-| `block-merge` | A subagent, or the GitHub forge tool, merging, deleting a branch, or pushing to the protected branch. |
-| `commit-gate` | A commit on the protected branch, and a commit while the project's test suite is red or its command can't be detected. |
+| `block-merge` | A subagent, or the GitHub forge tool, merging, or deleting a branch. |
 | `path-guard` | A role subagent editing the harness's own `.claude/` configuration. |
 | `review-jail` | The reviewer or verifier role calling any tool but a `Read` of its own staged evidence packet. |
 | `session-status` | Nothing — it never blocks. It reports which of the above are actually wired and the project's live state, at the start of every session. |
 
 `claude plugin details` reports **2 hooks** — that counts the event types
-these scripts are wired to (`SessionStart`, `PreToolUse`), not the six
+these scripts are wired to (`SessionStart`, `PreToolUse`), not the five
 scripts themselves. Both numbers are correct; they're counting different
 things.
 
@@ -219,10 +220,17 @@ things.
 
 You do. Always. Every lane stops at a pull request and waits for your
 approval; the plugin's own roles — builder, reviewer, triage — have no
-path to `git merge`, `gh pr merge`, or a push to your default branch, no
-matter how they're invoked. Your own session merges, but only once
-you've approved it, never on a role's judgment and never before that
-approval. That's the product, not a limitation of it.
+path to `git merge` or `gh pr merge`, no matter how they're invoked. Your
+own session merges, but only once you've approved it, never on a role's
+judgment and never before that approval. That's the product, not a
+limitation of it.
+
+A direct push to your default branch is refused by GitHub's branch
+protection, not by this plugin — `new-project` sets that up for a repository
+it scaffolds, and `enforce_admins: true` is what makes it hold for your own
+session too. In a repository with no branch protection configured, nothing
+here refuses that push locally any more; branch protection is the control,
+same as it is for a red suite reaching `main`.
 
 ## Licence
 

@@ -21,7 +21,6 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { HOOK_TIMEOUT_SECONDS } from '../../plugin/hooks/commit-gate.mjs';
 import { RUNTIME_MISSING_BANNER, SHELL_TOOLS, preflight } from '../../plugin/hooks/lib.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
@@ -30,14 +29,14 @@ const hooksJsonPath = path.join(pluginRoot, 'hooks', 'hooks.json');
 const rawText = readFileSync(hooksJsonPath, 'utf8');
 const parsed = JSON.parse(rawText);
 
-// Scripts P1.2/P1.3/P1.6 own and were building in sibling worktrees while P1.7 wrote
-// this file. They are wired here deliberately -- single ownership of hooks.json is the
+// Scripts P1.2/P1.6 own and were building in sibling worktrees while P1.7 wrote this
+// file. They are wired here deliberately -- single ownership of hooks.json is the
 // point (L-04) -- but they did not exist on disk in that worktree until those branches
 // merged. A missing file for one of these was a scheduling fact, not a defect, so its
 // existence check skips loudly (L-08: a loud skip, never a silent pass) instead of
-// failing red. All three have now merged, so nothing here skips; the allowance stays
-// only because the next slice to be wired ahead of its merge needs it.
-const PENDING_SIBLING_SLICES = new Set(['hooks/commit-gate.mjs', 'hooks/block-merge.mjs', 'hooks/review-jail.mjs']);
+// failing red. Both have now merged, so nothing here skips; the allowance stays only
+// because the next slice to be wired ahead of its merge needs it.
+const PENDING_SIBLING_SLICES = new Set(['hooks/block-merge.mjs', 'hooks/review-jail.mjs']);
 
 // ---------------------------------------------------------------------------
 // scratch space
@@ -81,7 +80,7 @@ function scriptOf(hook) {
 }
 
 const isGateScript = (rel) =>
-  rel !== null && /\/(commit-gate|block-merge|review-jail|path-guard|redirect-guard|sandbox-guard)\.mjs$/.test(`/${rel}`);
+  rel !== null && /\/(block-merge|review-jail|path-guard|redirect-guard|sandbox-guard)\.mjs$/.test(`/${rel}`);
 
 /** A scratch plugin root with this real hooks.json plus a stub for every script it names. */
 function makePassingPluginRoot() {
@@ -254,7 +253,7 @@ describe('matchers', () => {
   });
 
   test('the shell gates are anchored, not a bare substring (V-12: BashOutput is not Bash)', () => {
-    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('commit-gate.mjs')));
+    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('block-merge.mjs')));
     assert.equal(group.matcher, '^(Bash|PowerShell)$');
   });
 
@@ -268,7 +267,7 @@ describe('matchers', () => {
   // A matcher and a set maintained in two files is V-13's failure with new names.
   test('every gate that reads tool_input.command matches exactly lib.mjs SHELL_TOOLS', () => {
     const expected = [...SHELL_TOOLS].join('|');
-    for (const script of ['commit-gate.mjs', 'block-merge.mjs']) {
+    for (const script of ['block-merge.mjs']) {
       const groups = parsed.hooks.PreToolUse.filter(
         (g) => g.matcher?.startsWith('^(') && g.hooks.some((h) => scriptOf(h)?.endsWith(script)),
       );
@@ -313,21 +312,21 @@ describe('matchers', () => {
     }
   });
 
-  test('redirect-guard is ordered before commit-gate (a stated intent, not a measured saving)', () => {
-    // The three gates on this matcher block on an order-independent union: any one of
-    // them refusing is enough. Ordering redirect-guard first cannot change WHETHER a
-    // command is refused, only WHICH message a role sees first when more than one gate
-    // would have refused it (redirect-guard's own header says as much, and does not claim
-    // a measured cost saving -- this repo's principle is measure, don't speculate, and
+  test('redirect-guard is ordered before block-merge (a stated intent, not a measured saving)', () => {
+    // The two gates on this matcher block on an order-independent union: either one
+    // refusing is enough. Ordering redirect-guard first cannot change WHETHER a command
+    // is refused, only WHICH message a role sees first when both gates would have
+    // refused it (redirect-guard's own header says as much, and does not claim a
+    // measured cost saving -- this repo's principle is measure, don't speculate, and
     // nothing here times it). This test can only assert array position, which is all the
     // intent claims.
     const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('redirect-guard.mjs')));
     assert.ok(group, 'expected a PreToolUse group for redirect-guard.mjs');
     const names = group.hooks.map((h) => scriptOf(h));
     const redirectIdx = names.findIndex((n) => n?.endsWith('redirect-guard.mjs'));
-    const commitIdx = names.findIndex((n) => n?.endsWith('commit-gate.mjs'));
-    assert.ok(redirectIdx !== -1 && commitIdx !== -1);
-    assert.ok(redirectIdx < commitIdx, 'redirect-guard must be ordered before commit-gate in its hooks array');
+    const blockMergeIdx = names.findIndex((n) => n?.endsWith('block-merge.mjs'));
+    assert.ok(redirectIdx !== -1 && blockMergeIdx !== -1);
+    assert.ok(redirectIdx < blockMergeIdx, 'redirect-guard must be ordered before block-merge in its hooks array');
   });
 
   test('the forge-tool matcher matches D14\'s namespace-agnostic pattern, not one literal server name', () => {
@@ -388,15 +387,6 @@ describe('timeouts', () => {
     }
     return undefined;
   };
-
-  test('commit-gate declares the timeout its own code is written against', () => {
-    // Not a tuned number: it is the documented default for a command hook, stated so
-    // that the gate's internal suite budget can be checked against it in one place.
-    // What Claude Code does on a hook timeout is undocumented, so the gate does not
-    // rely on it -- it holds its own 570s budget, sees the overrun itself and blocks.
-    assert.equal(timeoutOf('commit-gate.mjs'), HOOK_TIMEOUT_SECONDS);
-    assert.equal(timeoutOf('commit-gate.mjs'), 600);
-  });
 
   test('review-jail declares the short timeout its slice specified', () => {
     // The jail reads a payload and compares two paths. It spawns nothing, so there is

@@ -43,9 +43,9 @@ Inspect the repo before assuming. Common signals:
 
 **Rule:** prefer the script the project already defines (`package.json` `test`, a `Makefile` target) over inventing a command — it encodes the project's intended invocation. If there is **no** unit runner and the project needs one, installing and wiring it is legitimate work for the slice (especially a walking skeleton). Always run a single test file/case during the inner loop for speed; run the **full** suite before committing.
 
-**Then record it.** Whatever command you settle on, `aeo-tests.json` at the project directory has to name it: one key, `test`, holding the command line — `{"test": "npm test"}`. That file is the only thing the commit gate reads, and it runs the command from the record's own directory ([D10](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). A mono-repo carries one record per project directory. Two suites at one root is one command line: `npm test && pytest`.
+**Then record it.** Whatever command you settle on, `aeo-tests.json` at the project directory has to name it: one key, `test`, holding the command line — `{"test": "npm test"}` ([D10](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). A mono-repo carries one record per project directory. Two suites at one root is one command line: `npm test && pytest`. No local gate runs this command any more ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)) — CI's required status check is what enforces it reached green. The record still matters: `sandbox-guard` reads it to recognise this project's suite by name, so it can refuse running that suite over a live long job.
 
-If your slice changes the test setup — a new runner, a renamed script, a suite that moves — update the record in the same slice, alongside the change that moved it. A record left behind blocks the next commit, which is the safe direction and still somebody's wasted half hour.
+If your slice changes the test setup — a new runner, a renamed script, a suite that moves — update the record in the same slice, alongside the change that moved it. A stale record misleads that recognition rather than blocking anything outright, which is the one-way failure to watch for now that no gate reads it back to you.
 
 ## 3. Detecting / setting up the e2e layer (Playwright)
 

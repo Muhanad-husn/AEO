@@ -143,25 +143,26 @@ looks parallel.
    producing once per push.
 
 7. **The gates apply per actor.** A gate that fired once for the session
-   has not cleared the others. Each actor's commits meet the commit
-   gate in its own worktree, each actor's PR goes through `safe-pr`, and
-   evidence is collected per actor. Report gate exercise per actor too: a
-   gate an actor never reached is reported as not exercised for that
-   actor, never as passing. The reverse reading is just as wrong — a gate
-   that printed nothing passed, because a `PreToolUse` gate is silent
-   when it allows. Report from the gates named in the session-start
-   report and from what an actor's commits did, never from having seen no
-   gate output.
+   has not cleared the others. Each actor's shell calls meet `block-merge`
+   and `sandbox-guard` in its own worktree, each actor's PR goes through
+   `safe-pr`, and evidence is collected per actor. Report gate exercise per
+   actor too: a gate an actor never reached is reported as not exercised for
+   that actor, never as passing. The reverse reading is just as wrong — a
+   gate that printed nothing passed, because a `PreToolUse` gate is silent
+   when it allows. Report from the gates named in the session-start report
+   and from what an actor did, never from having seen no gate output. No
+   local gate meets a commit itself any more ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md));
+   CI's required check is what enforces each actor's push reached green.
 
 8. **The run-in-progress sentinel is shared across worktrees.** A sentinel
    is anchored through the main checkout, so one raised anywhere is
-   visible from every linked worktree, and while it stands every actor's
-   commit is refused. That sharing is deliberate: the commit gate runs
-   the test suite, so `git commit` executes code, and a concurrent
-   session's commit gate firing the suite is what killed a four-hour
-   pipeline four times. An actor that hits the block waits for the job.
-   It does not clear another actor's sentinel and it does not route
-   around the gate.
+   visible from every linked worktree, and while it stands `sandbox-guard`
+   refuses a Bash invocation of the project's declared suite from any
+   actor — a concurrent session running the suite over a live four-hour
+   pipeline is what killed it four times. A `git commit` itself
+   is not such an invocation and is not held by the sentinel; an actor
+   whose task runs the suite directly waits for the job. It does not clear
+   another actor's sentinel and it does not route around the guard.
 
 9. **Wrap-up naming every PR.** One line per actor: issue, PR link,
    state. Any actor that stopped BLOCKED is named with what it waits on.

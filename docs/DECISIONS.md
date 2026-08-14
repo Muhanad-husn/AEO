@@ -15,6 +15,94 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-14 — One decision: delete the local checks GitHub already refuses (#121)
+
+### D30 — The commit gate is deleted, and block-merge stops re-deriving branch protection
+
+**Problem.** `main` in this repository carries GitHub branch protection: `enforce_admins:
+true`, required pull request review, and required status checks `battery` and `GitGuardian
+Security Checks`. A push to `main` is refused server-side. A branch whose required check is
+red cannot merge. A pull request cannot merge without review. Three local mechanisms
+re-derived rules the server already enforces, by parsing shell command text and resolving a
+working directory from it:
+
+- `commit-gate.mjs` blocked a commit on the protected branch and ran the project's
+  recorded suite before letting any other commit through.
+- `block-merge.mjs` also refused a `git push` whose refspec resolved to the protected
+  branch, a `git push --all`/`--mirror`, and a forge write
+  (`create_or_update_file`/`push_files`/`delete_file`) targeting the protected branch.
+
+Getting "which directory does this command run in" right, from a shell string alone, is
+where the cost showed up. #119 was a commit gate that fell back to the orchestrator's own
+checkout when an unparseable `-m` message hid a `cd`, and reported a branch condition that
+was not true of the worktree the caller meant. #121 is the same shape in `block-merge`. Both
+are defects in re-deriving a check the server already makes; neither is a defect in the
+check itself.
+
+**The boundary rule applied.** Delete a rule when GitHub's server-side settings already
+refuse the same thing. Keep a rule when it protects something GitHub cannot see.
+
+| Rule removed | GitHub setting that already covers it |
+| --- | --- |
+| `commit-gate.mjs`, entire file: commit on the protected branch, and commit while the suite is red or its command is undetected | Required status check `battery` refuses a merge on a red suite; branch protection with `enforce_admins: true` refuses a direct push to `main`, admins included |
+| `block-merge.mjs`: a push whose refspec resolves to the protected branch | Branch protection refuses the push itself, server-side, once it reaches the remote |
+| `block-merge.mjs`: `git push --all`/`--mirror` | Same server-side refusal; these push the protected branch without naming it, but the server judges the resulting ref update, not the flag |
+| `block-merge.mjs`: a forge write (`create_or_update_file`/`push_files`/`delete_file`) targeting the protected branch | GitHub's contents API is subject to the same branch protection as a git push |
+
+**Kept, unchanged.** `path-guard.mjs` and `redirect-guard.mjs` (a subagent editing
+`.claude/` is invisible to GitHub), `sandbox-guard.mjs` (production data reach and a live
+long job are invisible to GitHub), `review-jail.mjs`, `session-status.mjs`. In
+`block-merge.mjs`: `git merge`, `gh pr merge`, the forge's own merge action, and local and
+remote branch deletion. These match a command string with no directory resolved to decide
+them, and a local `git merge` or branch deletion is not a push GitHub's protection ever
+sees.
+
+**What is now dead alongside the deleted rules, and was removed with them.** The test-command
+budget constants, the shell-spawn machinery and the documentation fast path that existed
+only to serve `commit-gate.mjs`'s own suite run. `defaultBranch()` and its cache in
+`lib.mjs` — D14/D16's default-branch resolution — had exactly two remaining callers, both
+deleted with this change, so it is deleted too; `currentBranch()` is unrelated and stays,
+read by `session-status.mjs`. `aeo-tests.json` and its resolution in `stack.mjs` are **not**
+dead: `sandbox-guard.mjs` still reads a project's recorded command to recognise a live
+sentinel's suite (L-02), which is a concern GitHub cannot see at all.
+
+**Impact, read plainly.** A user loses a local, pre-commit "is this red" check and a local
+"is this the protected branch" check — both duplicate what CI and branch protection already
+refuse, so nothing that used to be caught goes uncaught in a repository that has branch
+protection configured. What a user no longer has to think about: the test-command budget, the
+shell-quoting rules `commit-gate.mjs` carried, and getting the working directory right for a
+gate to evaluate correctly — the two defects this decision is a response to. What a user does
+lose, honestly: a repository with **no** branch protection configured now has no local
+substitute at all for the rules this deletes; that was already true of the commit-gate's own
+red-suite check outside a repository with a required status check wired, and D17's fast/CI
+split already named CI as the enforcement layer, not the commit gate, for exactly that
+reason.
+
+**Supersedes, in part.**
+
+- [D14](#d14--the-forge-and-the-default-branch-are-detected-not-assumed) and
+  [D16](#d16--the-default-branch-is-resolved-from-repository-evidence-amending-d14). Both
+  describe resolving the repository's default branch so a gate could compare a commit's
+  branch or a push's refspec against it. That resolution (`defaultBranch()`) is deleted
+  along with its only two callers. D14's forge-namespace matching and its merge-action
+  anchoring stand unchanged; its default-branch half and all of D16 are moot.
+- [D29](#d29--the-project-records-its-test-command-the-gate-runs-it-and-infers-nothing).
+  `aeo-tests.json` and its resolution stand — see above — but no gate **runs** the recorded
+  command any more. D29's own description of "the gate" doing so describes the deleted
+  commit gate; the record's sole remaining reader recognises the command as text, on
+  `sandbox-guard.mjs`'s own terms.
+- [D17](#d17--two-test-tiers-in-process-is-the-commit-gates-process-level-is-cis). The fast
+  tier still exists as a distinction — the suite this repository's own `aeo-tests.json`
+  names — and a builder still runs it before committing, by convention rather than by a
+  local gate ([`builder.md`](../plugin/agents/builder.md)). What is gone is the local
+  enforcement half of D17's rule; the required status check is what now enforces the fast
+  tier reached green, same as it always enforced the full tier.
+
+**Reversal path.** `git revert` on this change restores the three deleted checks; nothing
+downstream of them was rebuilt to depend on their absence.
+
+---
+
 ## 2026-08-14 — One decision from the first real use (#110, #111)
 
 ### D29 — The project records its test command; the gate runs it and infers nothing
@@ -182,6 +270,13 @@ the fact, so the design exists now and the collection starts when a project star
 ## 2026-08-13 — One decision from Checkpoint 6's follow-up
 
 ### D26 — The scaffolder and the status renderer keep an expensive test in CI and a cheap one in the gate
+
+**Amended by [D30](#d30--the-commit-gate-is-deleted-and-block-merge-stops-re-deriving-branch-protection).**
+This entry's "the gate" is the deleted commit gate, and it ran this repository's own
+fast tier (`npm test`, from AEO's own `aeo-tests.json`) on every commit to AEO itself.
+That local trigger is gone; the fast/integration split and the reasoning for it stand
+unchanged, and CI's required check now runs the fast tier as part of `test:all`, same
+as it always ran the integration tier.
 
 **Problem.** Checkpoint 6's verification recorded that
 `tests/skills/new-project-scaffold.test.mjs` and `tests/skills/status.test.mjs` are both

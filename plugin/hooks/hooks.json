@@ -44,12 +44,6 @@
             "type": "command",
             "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/block-merge.mjs"]
-          },
-          {
-            "type": "command",
-            "command": "node",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/commit-gate.mjs"],
-            "timeout": 600
           }
         ]
       },

@@ -1,5 +1,4 @@
-// Tests for plugin/hooks/sandbox-guard.mjs, plugin/hooks/sentinel.mjs and the
-// run-in-progress check added to plugin/hooks/commit-gate.mjs.
+// Tests for plugin/hooks/sandbox-guard.mjs and plugin/hooks/sentinel.mjs.
 //
 //   node --test                              # everything, from the repo root
 //   node --test "tests/hooks/*.test.mjs"     # this directory only
@@ -25,7 +24,6 @@ import { projectAnchor, sentinelPath } from '../../plugin/hooks/sentinel.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const GUARD = path.join(repoRoot, 'plugin', 'hooks', 'sandbox-guard.mjs');
-const COMMIT_GATE = path.join(repoRoot, 'plugin', 'hooks', 'commit-gate.mjs');
 const SENTINEL_CLI = path.join(repoRoot, 'plugin', 'scripts', 'run-sentinel.mjs');
 
 const LIVE = 'AEO_LIVE_DATA_ROOT';
@@ -127,7 +125,6 @@ function runHook(script, { payload, raw, env = {} } = {}) {
 }
 
 const guard = (options) => runHook(GUARD, options);
-const commitGate = (options) => runHook(COMMIT_GATE, options);
 
 const bash = (command, cwd, extra = {}) => ({
   session_id: 'test-session',
@@ -183,7 +180,6 @@ const SENTINEL_UNREADABLE = /sentinel is present but unreadable/;
 const SENTINEL_DIR_UNREADABLE = /could not be read \(.*\), so the gate cannot tell whether a long job is running/;
 const CD_UNNAMEABLE = /changes directory to somewhere the guard cannot name/;
 const UNREADABLE_COMMAND = /could not be read as a sequence of shell commands/;
-const NO_RECORD = /no test command is recorded/;
 
 // A sandbox and a production root that are real directories and are not related.
 function roots() {
@@ -230,23 +226,12 @@ describe('the verify line', () => {
     );
   });
 
-  test('the commit gate blocks a commit attempted while the sentinel is set', () => {
-    const repo = makeRepo({ change: { 'a.js': 'export const a = 1;\n' } });
-    raise(repo, 'corpus-ingest', { what: 'full corpus ingest, ~4h' });
-
-    const r = commitGate({ payload: bash('git commit -m "wip"', repo) });
-    assertBlockedBecause(r, LIVE_RUN, 'commit during a live run');
-    assert.match(r.stderr, /full corpus ingest, ~4h/, 'the block does not name the run it is protecting');
-    assert.match(r.stderr, /run-sentinel\.mjs stop/, 'the block does not say how to clear the sentinel');
-  });
-
-  // The control for the case above. Without the sentinel the same commit blocks for a
-  // different reason entirely, which is what proves the sentinel check fired first and
-  // on its own merits rather than inheriting somebody else's block.
-  test('the same commit without a sentinel blocks for a different reason', () => {
-    const repo = makeRepo({ base: {}, change: { 'a.js': 'export const a = 1;\n' } });
-    assertBlockedBecause(commitGate({ payload: bash('git commit -m "wip"', repo) }), NO_RECORD, 'no sentinel');
-  });
+  // D30: this used to also assert that the commit gate blocked a `git commit` attempted
+  // while the sentinel was set. commit-gate.mjs is deleted; nothing runs a suite as a
+  // side effect of a commit any more, so there is nothing left there for a live sentinel
+  // to guard against. sandbox-guard's own sentinel rule (below) still refuses a Bash
+  // invocation of the declared suite while a run is live, which is the case that
+  // matters: a founder or agent typing the suite directly during a live job.
 });
 
 // ---------------------------------------------------------------------------
@@ -1021,12 +1006,6 @@ describe('the sentinel', () => {
     assertAllowed(r, 'stale sentinel');
     assert.match(r.stderr, /owner process is gone/, 'a stale sentinel passed silently');
     assert.match(r.stderr, /run-sentinel\.mjs stop/, 'the note does not say how to clear it');
-
-    // And the commit gate agrees, which is what stops one gate from being stricter than
-    // the other about the same file.
-    const c = commitGate({ payload: bash('git commit -m x', repo) });
-    assert.match(c.stderr, /owner process is gone/, 'the commit gate did not report the stale sentinel');
-    assert.doesNotMatch(c.stderr, LIVE_RUN, 'the commit gate treated a stale sentinel as live');
   });
 
   test('a sentinel owned by a process that is alive blocks', () => {
@@ -1059,7 +1038,6 @@ describe('the sentinel', () => {
       rmSync(path.join(repo, '.aeo', 'runs'), { recursive: true, force: true });
       raise(repo, 'broken', body);
       assertBlockedBecause(guard({ payload: bash('npm test', repo) }), SENTINEL_UNREADABLE, `body ${JSON.stringify(body)}`);
-      assertBlockedBecause(commitGate({ payload: bash('git commit -m x', repo) }), SENTINEL_UNREADABLE, `commit, body ${JSON.stringify(body)}`);
     }
   });
 
@@ -1072,11 +1050,6 @@ describe('the sentinel', () => {
     mkdirSync(path.join(repo, '.aeo'), { recursive: true });
     writeFileSync(path.join(repo, '.aeo', 'runs'), 'not a directory\n');
     assertBlockedBecause(guard({ payload: bash('npm test', repo) }), SENTINEL_DIR_UNREADABLE, 'runs is a file');
-    assertBlockedBecause(
-      commitGate({ payload: bash('git commit -m x', repo) }),
-      SENTINEL_DIR_UNREADABLE,
-      'commit, runs is a file',
-    );
   });
 
   test('a sentinel directory the process may not read blocks', (t) => {
@@ -1113,13 +1086,9 @@ describe('the sentinel', () => {
     assert.doesNotMatch(one.stderr, /corpus A/);
   });
 
-  test('a documentation-only commit is not held by a live run', () => {
-    const repo = makeRepo({ change: { 'NOTES.md': '# what went wrong\n' } });
-    raise(repo);
-    const r = commitGate({ payload: bash('git commit -m "notes"', repo) });
-    assertAllowed(r, 'docs-only commit during a live run');
-    assert.match(r.stderr, /documentation only/, 'the docs-only path did not fire');
-  });
+  // D30: commit-gate.mjs is deleted, and with it the documentation-only fast path that
+  // used to skip a commit's test run — nothing runs a suite as a side effect of a commit
+  // any more, so there is no longer a "docs-only commit during a live run" case to prove.
 
   test('the sentinel is shared with every worktree of the project', () => {
     const main = makeRepo();
@@ -1129,7 +1098,6 @@ describe('the sentinel', () => {
 
     assert.equal(projectAnchor(worktree), main, 'a linked worktree did not resolve to its main checkout');
     assertBlockedBecause(guard({ payload: bash('npm test', worktree) }), LIVE_RUN, 'suite run from a sibling worktree');
-    assertBlockedBecause(commitGate({ payload: bash('git commit -m x', worktree) }), LIVE_RUN, 'commit from a sibling worktree');
   });
 
   test('the CLI raises, lists and clears a sentinel', () => {
@@ -1189,7 +1157,6 @@ describe('no override', () => {
     raise(repo);
     for (const name of disablers) {
       assertBlockedBecause(guard({ payload: bash('npm test', repo), env: { [name]: '1' } }), LIVE_RUN, name);
-      assertBlockedBecause(commitGate({ payload: bash('git commit -m x', repo), env: { [name]: '1' } }), LIVE_RUN, name);
     }
   });
 

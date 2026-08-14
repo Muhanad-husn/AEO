@@ -134,7 +134,12 @@ an action nobody asked it to check.
 ### All six can be fired
 
 Measured 2026-08-13 against `plugin/` at `13a4fa1`, in a throwaway `git init`
-repository outside every tracked tree.
+repository outside every tracked tree. **`commit-gate` is deleted as of
+[D30](DECISIONS.md#d30--the-commit-gate-is-deleted-and-block-merge-stops-re-deriving-branch-protection):**
+GitHub's branch protection already refuses what it refused, server-side. A
+verification run against the plugin as it stands today fires five gates, not
+six; the table below is left as the record of what was true at the commit it
+measured.
 
 | Gate | Real action that fires it | Fired |
 | --- | --- | --- |

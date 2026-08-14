@@ -63,11 +63,16 @@ line, for this reason and no other.
 ## D10 — The project records its test command, and the gate runs it
 
 **Rule.** A project states how it is tested in `aeo-tests.json` at its own directory,
-tracked in git: one key, `test`, holding a command line. The commit gate resolves the
-nearest record at or above each changed file and **runs that command itself** — it
-trusts a recorded command, never a recorded verdict. With no usable record the gate
-blocks and names the exact path to create. There is no fallback, no per-language table,
-and nothing else in the file: no directory field, because a record runs where it sits.
+tracked in git: one key, `test`, holding a command line. There is no fallback, no
+per-language table, and nothing else in the file: no directory field, because a record
+belongs where it sits.
+
+**Amended by [D30](#d30--the-commit-gate-is-deleted-and-block-merge-stops-re-deriving-branch-protection).**
+The gate that used to resolve the nearest record and run it on every commit is deleted;
+GitHub's required status check enforces a green suite instead. The record is not dead:
+`sandbox-guard` still reads it to recognise the project's declared suite as text, so it
+can refuse running that suite over a live long job (L-02). Write the record for that
+reason now, not because a commit gate demands it.
 
 **Why.** The command is settled by an actor that inspected the repository, chose the
 runner and ran the suite. Re-deriving it at commit time is a second guess made in the
@@ -118,6 +123,14 @@ default, otherwise exactly one conventional name among `main`, `master` and `tru
 is. Anything else is unresolved, and unresolved is never a pass. The gate blocks and
 names the command that fixes it.
 
+**Amended by [D30](#d30--the-commit-gate-is-deleted-and-block-merge-stops-re-deriving-branch-protection).**
+The gate-side implementation of this rule (`lib.mjs`'s `defaultBranch()`) is deleted —
+its only two callers, the commit gate and part of `block-merge`, are gone, and GitHub's
+branch protection now makes the check this fed. The **principle** stands wherever a
+skill resolves the default branch on its own terms — `git symbolic-ref --short
+refs/remotes/origin/HEAD`, or `gh repo view --json defaultBranchRef` — never a hardcoded
+`main`. `safe-pr`, `sprint-start` and `tdd-ci` all still need this and do it themselves.
+
 **Why.** A literal `main` last resort is the assumption this rule exists to remove.
 So is `git config --get init.defaultBranch`, which unqualified reads system and
 global scope and is a creation-time preference about the repositories a machine makes
@@ -137,6 +150,12 @@ any new repository impossible, which is over-blocking rather than fail-closed.
 **Rule.** The commit gate runs the project's fast tier on every commit. The
 process-level suites run in CI as a required check alongside it. Green locally means
 the fast tier. The rest is CI's answer, not a step to repeat.
+
+**Amended by [D30](#d30--the-commit-gate-is-deleted-and-block-merge-stops-re-deriving-branch-protection).**
+The commit gate is deleted; nothing runs the fast tier as a local, blocking step any
+more. A builder still runs it before committing — that is ordinary practice, stated in
+`builder.md`, not a hook — and CI's required status check is what now enforces that the
+fast tier reached green, the same way it already enforced the full tier.
 
 **Why.** Almost all of a gate suite's cost is process spawn. Those suites build real
 git repositories and spawn the real hook per case, which is exactly what makes them
@@ -173,3 +192,29 @@ and was read past. A rule stated once inside one step carries no reason with it.
 on a different SHA than the branch point, or one that is queued, in progress, or not
 green. Nor does a green branch point say anything about the branch's own changes,
 which is what the pull request's own check is for.
+
+## D30 — The commit gate is deleted, and block-merge stops re-deriving branch protection
+
+**Rule.** `commit-gate.mjs` is deleted entirely: no local gate blocks a commit on the
+protected branch or runs a project's suite before letting one through. `block-merge.mjs`
+keeps refusing `git merge`, `gh pr merge`, the forge's own merge action, and local and
+remote branch deletion, all judged from a command string alone. It no longer refuses a
+push whose refspec resolves to the protected branch, `git push --all`/`--mirror`, or a
+forge write (`create_or_update_file`/`push_files`/`delete_file`) targeting the protected
+branch.
+
+**Why.** A repository with branch protection configured already refuses every one of
+those things server-side: a required status check refuses a merge on a red suite, and
+branch protection with `enforce_admins: true` refuses a direct push to the protected
+branch, admins included. The deleted checks re-derived that server-side refusal locally,
+by resolving a working directory from shell command text, and getting that resolution
+wrong cost two defects (#119, #121) — a gate that named the wrong branch as the reason
+for a block, and a merge gate that inherited the same class of bug.
+
+**What is unaffected.** `aeo-tests.json` and its resolution in `stack.mjs` — `sandbox-guard`
+still reads a project's recorded command to recognise a live sentinel's own suite (L-02),
+a concern with no server-side equivalent at all.
+
+**What a project loses.** A repository with **no** branch protection configured has no
+local substitute left for the checks this deletes. Configure branch protection; the
+scaffolder (`new-project`) already does, at project creation.

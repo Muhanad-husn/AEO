@@ -424,8 +424,8 @@ describe('gates stated positively', () => {
     const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /Gates wired for this session/);
-    assert.match(r.stdout, /PreToolUse: .*commit-gate/);
     assert.match(r.stdout, /PreToolUse: .*block-merge/);
+    assert.match(r.stdout, /PreToolUse: .*sandbox-guard/);
     // The half that fixes the misreading. Naming the gates without this leaves the
     // actor to work out what silence from one means, which is the step both actors got
     // wrong.
@@ -449,7 +449,7 @@ describe('gates stated positively', () => {
     const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: root }) });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /PreToolUse: invented-gate/);
-    assert.doesNotMatch(r.stdout, /commit-gate/);
+    assert.doesNotMatch(r.stdout, /block-merge/);
   });
 
   test('a manifest it cannot read is reported as unknown, never as a list', () => {
@@ -457,7 +457,7 @@ describe('gates stated positively', () => {
     // this manifest satisfies it and still registers nothing under any event. Whatever
     // the cause, "I could not tell" must not render as "these are your gates".
     const repo = makeRepo();
-    const root = makePluginRoot(JSON.stringify({ description: 'see ${CLAUDE_PLUGIN_ROOT}/hooks/commit-gate.mjs' }));
+    const root = makePluginRoot(JSON.stringify({ description: 'see ${CLAUDE_PLUGIN_ROOT}/hooks/block-merge.mjs' }));
     const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: root }) });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /Gates wired: unknown/);

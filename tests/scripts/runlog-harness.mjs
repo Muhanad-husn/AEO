@@ -21,7 +21,8 @@
 // child process takes the working directory as a per-child argument, which costs
 // runlog.mjs no env var. It was measured and rejected: a bare `node -e "1"` costs
 // 300-1200ms on this machine depending on antivirus load, every root-resolving call paid
-// it, and the commit gate runs this file at every commit. A worker thread costs ~90ms.
+// it, and this file is in the fast tier, run on every commit to this repo. A worker
+// thread costs ~90ms.
 // The env var is the price of keeping the fast tier fast, and it moves only where the
 // walk starts; `spawnRunlog` below keeps real-child coverage where a test exercises the
 // CLI the way a lane invokes it.

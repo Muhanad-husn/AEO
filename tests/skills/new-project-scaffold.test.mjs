@@ -386,8 +386,8 @@ describe('the scaffold lands exactly one commit on main', () => {
 
 describe('the emitted tree records a test command, and that command is green', () => {
   test('stack.mjs resolves exactly one recorded command from the scaffold', () => {
-    // Step 4 of Stage 0. If this resolves nothing, the commit gate blocks every commit
-    // in the new project and the founder finds out on their first change.
+    // Step 4 of Stage 0. If this resolves nothing, sandbox-guard cannot recognise the
+    // new project's suite, and the founder finds out during their first live job.
     const { units, missing } = scaffolded.detected;
     assert.deepEqual(missing, [], `stack.mjs found no aeo-tests.json for: ${missing.join(', ')}`);
     assert.equal(units.length, 1, `expected one resolved unit, got ${units.length}`);
@@ -405,8 +405,7 @@ describe('the emitted tree records a test command, and that command is green', (
       cwd: scaffolded.root,
       encoding: 'utf8',
       windowsHide: true,
-      // The recorded command is a command line, so it goes through a shell — the same
-      // reasoning commit-gate.mjs records at its own spawn.
+      // The recorded command is a command line, so it goes through a shell.
       shell: true,
     });
     assert.equal(
