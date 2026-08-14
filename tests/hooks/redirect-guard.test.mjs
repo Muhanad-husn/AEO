@@ -169,6 +169,29 @@ describe('redirect forms', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Heredocs (review finding 4): issue #116's own must-handle list names "heredocs
+// writing to a redirected target". The `>` target is parsed before the heredoc body is
+// even reached, so this resolves through the ordinary RESOLVED branch, not through the
+// unparseable-line raw-text fallback -- proven here rather than assumed, especially
+// given #119's live finding that this same segmenter can lose a command's `cd` prefix
+// on a sufficiently adversarial heredoc body.
+// ---------------------------------------------------------------------------
+
+describe('heredocs', () => {
+  test('a heredoc redirected into .claude/ is fenced', () => {
+    const repo = makeRepo();
+    const command = "cat > .claude/x.md <<'EOF'\nhello\nEOF\n";
+    assertBlocked(runHook(bash(command, { cwd: repo })), FENCE);
+  });
+
+  test('a heredoc redirected to an ordinary path is allowed', () => {
+    const repo = makeRepo();
+    const command = "cat > out.md <<'EOF'\nhello\nEOF\n";
+    assertAllowed(runHook(bash(command, { cwd: repo })));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // cd prefixes
 // ---------------------------------------------------------------------------
 
@@ -222,6 +245,19 @@ describe('write-through-a-tool routes', () => {
   test('mv is fenced on its destination', () => {
     const repo = makeRepo();
     assertBlocked(runHook(bash('mv a.txt .claude/b.txt', { cwd: repo })), FENCE);
+  });
+
+  // Review finding 3: the harness directory named AS the destination itself (no further
+  // segment), the most natural spelling of this route. isPathInside(p, p) is true, so
+  // this already blocks; nothing pinned it before this test.
+  test('cp into the harness directory itself (trailing slash) is fenced', () => {
+    const repo = makeRepo();
+    assertBlocked(runHook(bash('cp a.txt .claude/', { cwd: repo })), FENCE);
+  });
+
+  test('mv into the harness directory itself (no trailing slash) is fenced', () => {
+    const repo = makeRepo();
+    assertBlocked(runHook(bash('mv a.txt .claude', { cwd: repo })), FENCE);
   });
 
   test('install is fenced on its destination', () => {
@@ -283,6 +319,60 @@ describe('write-through-a-tool routes', () => {
     test('Out-File to an ordinary path is allowed', () => {
       const repo = makeRepo();
       assertAllowed(runHook(pwsh("'hi' | Out-File out.txt", { cwd: repo })));
+    });
+
+    test('a bare redirect using the backslash form a PowerShell user actually types is fenced', () => {
+      // The verify-line test elsewhere uses a forward slash; PowerShell users write
+      // backslashes, and scanShell keeps a backslash before a non-escapable character
+      // literal (L-09), so this is a distinct code path worth its own pin.
+      const repo = makeRepo();
+      assertBlocked(runHook(pwsh('"probe" > .claude\\probe-ps.txt', { cwd: repo })), FENCE);
+    });
+
+    test('New-Item -Path is fenced, and joins the positional route (its first positional parameter is Path)', () => {
+      const repo = makeRepo();
+      assertBlocked(runHook(pwsh('New-Item -ItemType File -Path .claude\\x.txt', { cwd: repo })), FENCE);
+      assertBlocked(runHook(pwsh('New-Item .claude\\y.txt -ItemType File', { cwd: repo })), FENCE);
+    });
+
+    test('New-Item to an ordinary path is allowed', () => {
+      const repo = makeRepo();
+      assertAllowed(runHook(pwsh('New-Item -ItemType File -Path out.txt', { cwd: repo })));
+    });
+  });
+
+  // Review finding 1: Copy-Item and Move-Item are the canonical cp/mv cmdlets and were
+  // missing entirely, an asymmetry with the Unix table (cp/mv typed in PowerShell were
+  // already caught there, since program-name matching does not look at tool_name). They
+  // get their OWN route, not PS_PATH_CMDLETS: their positional-0 is the SOURCE, so the
+  // flag set's positional fallback would flag the wrong word.
+  describe('Copy-Item / Move-Item (review finding 1)', () => {
+    test('Copy-Item -Destination is fenced', () => {
+      const repo = makeRepo();
+      assertBlocked(runHook(pwsh('Copy-Item -Path a.txt -Destination .claude\\b.txt', { cwd: repo })), FENCE);
+    });
+
+    test('the colon-joined -Destination:value form is read', () => {
+      const repo = makeRepo();
+      assertBlocked(runHook(pwsh('Move-Item -Destination:.claude\\b.txt -Path a.txt', { cwd: repo })), FENCE);
+    });
+
+    test('the positional SOURCE-then-DESTINATION form is fenced on the destination, not the source', () => {
+      const repo = makeRepo();
+      assertBlocked(runHook(pwsh('Copy-Item a.txt .claude\\b.txt', { cwd: repo })), FENCE);
+      // The mirror image: naming .claude as the SOURCE must not be mistaken for the
+      // destination and must not block, proving positional-0 is read as source.
+      assertAllowed(runHook(pwsh('Copy-Item .claude\\a.txt out.txt', { cwd: repo })));
+    });
+
+    test('Move-Item between two ordinary paths is allowed', () => {
+      const repo = makeRepo();
+      assertAllowed(runHook(pwsh('Move-Item a.txt b.txt', { cwd: repo })));
+    });
+
+    test('lower-cased copy-item is fenced the same way (cmdlet names are case-insensitive)', () => {
+      const repo = makeRepo();
+      assertBlocked(runHook(pwsh('copy-item a.txt .claude\\b.txt', { cwd: repo })), FENCE);
     });
   });
 });

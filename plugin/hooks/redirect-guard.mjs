@@ -8,11 +8,16 @@
 // file tools. Demonstrated live against a real dispatched builder (#116). This gate is
 // path-guard's own KNOWN LIMIT closed: same fence, same identity scoping
 // (isAnyAeoRole -- the orchestrator and every non-AEO agent pass, C-02), reached from
-// the shell surface instead of the file-tool surface. It is wired BEFORE commit-gate in
-// hooks.json (a role's most likely reason to touch `.claude/` is a commit, not a test
-// run, but the point stands either way): a role confused enough to redirect into the
-// harness should be told so before this plugin spends a full test-suite run deciding
-// whether to let the surrounding command through.
+// the shell surface instead of the file-tool surface.
+//
+// ORDERING IN hooks.json IS A STATED INTENT, NOT A MEASURED SAVING (review, #116). This
+// repository's own principle is measure, don't speculate, and nothing here times the
+// difference between running first and running after block-merge/commit-gate. The three
+// gates' refusals are order-independent -- any one of them blocking is enough to refuse
+// the call -- so the only thing being first actually changes is which message a role
+// sees when more than one gate would have refused the same command. Placed first on
+// that basis alone: the cheapest, most specific explanation, ahead of ones that would
+// otherwise fire (or spend a full test-suite run) for the same underlying mistake.
 //
 // WHAT COUNTS AS "INSIDE THE HARNESS" IS NOT REDERIVED HERE. Once a target is resolved
 // to an absolute path, whether it sits inside a project's `.claude/` -- the V-11
@@ -60,12 +65,16 @@
 // building anything further: lib.mjs's segmenter already reads both shells (SHELL_TOOLS'
 // own header states this), and PowerShell's `>`, `>>` and `2>` are the identical syntax
 // the segmenter already marks `target: true` -- so bare redirects were never the gap.
-// What PowerShell adds beyond that is its cmdlet route, the PowerShell equivalent of
-// `tee`/`cp`/`mv`: `Set-Content`, `Add-Content`, `Out-File`, `Tee-Object`, matched
-// case-insensitively (PowerShell cmdlet names are), each read for `-Path`, `-FilePath`
-// or `-LiteralPath` (as a separate word or as `-Path:value`) and for the positional form
-// where the path follows the cmdlet name with no flag at all. That is covered below,
-// alongside the Bash tool routes, by the same checkTarget the bare redirects go through.
+// What PowerShell adds beyond that is two cmdlet routes, read by the same checkTarget the
+// bare redirects go through, both matched case-insensitively (PowerShell cmdlet names
+// are): the equivalent of `>`/`>>`/`tee` -- `Set-Content`, `Add-Content`, `Out-File`,
+// `Tee-Object`, `New-Item` -- each read for `-Path`, `-FilePath` or `-LiteralPath` (a
+// separate word or `-Path:value`) and the positional form where the path follows the
+// cmdlet name with no flag at all; and the equivalent of `cp`/`mv` -- `Copy-Item`,
+// `Move-Item` -- read for `-Destination` the same way, or the ordinary two-positional
+// SOURCE-then-DESTINATION form (review, #116: these need their OWN route rather than
+// joining the first set, because their positional-0 is the source, and folding them into
+// the flag set's positional fallback would flag the wrong word).
 //
 // ---------------------------------------------------------------------------------
 // BEYOND BARE REDIRECTS: the write-through-a-tool routes covered, and where this stops.
@@ -74,7 +83,7 @@
 // Covered: `tee` (every non-flag word is a destination), `cp` / `mv` / `install` (the
 // LAST non-flag word, the ordinary one-destination form), `dd of=`, `sed -i` /
 // `sed --in-place` (files following the script, or every non-flag word when `-e`/`-f`
-// supplies the script separately), and the four PowerShell cmdlets above. An unbounded
+// supplies the script separately), and the six PowerShell cmdlets above. An unbounded
 // table of every program that can write a file is exactly the over-engineering tripwire
 // this project names, so the line was drawn at the routes a role confused about Edit and
 // Write realistically reaches for, not at every program capable of touching a file.
@@ -140,8 +149,13 @@ function isUnresolvable(word, dir) {
 // not-part-of-a-word. `.claude-evil` and `prefix.claude-suffix` are not this segment
 // (V-12: whole segment, never a substring); a bare `.claude` with nothing after it, or
 // one instance among several inside an unparseable whole command line, is.
+//
+// One pattern, not two: the literal `.claude` in it is already lower-case, and none of
+// the boundary characters are letters, so case only ever needs deciding on the TEXT being
+// tested, not on a second copy of the pattern with an `i` flag bolted on (the same
+// copy-divergence hazard isPathIntoHarness's extraction exists to prevent, applied here
+// too -- review, #116).
 const HARNESS_TEXT_RE = /(^|[\\/'"` \t;&|()<>])\.claude($|[\\/'"` \t;&|()<>])/;
-const HARNESS_TEXT_RE_CI = /(^|[\\/'"` \t;&|()<>])\.claude($|[\\/'"` \t;&|()<>])/i;
 
 /**
  * Whole-segment `.claude` test over raw, unexpanded text -- decision 1's fallback for a
@@ -155,15 +169,23 @@ const HARNESS_TEXT_RE_CI = /(^|[\\/'"` \t;&|()<>])\.claude($|[\\/'"` \t;&|()<>])
  */
 function rawTextNamesHarness(text) {
   if (typeof text !== 'string') return false;
-  return (process.platform === 'win32' ? HARNESS_TEXT_RE_CI : HARNESS_TEXT_RE).test(text);
+  // isHarnessNamed's own case rule (lib.mjs), applied to text instead of a path segment:
+  // lower-case the probe on win32, where the filesystem is, and keep the pattern itself
+  // as the one case-sensitive source of truth.
+  const probe = process.platform === 'win32' ? text.toLowerCase() : text;
+  return HARNESS_TEXT_RE.test(probe);
 }
 
-/** `word`, resolved to absolute. Only ever called once isUnresolvable(word, dir) is false. */
+/**
+ * `word`, resolved to absolute. Only ever called once isUnresolvable(word, dir) has
+ * returned false, which -- by that function's own contract -- means EITHER `word` is
+ * already absolute, OR `dir` is a known absolute base. There is no third case to fall
+ * back to here.
+ */
 function resolveTargetPath(word, dir) {
   const normalized = normalizeHookPath(word);
   if (path.isAbsolute(normalized)) return path.resolve(normalized);
-  if (typeof dir === 'string' && path.isAbsolute(dir)) return path.resolve(dir, normalized);
-  return path.resolve(normalized); // never reached while isUnresolvable is checked first; kept for parity with path-guard's own fallback
+  return path.resolve(dir, normalized);
 }
 
 // ---------------------------------------------------------------------------
@@ -171,8 +193,10 @@ function resolveTargetPath(word, dir) {
 // ---------------------------------------------------------------------------
 
 const UNIX_LAST_ARG_TOOLS = new Set(['cp', 'mv', 'install']);
-const PS_PATH_CMDLETS = new Set(['set-content', 'add-content', 'out-file', 'tee-object']);
+const PS_PATH_CMDLETS = new Set(['set-content', 'add-content', 'out-file', 'tee-object', 'new-item']);
 const PS_PATH_FLAG = /^-(path|filepath|literalpath)(:(.*))?$/i;
+const PS_COPY_MOVE_CMDLETS = new Set(['copy-item', 'move-item']);
+const PS_DESTINATION_FLAG = /^-(destination)(:(.*))?$/i;
 
 const nonFlagWords = (args) => args.filter((a) => a !== '' && !a.startsWith('-'));
 
@@ -201,7 +225,11 @@ function sedInPlaceTargets(args) {
   return hasScriptFlag ? words : words.slice(1); // without -e/-f the first non-flag word is the script, not a file
 }
 
-/** Set-Content / Add-Content / Out-File / Tee-Object -Path|-FilePath|-LiteralPath, or positional. */
+/**
+ * Set-Content / Add-Content / Out-File / Tee-Object / New-Item --
+ * -Path|-FilePath|-LiteralPath, or positional (New-Item's own first positional
+ * parameter is -Path too, same as Out-File's and Tee-Object's).
+ */
 function powershellCmdletTargets(args) {
   const targets = [];
   for (let i = 0; i < args.length; i += 1) {
@@ -219,6 +247,23 @@ function powershellCmdletTargets(args) {
   return first !== undefined ? [first] : [];
 }
 
+/**
+ * Copy-Item / Move-Item -Destination, or the ordinary two-positional SOURCE then
+ * DESTINATION form (review, #116: these do NOT join PS_PATH_CMDLETS above, because their
+ * positional-0 is the SOURCE -- joining that set's positional fallback would flag the
+ * source word as the target instead of the real destination).
+ */
+function powershellCopyMoveTargets(args) {
+  for (let i = 0; i < args.length; i += 1) {
+    const m = PS_DESTINATION_FLAG.exec(args[i]);
+    if (!m) continue;
+    if (m[3] !== undefined) return m[3] !== '' ? [m[3]] : [];
+    const next = args[i + 1];
+    return next !== undefined && next !== '' && !next.startsWith('-') ? [next] : [];
+  }
+  return lastNonFlag(args); // positional: source(s)... destination, same shape as cp/mv
+}
+
 /** Every write-through-a-tool destination this segment's program names, if any. */
 function toolRouteTargets(segment) {
   const program = segment.program;
@@ -227,7 +272,9 @@ function toolRouteTargets(segment) {
   if (UNIX_LAST_ARG_TOOLS.has(program)) return lastNonFlag(segment.args);
   if (program === 'dd') return ddTargets(segment.args);
   if (program === 'sed') return sedInPlaceTargets(segment.args);
-  if (PS_PATH_CMDLETS.has(program.toLowerCase())) return powershellCmdletTargets(segment.args);
+  const lower = program.toLowerCase();
+  if (PS_PATH_CMDLETS.has(lower)) return powershellCmdletTargets(segment.args);
+  if (PS_COPY_MOVE_CMDLETS.has(lower)) return powershellCopyMoveTargets(segment.args);
   return [];
 }
 

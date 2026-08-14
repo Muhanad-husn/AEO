@@ -313,7 +313,14 @@ describe('matchers', () => {
     }
   });
 
-  test('redirect-guard runs before commit-gate, so a role is told before a full suite runs', () => {
+  test('redirect-guard is ordered before commit-gate (a stated intent, not a measured saving)', () => {
+    // The three gates on this matcher block on an order-independent union: any one of
+    // them refusing is enough. Ordering redirect-guard first cannot change WHETHER a
+    // command is refused, only WHICH message a role sees first when more than one gate
+    // would have refused it (redirect-guard's own header says as much, and does not claim
+    // a measured cost saving -- this repo's principle is measure, don't speculate, and
+    // nothing here times it). This test can only assert array position, which is all the
+    // intent claims.
     const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('redirect-guard.mjs')));
     assert.ok(group, 'expected a PreToolUse group for redirect-guard.mjs');
     const names = group.hooks.map((h) => scriptOf(h));

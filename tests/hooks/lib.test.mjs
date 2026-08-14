@@ -24,6 +24,7 @@ import {
   PLUGIN_NAMESPACE,
   RUNTIME_MISSING_BANNER,
   agentIdentity,
+  commandSegments,
   currentBranch,
   defaultBranch,
   git,
@@ -157,6 +158,50 @@ describe('normalizeHookPath', () => {
     assert.equal(normalizeHookPath(null, win), null);
     assert.equal(normalizeHookPath(undefined, win), undefined);
     assert.equal(normalizeHookPath(42, win), 42);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// commandSegments' redirects field (#116) — the guarantee redirect-guard is built on
+// ---------------------------------------------------------------------------
+//
+// redirect-guard.mjs's own JSDoc on commandSegments guarantees that a fd-duplication
+// redirect (`2>&1`) is excluded from `redirects` because it names a file descriptor, not
+// a path. Nothing pinned that at the unit level before this (review, #116): the only gate
+// test exercising it, `echo x 2>&1 > out.txt` -> allowed, passes whether or not `1` is
+// (wrongly) pushed as a target, because `1` would resolve to an ordinary, unfenced path.
+// The failure this guarantee actually prevents is a false positive on an ordinary line:
+// `cd .claude/... && some-cmd 2>&1` would refuse a ROLE'S OWN redirect-free stderr
+// duplication if `1` were ever treated as a write target inside a fenced directory.
+
+describe("commandSegments' redirects field", () => {
+  test('a bare redirect target is captured', () => {
+    assert.deepEqual(commandSegments('printf x > out.txt').segments[0].redirects, ['out.txt']);
+  });
+
+  test('append, stderr and all-stream targets are captured the same way', () => {
+    assert.deepEqual(commandSegments('printf x >> out.txt').segments[0].redirects, ['out.txt']);
+    assert.deepEqual(commandSegments('printf x 2> err.txt').segments[0].redirects, ['err.txt']);
+    assert.deepEqual(commandSegments('printf x &> all.txt').segments[0].redirects, ['all.txt']);
+  });
+
+  test('a fd-duplication redirect (2>&1) names no path and is excluded from redirects', () => {
+    const segment = commandSegments('echo x 2>&1').segments[0];
+    assert.deepEqual(segment.redirects, []);
+    // The fd digit itself never becomes a token or an arg either -- it is consumed
+    // entirely by the operator, not merely skipped as a target.
+    assert.deepEqual(segment.tokens, ['echo', 'x']);
+  });
+
+  test('a fd-duplication redirect followed by a real redirect captures only the real one', () => {
+    const segment = commandSegments('echo x 2>&1 > out.txt').segments[0];
+    assert.deepEqual(segment.redirects, ['out.txt']);
+  });
+
+  test('a redirect appearing before the program is still captured, and is not the program', () => {
+    const segment = commandSegments('> out.txt echo hi').segments[0];
+    assert.deepEqual(segment.redirects, ['out.txt']);
+    assert.equal(segment.program, 'echo');
   });
 });
 
