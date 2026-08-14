@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Three-stage reviewer, evidence against the claim first, then spec compliance, then code quality, for high-blast-radius or founder-requested changes. Works from a staged evidence packet, not the repository. Returns a four-status report.
+description: Three-stage reviewer, evidence against the claim first, then spec compliance, then code quality — dispatched on every pull request, not only high-risk or founder-requested ones. Works from a staged evidence packet, not the repository, and its findings are advisory, never blocking. Returns a four-status report.
 tools: Read
 model: opus
 ---

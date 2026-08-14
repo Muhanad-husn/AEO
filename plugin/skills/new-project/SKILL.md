@@ -219,8 +219,9 @@ Cover these, briefly, in this order:
   two or three the founder will actually use do, not the whole list.
 
 - **The roles.** Builder writes `src/`, `tests/` and `specs/`, never `.claude/`,
-  and never merges. Reviewer and verifier are read-only and on demand. Triage
-  scopes and files nothing. One short paragraph.
+  and never merges. Reviewer and verifier are read-only; the reviewer reads
+  every pull request, the verifier only when the risk rubric asks for it.
+  Triage scopes and files nothing. One short paragraph.
 
 - **Build philosophy, as its own top-level section.** Never a closing bullet: a
   principle without tripwires does not bind. Practicality over perfectionism,
