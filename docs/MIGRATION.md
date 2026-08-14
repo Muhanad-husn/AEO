@@ -357,10 +357,22 @@ waiting.
    `extraKnownMarketplaces.aeo` directory entry pointing at `D:\AEO` with the GitHub
    source, then install. Check: `aeo@aeo` appears in
    `~/.claude/plugins/installed_plugins.json` with a `gitCommitSha`.
-7. **Enable it for axial and close the gap window.** Add `"aeo@aeo": true` to
-   `enabledPlugins`, restart, and open a session in `D:\axial`. Check, in order: the
-   session-start block prints branch, issues and PRs; no `GATES NOT ENFORCING` line
-   appears; a deliberately red commit on a scratch branch is refused.
+7. **Enable it, and prove the gates somewhere that is not a live product.** Add
+   `"aeo@aeo": true` to `enabledPlugins` and restart. Check, in order: the session-start
+   block prints branch, issues and PRs; no `GATES NOT ENFORCING` line appears; a
+   deliberately red commit on a scratch branch is refused.
+
+   **Not in Axial.** An earlier version of this step named `D:\axial` as the place to
+   run that check. The founder ruled it out on 2026-08-14: Axial is a live, stable
+   product and is not a test target for this plugin. The check belongs on the testbed
+   ([TESTBED.md](TESTBED.md)).
+
+   **One consequence of this step is still undecided.** `enabledPlugins` is user-scoped,
+   and a GitHub install resolves the default branch rather than a tag ([D27](DECISIONS.md)),
+   so enabling it here makes every repository on the machine track AEO's `main` — Axial
+   included. D29 makes that concrete: the next session in any such repository blocks every
+   commit until an `aeo-tests.json` exists. Whether AEO stays user-scoped or moves to
+   per-project is the founder's call and is not recorded yet.
 8. **Record the test command in each consuming project.** The commit gate runs the
    command a project states in `aeo-tests.json` at its own directory —
    `{"test": "<the command that runs the fast suite>"}` — and blocks with that path
