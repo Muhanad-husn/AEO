@@ -845,6 +845,20 @@ export function gitToplevel(dir) {
 }
 
 /**
+ * The absolute path to `dir`'s git COMMON directory, or null (#113). For an ordinary
+ * checkout this is that repository's own `.git`. For a linked worktree it is the MAIN
+ * checkout's `.git`, which is exactly what distinguishes "this directory is another
+ * worktree of that project" from "this directory is a genuinely separate repository
+ * that happens to live on disk under that project" -- two shapes `gitToplevel` alone
+ * cannot tell apart, since a linked worktree's own toplevel is itself, same as any
+ * other repository's. `--path-format=absolute` sidesteps resolving a relative
+ * `--git-common-dir` answer by hand; every git this project requires supports it.
+ */
+export function gitCommonDir(dir) {
+  return git(dir, 'rev-parse', '--path-format=absolute', '--git-common-dir');
+}
+
+/**
  * The checked-out branch name of `dir`, or null.
  *
  * On a detached HEAD this returns the literal string `HEAD`, which is what

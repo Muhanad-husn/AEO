@@ -226,6 +226,76 @@ describe('V-11: the resolved toplevel is itself named .claude', () => {
 });
 
 // ---------------------------------------------------------------------------
+// #113: a session's own worktree, parked under .claude/worktrees/, is not the V-11
+// vendored-repo case -- it is an ordinary checkout of the project itself, and its
+// content must resolve normally even though its toplevel sits under the project's
+// .claude/. Real worktrees throughout: `git worktree add` produces the exact
+// `--git-common-dir` shape the fix reads, which a mocked `rev-parse` cannot.
+// ---------------------------------------------------------------------------
+
+describe('#113: a linked worktree parked under .claude/worktrees/', () => {
+  /** A project with one real linked worktree cut at .claude/worktrees/<name>. */
+  function makeProjectWithWorktree(name = 'agent-1') {
+    const project = makeRepo();
+    const worktree = path.join(project, '.claude', 'worktrees', name);
+    mkdirSync(path.dirname(worktree), { recursive: true });
+    git(project, 'worktree', 'add', '-q', '-b', `feat/${name}`, worktree);
+    return { project, worktree };
+  }
+
+  test('an ordinary project file inside the worktree is allowed, not fenced by the project root', () => {
+    const { worktree } = makeProjectWithWorktree();
+    const target = path.join(worktree, 'plugin', 'agents', 'reviewer.md');
+    assertAllowed(runHook(roleCall('Write', target)));
+  });
+
+  test('a new file under a not-yet-existing directory inside the worktree is allowed too', () => {
+    const { worktree } = makeProjectWithWorktree();
+    const target = path.join(worktree, 'plugin', 'skills', 'new-thing', 'SKILL.md');
+    assertAllowed(runHook(roleCall('Write', target)));
+  });
+
+  // What must not move: the worktree's OWN .claude/ is still the worktree's own
+  // harness config, and this containment check fires on the very first loop
+  // iteration -- before any escalation, so there is no inner root yet for the
+  // bypass to apply to.
+  test("the worktree's own .claude/ is still fenced, not swept up in the allow", () => {
+    const { worktree } = makeProjectWithWorktree();
+    const target = path.join(worktree, '.claude', 'settings.json');
+    const r = runHook(roleCall('Write', target));
+    assertBlocked(r, HARNESS_FENCE);
+    assert.match(r.stderr, /tried: \.claude\/settings\.json/);
+  });
+
+  // What must not move: a role writing the enclosing project's own .claude/ directly
+  // (never through the worktree at all) is unaffected by the discriminator.
+  test("the project's own .claude/, reached from an ordinary checkout, is still fenced", () => {
+    const { project } = makeProjectWithWorktree();
+    const target = path.join(project, '.claude', 'agents', 'builder.md');
+    assertBlocked(runHook(roleCall('Write', target)), HARNESS_FENCE);
+  });
+
+  // What must not move: a genuinely separate repository vendored under the SAME
+  // project's .claude/, alongside a real worktree, is not mistaken for one. This is
+  // V-11's own case (tested above with no worktree present); repeating it here proves
+  // the new discriminator doesn't widen the allow when a worktree is also nearby.
+  test('a repository vendored under .claude/ is still fenced even though the project also has a worktree', () => {
+    const { project } = makeProjectWithWorktree();
+    const vendored = path.join(project, '.claude', 'skills', 'rgr');
+    mkdirSync(vendored, { recursive: true });
+    initRepoAt(vendored);
+    const r = runHook(roleCall('Write', path.join(vendored, 'SKILL.md')));
+    assertBlocked(r, HARNESS_FENCE);
+  });
+
+  test('a file at the project root, outside the worktree entirely, is unaffected', () => {
+    const { project } = makeProjectWithWorktree();
+    const target = path.join(project, 'src', 'index.js');
+    assertAllowed(runHook(roleCall('Write', target)));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A .claude ancestor that is NOT the resolved toplevel must resolve normally
 // ---------------------------------------------------------------------------
 
