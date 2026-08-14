@@ -1,6 +1,6 @@
 ---
 name: fix
-description: Take a small, scoped fix — a bug, a rename, a config or dependency tweak, a copy change — straight from description to a founder-approved PR in one builder dispatch, skipping sprint-planning ceremony and the reviewer stage, but not the commit and merge gates. Bounces anything feature-scale back to sprint-start. Use when asked for a quick fix, or handed a small, well-defined change.
+description: Take a small, scoped fix — a bug, a rename, a config or dependency tweak, a copy change — straight from description to a founder-approved PR in one builder dispatch, skipping sprint-planning ceremony, but not the commit and merge gates or the reviewer, who reads this PR the same as any other. Bounces anything feature-scale back to sprint-start. Use when asked for a quick fix, or handed a small, well-defined change.
 disable-model-invocation: true
 ---
 
@@ -15,10 +15,10 @@ gates.
    tweak, a copy change, a small behavioural correction. Feature-scale
    work (a new behaviour surface, a new module, anything that deserves a
    planned issue) bounces to `sprint-start`. When in doubt, it's a slice,
-   not a fix. The same check decides review: if the change turns out to
-   touch a shared, widely-depended-on module or core config or dependency
-   wiring, it has stopped being fix-sized. Bounce it rather than pushing
-   it through unreviewed.
+   not a fix. A change that turns out to touch a shared, widely-depended-on
+   module or core config or dependency wiring has stopped being fix-sized
+   regardless of review — the reviewer reads a fix-lane PR the same way it
+   reads any other — and bounces to `sprint-start` for the fuller process.
 
 2. **Cut the worktree** from the default branch. As in `sprint-start`,
    name anything the project's build needs that a fresh worktree won't
@@ -33,7 +33,8 @@ gates.
    for CI green on those before approval is requested — that run is
    cited, not repeated locally ([D24](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). If the fix
    moves behaviour the spec describes, the builder updates the spec in
-   the same branch. No test-author relay and no reviewer stage.
+   the same branch. No test-author relay; the reviewer still reads the PR
+   `safe-pr` opens, the same as on any other lane.
 
 4. **Stay in the lane.** A BLOCKED report on scope creep stops the
    session and routes to `sprint-start`.

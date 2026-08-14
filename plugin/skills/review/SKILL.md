@@ -1,6 +1,6 @@
 ---
 name: review
-description: Dispatch the read-only reviewer role for a three-stage check on the current branch's diff against the default branch — whether the evidence demonstrates the claim, then spec compliance, since a green test can still betray its spec, then code quality and over-engineering. Use on demand, or for a change that touches shared modules or carries outsized blast radius.
+description: Dispatch the read-only reviewer role for a three-stage check on the current branch's diff against the default branch — whether the evidence demonstrates the claim, then spec compliance, since a green test can still betray its spec, then code quality and over-engineering. `safe-pr` dispatches this on every pull request as one of its own steps; invoke it directly too, for a look at a branch before it's ready to open, or a second pass after the builder addresses findings.
 disable-model-invocation: true
 ---
 
@@ -9,9 +9,11 @@ disable-model-invocation: true
 Dispatches the reviewer role for a three-stage check on the current
 branch's diff against the default branch: whether the evidence
 demonstrates the claim, then spec compliance, since a green test can
-still betray its spec, then code quality. Use on demand, or when a change
-touches a shared, widely-depended-on module, core config, or dependency
-wiring: surface where a defect carries outsized blast radius.
+still betray its spec, then code quality. `safe-pr` is the primary
+caller — it dispatches this role unconditionally, on every pull
+request, as one of its own steps. Invoke it directly too, on demand,
+for a look at a branch before it's ready to open, or a second pass
+after the builder addresses findings.
 
 The reviewer is sealed off from the repository by a `PreToolUse` gate. It
 can `Read` nothing but a staged packet, outside the repo entirely. That
@@ -55,5 +57,5 @@ to the founder and post findings to the issue thread. Fixes route back to
 the builder; the reviewer edits nothing. For a high-risk change,
 `pr-review-toolkit`'s specialist lenses add useful depth alongside this,
 not instead of it: they check code quality from several angles but not
-spec compliance, which stays this lane's job. A passing review earns
-`safe-pr`, never a merge.
+spec compliance, which stays this lane's job. Its findings are advisory,
+never a merge; only the founder's approval is that.

@@ -95,12 +95,24 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    Fill the remaining `<placeholders>`: description, what changed, how to
    review, the unit summary, risk notes, the plan path. Be honest about
    anything partial. `PR_BODY.md` is git-ignored — it isn't committed.
-6. Take the row for this change from
+6. Dispatch the reviewer on every PR — an unconditional step now, not a branch
+   of the risk rubric. Run `${CLAUDE_PLUGIN_ROOT}/skills/review/SKILL.md`, which
+   stages the packet (the claim, the diff, the issue and relevant spec section,
+   the test evidence from this run, and any spec or contract movement) and
+   dispatches the reviewer against it. That packet is the same for a routine
+   slice as for a high-risk one — nothing about a low-risk change trims it,
+   because the reviewer works from `Read` alone against exactly what was
+   staged. Attach its findings to the PR as advisory; they never block, and the
+   founder decides what to do with them.
+
+   Then take the row for this change from
    `${CLAUDE_PLUGIN_ROOT}/skills/verify/references/risk-rubric.md`, the only copy
-   of the rubric and the one the `verify` lane reads. On a row that asks for
-   verification, run `verify` first and attach its findings as advisory; they
-   never block. Then show the founder the title, body, and branch, and get
-   explicit confirmation — this is outward-facing. Then push:
+   of the rubric and the one the `verify` lane reads. The rubric keeps its
+   existing job — deciding whether the separate `verify` lane also runs on top
+   of the review that already happened, never whether review itself happens.
+   On a row that asks for verification, run `verify` too and attach its
+   findings as advisory as well. Then show the founder the title, body, and
+   branch, and get explicit confirmation — this is outward-facing. Then push:
 
    ```
    git push -u origin feat/<feature-slug>/<NN-slice-slug>

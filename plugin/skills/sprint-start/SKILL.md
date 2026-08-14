@@ -63,10 +63,11 @@ both short.
    ([D6](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). BLOCKED is for a question
    that leaves nothing else to build.
 
-6. **Review when it's warranted.** The founder asks, or the change
-   touches a shared, widely-depended-on module, core config, or
-   dependency wiring: surface where a defect carries outsized blast
-   radius. Otherwise CI plus the founder's PR read is the check.
+6. **The reviewer reads it.** Not a separate call here: `safe-pr`, the
+   next step, now dispatches the reviewer unconditionally on every PR,
+   from a staged packet, and posts its findings as advisory. The risk
+   rubric's job is unchanged by that — it still decides only whether the
+   separate `verify` lane also runs on top.
 
 7. **Prepare the PR** with `safe-pr` and wait for CI green. Where the risk
    rubric calls for verification, stage the review packet — per `verify`'s
