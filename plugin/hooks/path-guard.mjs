@@ -79,6 +79,15 @@
 // `printf '{}' > .claude/settings.json` never reaches this gate at all. Closing that
 // is a Bash-side redirect check, a different gate's surface.
 //
+// KNOWN LIMIT: a worktree cut FROM a linked worktree, parked under that worktree's own
+// `.claude/worktrees/`, is still blocked -- `--git-common-dir` always resolves to the
+// ORIGINAL main checkout regardless of which worktree `git worktree add` was run from
+// (git worktrees never nest into their own family; there is one common dir per
+// repository), so isLinkedWorktreeOf's comparison against the intermediate worktree
+// never matches. Fails closed, same class as #113 one level deeper. Not chased: AEO's
+// own concurrency model never produces it -- sprint worktrees are cut from the main
+// checkout only, and operation workers get no worktree at all.
+//
 // RESOLUTION ORDER, DIFFERENT FROM lib.mjs's resolveWorktree ON PURPOSE. Every other
 // Phase 1 gate resolves the directory a *command* operates in (resolveOperationDir):
 // an explicit `cd <dir> &&`, then the tool call's own cwd. That answers "what worktree
