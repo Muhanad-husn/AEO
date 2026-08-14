@@ -178,10 +178,19 @@ describe('redirect forms', () => {
 // ---------------------------------------------------------------------------
 
 describe('heredocs', () => {
-  test('a heredoc redirected into .claude/ is fenced', () => {
+  test('a heredoc redirected into .claude/ is fenced through the RESOLVED branch, not the raw-text fallback', () => {
+    // Review finding 6: "blocked" alone does not distinguish the two branches -- the
+    // raw-text fallback would ALSO block here, since the raw text names .claude, so a
+    // test asserting only the exit code cannot fail for the reason it claims to pin.
+    // The two branches emit different messages (checkTarget's "tried: <rel>" only comes
+    // from the resolved branch; the fallback says the target could not be resolved), so
+    // asserting the resolved branch's own message is what actually tells them apart --
+    // the same technique the verify-line test already uses.
     const repo = makeRepo();
     const command = "cat > .claude/x.md <<'EOF'\nhello\nEOF\n";
-    assertBlocked(runHook(bash(command, { cwd: repo })), FENCE);
+    const r = runHook(bash(command, { cwd: repo }));
+    assertBlocked(r, FENCE);
+    assert.match(r.stderr, /tried: \.claude\/x\.md/);
   });
 
   test('a heredoc redirected to an ordinary path is allowed', () => {
@@ -338,6 +347,37 @@ describe('write-through-a-tool routes', () => {
     test('New-Item to an ordinary path is allowed', () => {
       const repo = makeRepo();
       assertAllowed(runHook(pwsh('New-Item -ItemType File -Path out.txt', { cwd: repo })));
+    });
+
+    // Review finding 5, a live hole: the positional fallback used to read index 0, but
+    // PowerShell binds a named parameter (-ItemType, -Encoding, -Value) ANYWHERE and
+    // assigns the leftover positional afterwards. `New-Item -ItemType File <path>` is
+    // the form Microsoft's own documentation shows for creating a file, and it, along
+    // with the equivalent Set-Content and Out-File shapes, walked straight through
+    // before the fix -- these three lines are exactly the ones the review measured as
+    // allowed against the pre-fix branch.
+    describe('a named parameter before the positional path (review finding 5)', () => {
+      test('New-Item -ItemType File <path>, the documented spelling, is fenced', () => {
+        const repo = makeRepo();
+        assertBlocked(runHook(pwsh('New-Item -ItemType File .claude\\x.txt', { cwd: repo })), FENCE);
+      });
+
+      test('Set-Content -Value y <path> is fenced, and -Value\'s own argument is not mistaken for a path', () => {
+        const repo = makeRepo();
+        assertBlocked(runHook(pwsh("Set-Content -Value y .claude\\x.txt", { cwd: repo })), FENCE);
+      });
+
+      test('Out-File -Encoding utf8 <path> is fenced', () => {
+        const repo = makeRepo();
+        assertBlocked(runHook(pwsh('Out-File -Encoding utf8 .claude\\x.txt', { cwd: repo })), FENCE);
+      });
+
+      test('the same three shapes to an ordinary path are allowed, so the fix did not over-block', () => {
+        const repo = makeRepo();
+        assertAllowed(runHook(pwsh('New-Item -ItemType File out.txt', { cwd: repo })));
+        assertAllowed(runHook(pwsh("Set-Content -Value y out.txt", { cwd: repo })));
+        assertAllowed(runHook(pwsh('Out-File -Encoding utf8 out.txt', { cwd: repo })));
+      });
     });
   });
 

@@ -69,12 +69,15 @@
 // bare redirects go through, both matched case-insensitively (PowerShell cmdlet names
 // are): the equivalent of `>`/`>>`/`tee` -- `Set-Content`, `Add-Content`, `Out-File`,
 // `Tee-Object`, `New-Item` -- each read for `-Path`, `-FilePath` or `-LiteralPath` (a
-// separate word or `-Path:value`) and the positional form where the path follows the
-// cmdlet name with no flag at all; and the equivalent of `cp`/`mv` -- `Copy-Item`,
-// `Move-Item` -- read for `-Destination` the same way, or the ordinary two-positional
-// SOURCE-then-DESTINATION form (review, #116: these need their OWN route rather than
-// joining the first set, because their positional-0 is the source, and folding them into
-// the flag set's positional fallback would flag the wrong word).
+// separate word or `-Path:value`), or, with none of those present, EVERY remaining
+// non-flag word (review, #116, finding 5: PowerShell binds named parameters anywhere and
+// assigns leftover positionals afterwards, so `New-Item -ItemType File .claude\x.txt`
+// puts the path at index 1 -- reading only "the word right after the cmdlet name" missed
+// it); and the equivalent of `cp`/`mv` -- `Copy-Item`, `Move-Item` -- read for
+// `-Destination` the same way, or the ordinary two-positional SOURCE-then-DESTINATION
+// form (these need their OWN route rather than joining the first set, because their
+// positional-0 is the source, and folding them into the flag set's positional fallback
+// would flag the wrong word).
 //
 // ---------------------------------------------------------------------------------
 // BEYOND BARE REDIRECTS: the write-through-a-tool routes covered, and where this stops.
@@ -95,7 +98,13 @@
 //
 // KNOWN LIMIT: `cp -t DIR` / `--target-directory=DIR` and `install -D SRC DIR/name`
 // name their destination through a flag's value rather than the last positional word;
-// this gate reads only the last-positional form.
+// this gate reads only the last-positional form. The same class of miss runs the other
+// way too, for `cp`/`mv`/`install` and for `Copy-Item`/`Move-Item` alike: a value-taking
+// flag placed AFTER the destination (`cp a.txt .claude/b -m 644`, `Copy-Item a.txt
+// .claude\b -Filter *.txt`) makes that flag's OWN value look like the new last
+// positional word, hiding the real destination one word earlier. Both directions need
+// the same fix -- a table of which flags take a value, per program -- which is the
+// unbounded per-program surface this gate's scope declines to build.
 //
 // KNOWN LIMIT: PowerShell's own abbreviated-parameter matching (`-Pat` for `-Path`,
 // unambiguous prefixes) is not read; only the full flag spelling is. Comma-separated
@@ -194,9 +203,16 @@ function resolveTargetPath(word, dir) {
 
 const UNIX_LAST_ARG_TOOLS = new Set(['cp', 'mv', 'install']);
 const PS_PATH_CMDLETS = new Set(['set-content', 'add-content', 'out-file', 'tee-object', 'new-item']);
-const PS_PATH_FLAG = /^-(path|filepath|literalpath)(:(.*))?$/i;
+// The flag name is a non-capturing group so `m[1]` is the colon-joined value in BOTH
+// this regex and PS_DESTINATION_FLAG below -- one shared index, not an unwritten
+// contract between two separately-numbered capture groups (review, #116).
+const PS_PATH_FLAG = /^-(?:path|filepath|literalpath)(?::(.*))?$/i;
 const PS_COPY_MOVE_CMDLETS = new Set(['copy-item', 'move-item']);
-const PS_DESTINATION_FLAG = /^-(destination)(:(.*))?$/i;
+const PS_DESTINATION_FLAG = /^-(?:destination)(?::(.*))?$/i;
+// The one PS_PATH_CMDLETS parameter whose argument is content, not a path: `-Value`
+// (Set-Content/Add-Content). Everything else in that set takes a path or a flag with no
+// argument, so this is the sole exclusion the positional fallback below needs.
+const PS_VALUE_FLAG_BARE = /^-value$/i;
 
 const nonFlagWords = (args) => args.filter((a) => a !== '' && !a.startsWith('-'));
 
@@ -226,25 +242,48 @@ function sedInPlaceTargets(args) {
 }
 
 /**
+ * Every non-flag word in `args`, EXCLUDING the `-Value` flag's own following word (its
+ * argument is content, not a path -- the sole exception). Used as the positional
+ * fallback below instead of reading index 0: PowerShell binds named parameters
+ * ANYWHERE and assigns leftover positionals afterwards, so `New-Item -ItemType File
+ * .claude\x.txt` puts the path at index 1, not index 0 (review finding 5). Reading
+ * every remaining word, symmetric with `tee`'s own route above, removes the index
+ * assumption instead of patching the one cmdlet the review happened to catch it on;
+ * `File`/`utf8`/etc resolve to unfenced paths and cost nothing extra.
+ */
+function nonFlagWordsExcludingValueArg(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === '') continue;
+    if (a.startsWith('-')) {
+      if (PS_VALUE_FLAG_BARE.test(a)) i += 1; // skip -Value's own argument, not a path
+      continue;
+    }
+    out.push(a);
+  }
+  return out;
+}
+
+/**
  * Set-Content / Add-Content / Out-File / Tee-Object / New-Item --
- * -Path|-FilePath|-LiteralPath, or positional (New-Item's own first positional
- * parameter is -Path too, same as Out-File's and Tee-Object's).
+ * -Path|-FilePath|-LiteralPath, or every remaining non-flag word (see
+ * nonFlagWordsExcludingValueArg).
  */
 function powershellCmdletTargets(args) {
   const targets = [];
   for (let i = 0; i < args.length; i += 1) {
     const m = PS_PATH_FLAG.exec(args[i]);
     if (!m) continue;
-    if (m[3] !== undefined) {
-      if (m[3] !== '') targets.push(m[3]);
+    if (m[1] !== undefined) {
+      if (m[1] !== '') targets.push(m[1]);
       continue;
     }
     const next = args[i + 1];
     if (next !== undefined && next !== '' && !next.startsWith('-')) targets.push(next);
   }
   if (targets.length > 0) return targets;
-  const first = nonFlagWords(args)[0];
-  return first !== undefined ? [first] : [];
+  return nonFlagWordsExcludingValueArg(args);
 }
 
 /**
@@ -252,12 +291,20 @@ function powershellCmdletTargets(args) {
  * DESTINATION form (review, #116: these do NOT join PS_PATH_CMDLETS above, because their
  * positional-0 is the SOURCE -- joining that set's positional fallback would flag the
  * source word as the target instead of the real destination).
+ *
+ * KNOWN LIMIT (review, #116, finding 5's same root cause, deliberately not chased):
+ * `lastNonFlag` takes the LAST non-flag word among ALL args, so a value-taking flag
+ * placed AFTER the destination -- `Copy-Item a.txt .claude\b -Filter *.txt` -- makes
+ * that flag's own value (`*.txt`) look like the new last positional, hiding the real
+ * destination one word earlier. See the header's KNOWN LIMIT beside `cp -t DIR`: fixing
+ * this needs a table of which flags take a value, per program, which is the unbounded
+ * surface this gate's scope declines to build.
  */
 function powershellCopyMoveTargets(args) {
   for (let i = 0; i < args.length; i += 1) {
     const m = PS_DESTINATION_FLAG.exec(args[i]);
     if (!m) continue;
-    if (m[3] !== undefined) return m[3] !== '' ? [m[3]] : [];
+    if (m[1] !== undefined) return m[1] !== '' ? [m[1]] : [];
     const next = args[i + 1];
     return next !== undefined && next !== '' && !next.startsWith('-') ? [next] : [];
   }
