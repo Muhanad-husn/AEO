@@ -27,6 +27,7 @@ import {
   currentBranch,
   defaultBranch,
   git,
+  gitCommonDir,
   gitToplevel,
   isAeoRole,
   isAnyAeoRole,
@@ -485,6 +486,30 @@ describe('git helpers', () => {
     assert.ok(gitToplevel(repo));
     assert.equal(currentBranch(repo), 'release/1');
     assert.equal(currentBranch(tempDir('aeo-p11-plain2-')), null);
+  });
+
+  // gitCommonDir (#113): the primitive path-guard's worktree discriminator is built on.
+  // git always reports forward slashes even on win32, so comparisons go through
+  // path.resolve on both sides, same as the discriminator itself does.
+  describe('gitCommonDir', () => {
+    test('a plain checkout reports its own .git as its common dir', () => {
+      const repo = makeRepo({ branch: 'main' });
+      assert.equal(path.resolve(gitCommonDir(repo)), path.resolve(repo, '.git'));
+    });
+
+    test('a linked worktree reports the MAIN checkout\'s .git, not its own', () => {
+      const main = makeRepo({ branch: 'main' });
+      const worktree = path.join(main, 'wt');
+      run(main, 'worktree', 'add', '-q', '-b', 'feat/wt', worktree);
+      assert.equal(path.resolve(gitCommonDir(worktree)), path.resolve(main, '.git'));
+      // Its own toplevel, by contrast, IS itself -- the exact ambiguity gitToplevel
+      // alone can't resolve, and the reason path-guard needs this second primitive.
+      assert.equal(path.resolve(gitToplevel(worktree)), path.resolve(worktree));
+    });
+
+    test('returns null outside a repository', () => {
+      assert.equal(gitCommonDir(tempDir('aeo-p11-nocommondir-')), null);
+    });
   });
 });
 
