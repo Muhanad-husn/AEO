@@ -37,6 +37,12 @@
           {
             "type": "command",
             "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/redirect-guard.mjs"],
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node",
             "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/block-merge.mjs"]
           },
           {
