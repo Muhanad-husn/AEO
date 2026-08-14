@@ -46,6 +46,7 @@ import {
   git,
   isAeoRole,
   matchesGitSubcommand,
+  operationDirs,
   resolveWorktree,
   runGate,
 } from './lib.mjs';
@@ -258,6 +259,34 @@ function runSuite(unit, deadline) {
 export function commitGate(payload) {
   const command = payload?.tool_input?.command;
   if (!matchesGitSubcommand(command, 'commit')) return;
+
+  // #119. resolveWorktree (and the resolveOperationDir it calls) reports only the
+  // directory it landed on, never whether it got there with confidence. When the shell
+  // scanner cannot read the command at all -- an unterminated quote is the shape a `-m`
+  // message with an embedded `"` and a bare, unpaired `'` produces -- commandSegments
+  // reports zero segments, so a leading `cd <worktree> &&` is invisible to the walk and
+  // it falls through to a SESSION-FIXED source: payload.cwd, which for a dispatched
+  // subagent is often the orchestrator's own checkout on the protected branch. That
+  // directory then resolves to a real repository, so `!toplevel` below never fires, and
+  // the branch check two lines down compares a real branch (main) against the resolved
+  // default and blocks -- correctly refusing to proceed, but for a reason ("no direct
+  // commits on main") that is not true of the worktree the caller actually meant.
+  //
+  // operationDirs (called by sandbox-guard and redirect-guard already) computes and
+  // exposes exactly this signal; resolveOperationDir/resolveWorktree simply never asked
+  // for it. Reading it here needs no change to commandSegments or to lib.mjs: the gate
+  // still fails closed on a line it cannot read -- an unparseable command names no
+  // branch it can vouch for, so allowing it through is not an option -- but it says so
+  // honestly instead of naming a branch condition that may not hold.
+  const { parseError } = operationDirs(payload);
+  if (parseError !== null) {
+    block(
+      `this commit was not evaluated because ${parseError}. A \`cd\` earlier in the line -- including one naming ` +
+        `the worktree this commit actually belongs to -- would be invisible to this check, so the gate cannot ` +
+        `tell which repository or branch this commit lands on and will not guess. Rewrite the command so it ` +
+        `parses, or write the message to a file and commit with \`git commit -F <file>\`.`,
+    );
+  }
 
   const { dir, source, toplevel } = resolveWorktree(payload);
   if (!toplevel) {

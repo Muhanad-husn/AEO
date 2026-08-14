@@ -917,6 +917,70 @@ test('a leading cd wins over the payload cwd', () => {
 });
 
 // ---------------------------------------------------------------------------
+// #119: an unparseable -m line must not lose the leading cd and fall back to a
+// session-fixed directory it then reports as fact.
+// ---------------------------------------------------------------------------
+
+describe('a command the shell scanner cannot read (#119)', () => {
+  // The reproduction: a -m message with embedded double quotes and a bare, unpaired
+  // apostrophe in ordinary prose. Real bash would tokenise "first", `doesn't` and
+  // "second" as three separate words -- not the single message a reader would assume --
+  // and the scanner correctly refuses to guess at it. Before the fix, commandSegments'
+  // reported error emptied the segment list, the leading `cd` was never seen, and
+  // resolveOperationDir fell through to payload.cwd: the orchestrator's own checkout on
+  // main. The gate then blocked with "no direct commits on main", which was false -- the
+  // worktree the `cd` named was on a feature branch throughout.
+  test('an unparseable commit line blocks for the right reason, not a false branch claim', () => {
+    const elsewhere = makeRepo({ branch: 'main', defaultBranch: 'main' });
+    const target = makeRepo({ branch: 'feat/slice-119', defaultBranch: 'main' });
+    const command = `cd ${target.replace(/\\/g, '/')} && git commit -m "first" doesn't "second"`;
+    const result = runGate({ cwd: elsewhere, tool_name: 'Bash', tool_input: { command } });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /could not be read as a sequence of shell commands/);
+    assert.doesNotMatch(result.stderr, /no direct commits on main/);
+  });
+
+  // The direction that must not regress in the other sense: failing to parse must never
+  // become quieter than parsing correctly. A genuinely unparseable line still blocks even
+  // when the directory it would have fallen back to is not the protected branch, so an
+  // agent cannot dodge the gate by making its own command line unreadable.
+  test('an unparseable commit line still blocks even off the protected branch', () => {
+    const elsewhere = makeRepo({ branch: 'feat/orchestrator-side', defaultBranch: 'main' });
+    const command = `git commit -m "first" doesn't "second"`;
+    const result = runGate({ cwd: elsewhere, tool_name: 'Bash', tool_input: { command } });
+    assert.equal(result.status, 2, result.stderr);
+    assert.match(result.stderr, /could not be read as a sequence of shell commands/);
+  });
+
+  // A genuine commit on the default branch is still refused -- the fix narrows the
+  // *reason* the gate gives for an unparseable line, not the branch protection itself.
+  test('a real commit on the default branch is still refused when the command parses fine', () => {
+    const dir = makeRepo({ branch: 'main', defaultBranch: 'main' });
+    const result = runGate(commitPayload(dir, 'git commit -m "ordinary message"'));
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /no direct commits on main/);
+  });
+
+  // The control: a message with embedded double quotes AND an apostrophe that the
+  // scanner can read confidently (the apostrophe sits inside the same double-quoted span
+  // as everything else) must not trip the new check. Proves the fix is scoped to what is
+  // genuinely unparseable, not to quotes or apostrophes in general.
+  test('a quoted message with an embedded quote and an apostrophe that DOES parse is not caught by this check', () => {
+    const elsewhere = makeRepo({ branch: 'main', defaultBranch: 'main' });
+    const target = makeRepo({
+      branch: 'feat/slice-119b',
+      defaultBranch: 'main',
+      change: { 'README.md': '# x' },
+    });
+    const command =
+      `cd ${target.replace(/\\/g, '/')} && ` +
+      String.raw`git commit -m "fix: the parser handles \"quoted\" text and it's now correct"`;
+    const result = runGate({ cwd: elsewhere, tool_name: 'Bash', tool_input: { command } });
+    assert.equal(result.status, 0, result.stderr);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The timeout, which is the whole reason the hook needs an explicit one
 // ---------------------------------------------------------------------------
 
