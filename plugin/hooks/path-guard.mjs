@@ -23,70 +23,34 @@
 // which is the legitimate work of every slice that touches a gate: a fix larger than
 // its bug.
 //
-// THE HARNESS-ROOT CHECK (V-11). isPathInside(root/.claude, target) stops matching the
-// moment `.claude/` participates in a nested git repository: `rev-parse
-// --show-toplevel` then resolves BELOW the project root, so the substring `.claude/`
-// never appears in a path relative to THAT root. That is issue #271 all over again,
-// with no signal that the fence stopped working. Two shapes produce it:
-//
-//   1. `.claude/` is itself the repository. The resolved toplevel IS the harness
-//      directory, so its own basename answers the question (isHarnessNamed).
-//   2. Something UNDER `.claude/` is the repository, which is what vendoring a skill or
-//      an upstream harness as its own clone produces: `<proj>/.claude/skills/rgr` has
-//      toplevel `rgr`, whose basename is not `.claude` and whose own `.claude`
-//      subdirectory does not contain the target. Both tests are false, so the write is
-//      allowed. The loop below re-runs both against each enclosing worktree root.
-//
-// A THIRD shape looks identical to #2 by path alone but must resolve the other way
-// (#113): a session's own worktree, cut with `git worktree add` at
-// `<project>/.claude/worktrees/<id>`. Its toplevel is itself, same as any other repo's,
-// so escalating to the enclosing project finds `<project>/.claude` containing it and
-// blocks -- every ordinary file the role ever writes there, which is the whole point of
-// giving it that worktree. A linked worktree is not a second repository; it is an
-// ordinary checkout of the SAME one, and `--git-common-dir` says so where `--show-toplevel`
-// cannot: a linked worktree's common directory resolves to the MAIN checkout's `.git`,
-// while a genuinely separate repository's (case #2) resolves to its own. So the loop
-// checks that one further thing at the moment it would otherwise block on containment at
-// each level (isLinkedWorktreeOf): when the root the loop escalated FROM is a linked
-// worktree of the root it escalated TO, THIS level's containment does not block, and the
-// loop keeps walking outward exactly as if this level had found no containment at all --
-// it must NOT return allowed outright, because a genuine case #2 can still sit one level
-// further out (a vendored repository whose own worktree is nested under it), and only
-// continuing the escalation lets that outer fence still fire. The worktree's own
-// `.claude/` is unaffected -- that containment check fires on the FIRST iteration, before
-// any escalation has happened, so there is no inner root yet to be a worktree of anything.
-//
-// The loop is gated on an exactly necessary precondition, so an ordinary project pays
-// one string scan and NO extra git call: it turns only while `.claude` is a whole
-// segment of the current root's own path. Neither test can change against an outer
-// root otherwise, because an outer root named `.claude` is by definition an ancestor
-// segment of the current one, and an outer `<root>/.claude` containing the target must
-// contain the current root too (the target is inside both, two ancestors of one path
-// are ordered by containment, and `<root>/.claude` is a direct child of `<root>`).
-// Only a repository living under a `.claude/` directory pays a `rev-parse` per level,
-// which is also what keeps a plugin checkout at `~/.claude/plugins/aeo/` resolving
-// normally: nothing encloses it, so the loop stops and only its own `.claude/` is
-// fenced. The worktree discriminator adds one further `rev-parse` per level, and only
-// inside that same already-priced tier: it never runs unless the escalating containment
-// check is about to fire, which itself never happens for an ordinary project.
+// THE HARNESS-ROOT CHECK (V-11, #113): what counts as "inside the harness" and the
+// escalation walk that decides it -- the root-named-.claude case, ordinary containment,
+// and the linked-worktree discriminator that must skip only one level's block rather
+// than return out of the whole walk -- now live in lib.mjs's isPathIntoHarness (#116).
+// That function's own header carries the long form of the mechanism; this file no
+// longer has its own copy to keep in sync; redirect-guard.mjs is the second caller the
+// sharing exists for.
 //
 // KNOWN LIMIT: the scope is a worktree ROOT's `.claude/`, so a nested
 // `<repo>/apps/web/.claude/` in a monorepo is not fenced, even though directory-scoped
 // skills make such a directory genuinely govern roles. The PowerShell original had the
 // same root-only scope, so this is inherited, not introduced by the port.
 //
-// KNOWN LIMIT: the matcher is Edit and Write, and role subagents hold Bash, so
-// `printf '{}' > .claude/settings.json` never reaches this gate at all. Closing that
-// is a Bash-side redirect check, a different gate's surface.
+// KNOWN LIMIT, NOW NARROWED (#116): this gate's matcher is Edit and Write, so a role
+// with only Bash or PowerShell used to pass every write straight through --
+// `printf '{}' > .claude/settings.json` never reached this gate at all. redirect-guard.mjs,
+// wired on `^(Bash|PowerShell)$`, closes that for a bare redirect and for the
+// write-through-a-tool routes it names (tee, cp, mv, install, dd of=, sed -i, and their
+// PowerShell cmdlet equivalents); its own header states what is still left uncovered.
 //
 // KNOWN LIMIT: a worktree cut FROM a linked worktree, parked under that worktree's own
 // `.claude/worktrees/`, is still blocked -- `--git-common-dir` always resolves to the
 // ORIGINAL main checkout regardless of which worktree `git worktree add` was run from
 // (git worktrees never nest into their own family; there is one common dir per
-// repository), so isLinkedWorktreeOf's comparison against the intermediate worktree
-// never matches. Fails closed, same class as #113 one level deeper. Not chased: AEO's
-// own concurrency model never produces it -- sprint worktrees are cut from the main
-// checkout only, and operation workers get no worktree at all.
+// repository), so isPathIntoHarness's worktree discriminator, comparing against the
+// intermediate worktree, never matches. Fails closed, same class as #113 one level
+// deeper. Not chased: AEO's own concurrency model never produces it -- sprint worktrees
+// are cut from the main checkout only, and operation workers get no worktree at all.
 //
 // RESOLUTION ORDER, DIFFERENT FROM lib.mjs's resolveWorktree ON PURPOSE. Every other
 // Phase 1 gate resolves the directory a *command* operates in (resolveOperationDir):
@@ -100,56 +64,22 @@
 // existing ancestor directory (the file, and its parent, may not exist yet), and take
 // THAT directory's git toplevel.
 
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  HARNESS_DIRNAME,
   block,
-  gitCommonDir,
-  gitToplevel,
   isAnyAeoRole,
-  isPathInside,
+  isPathIntoHarness,
   normalizeHookPath,
   runGate,
   toolFilePath,
 } from './lib.mjs';
 
-const HARNESS_DIRNAME = '.claude';
-
 // The tools that write a file, and must match hooks.json's matcher for this gate. A
 // matcher wider than this set is worse than a narrow one: it fires the gate for a tool
 // the gate then ignores, which reads as covered and is not.
 const FENCED_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-
-/**
- * True when `dirPath`'s own basename is `.claude`, a whole path segment, not a
- * substring anywhere in the path (V-12). Case-insensitive on Windows, where the
- * filesystem is; a real distinction on a case-sensitive host.
- */
-function isHarnessNamed(dirPath) {
-  const base = path.basename(dirPath);
-  return process.platform === 'win32' ? base.toLowerCase() === HARNESS_DIRNAME : base === HARNESS_DIRNAME;
-}
-
-/** True when any whole segment of `p` is `.claude`. Same segment rule, applied along. */
-function hasHarnessSegment(p) {
-  return path.resolve(p).split(/[\\/]+/).some(isHarnessNamed);
-}
-
-/**
- * True when `inner` is a linked worktree of `outer` -- an ordinary checkout of the SAME
- * project, not a second repository that happens to live under it (#113). A linked
- * worktree's `--git-common-dir` resolves to the MAIN checkout's `.git`; a genuinely
- * separate repository's resolves to its own, which is never `outer`'s. `gitCommonDir`
- * returns null on any failure (not a repo, git too old for `--path-format`), and that
- * reads as "not proven a worktree", the same fail-closed direction the escalation loop
- * already takes when `outer` or containment can't be established.
- */
-function isLinkedWorktreeOf(inner, outer) {
-  const common = gitCommonDir(inner);
-  if (!common) return false;
-  return path.resolve(common) === path.resolve(outer, '.git');
-}
 
 /**
  * The target path, resolved to absolute. A relative `file_path` resolves against
@@ -168,23 +98,6 @@ function resolveFullPath(filePath, payload) {
   const cwd = typeof payload?.cwd === 'string' ? normalizeHookPath(payload.cwd.trim()) : '';
   if (cwd && path.isAbsolute(cwd)) return path.resolve(cwd, normalized);
   return path.resolve(normalized);
-}
-
-/**
- * The nearest ancestor of `dir` that exists on disk, or null when none does (the walk
- * reaches a filesystem root that itself does not exist, which does not happen on a
- * real filesystem but is not assumed away). The target file, and its parent directory,
- * may not exist yet: Write creates new files and new directories under an existing
- * project.
- */
-function nearestExistingAncestor(dir) {
-  let probe = dir;
-  while (probe && !existsSync(probe)) {
-    const parent = path.dirname(probe);
-    if (parent === probe) return null;
-    probe = parent;
-  }
-  return probe || null;
 }
 
 const FENCE_REASON =
@@ -207,64 +120,15 @@ await runGate({
     if (named === null) return;
 
     const full = resolveFullPath(named, payload);
-    const ancestor = nearestExistingAncestor(path.dirname(full));
-    const toplevel = ancestor ? gitToplevel(ancestor) : null;
+    const hit = isPathIntoHarness(full);
+    if (hit === null) return;
 
-    // NO WORKTREE, AND A DELIBERATE DIVERGENCE FROM THE POWERSHELL ORIGINAL, WHICH
-    // BLOCKED HERE. Blocking contradicts the allow-by-default posture stated above, and
-    // it blocks a role's first write to the scratch directory this environment tells
-    // every agent to use. What the original was really buying is worth keeping: on a
-    // machine where `$HOME` is not a repository, `~/.claude/settings.json` has no
-    // toplevel and must still be fenced. So the fence runs with no root to be relative
-    // to: a whole-segment `.claude` test (V-12) over the absolute path.
-    if (!toplevel) {
-      if (hasHarnessSegment(full)) block(`${FENCE_REASON} (tried: ${full}, outside any git worktree).`);
-      return;
-    }
-
-    // The harness-root check fires independent of where under a root the target sits,
-    // because if a root itself is `.claude/`, that whole worktree IS the harness config
-    // (V-11). Otherwise, ordinary containment: isPathInside is the whole-segment test
-    // (V-12), so a sibling like `.claude-evil/` or a trailing separator on the harness
-    // path do not fool it either way. Both then re-run against each enclosing root.
-    let root = path.resolve(toplevel);
-    // The root the loop escalated FROM, so the worktree discriminator has something to
-    // check the NEXT root against. Null on the first iteration on purpose: the target's
-    // own toplevel has not escalated from anything, so its own `.claude/` containment
-    // below is the ordinary, unconditional fence (the worktree's own harness directory
-    // case), never the worktree bypass.
-    let child = null;
-    for (;;) {
-      if (isHarnessNamed(root)) {
-        const rel = path.relative(root, full).split(path.sep).join('/');
-        block(`${FENCE_REASON} (tried: ${rel}).`);
-      }
-      if (isPathInside(path.join(root, HARNESS_DIRNAME), full)) {
-        // Case #3 (#113): `child` is a linked worktree of THIS root, so containment
-        // here only holds because the worktree happens to be parked under
-        // root/.claude/ -- the write itself is ordinary project content of `child`'s
-        // own checkout, not harness config of `root`'s. That bypasses THIS level's
-        // block only: it must not return out of the loop, because an outer root
-        // beyond `root` can still be a genuine vendored-repo case (#2) that a bare
-        // `return` here would silently skip -- a hole, not a narrowing. So the loop
-        // falls through to the escalation step below exactly as it would if this
-        // level had found no containment at all.
-        const bypassed = child && isLinkedWorktreeOf(child, root);
-        if (!bypassed) {
-          const rel = path.relative(root, full).split(path.sep).join('/');
-          block(`${FENCE_REASON} (tried: ${rel}).`);
-        }
-      }
-      if (!hasHarnessSegment(root)) return; // no outer root can change either answer
-      const parent = path.dirname(root);
-      if (parent === root) return; // filesystem root
-      const outer = gitToplevel(parent);
-      // isPathInside also guarantees termination: `outer` contains `parent`, so it is
-      // strictly shorter than `root`. A git answer that is not an ancestor of the
-      // directory it was asked about (a resolved symlink) stops the walk instead.
-      if (!outer || !isPathInside(outer, parent)) return;
-      child = root;
-      root = path.resolve(outer);
-    }
+    // hit.root is null exactly when no git worktree contains `full` at all -- the
+    // machine-where-$HOME-is-not-a-repository case isPathIntoHarness's own header
+    // describes -- and that message shape is path-guard's own, not shared: it names the
+    // absolute path and says so, rather than a path relative to a root that doesn't
+    // exist here.
+    if (hit.root === null) block(`${FENCE_REASON} (tried: ${hit.rel}, outside any git worktree).`);
+    block(`${FENCE_REASON} (tried: ${hit.rel}).`);
   },
 });

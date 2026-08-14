@@ -80,7 +80,8 @@ function scriptOf(hook) {
   return null;
 }
 
-const isGateScript = (rel) => rel !== null && /\/(commit-gate|block-merge|review-jail|path-guard|sandbox-guard)\.mjs$/.test(`/${rel}`);
+const isGateScript = (rel) =>
+  rel !== null && /\/(commit-gate|block-merge|review-jail|path-guard|redirect-guard|sandbox-guard)\.mjs$/.test(`/${rel}`);
 
 /** A scratch plugin root with this real hooks.json plus a stub for every script it names. */
 function makePassingPluginRoot() {
@@ -293,16 +294,40 @@ describe('matchers', () => {
     }
   });
 
-  test('no shell tool reaches a gate that only the file-tool fence protects', () => {
+  test('no shell tool reaches path-guard directly; redirect-guard covers that surface instead', () => {
     // path-guard is deliberately NOT widened: a shell writes through a redirect, which
-    // path-guard cannot see whatever its matcher says. That gap is D22's carried finding
-    // and belongs to the segmenter, not here. This test pins the decision so the next
-    // reader does not "fix" the matcher and believe the hole closed.
+    // path-guard cannot see whatever its matcher says. redirect-guard.mjs (#116) closes
+    // that gap on its own matcher, reusing lib.mjs's isPathIntoHarness rather than
+    // path-guard gaining a second job. This test pins the decision so the next reader
+    // does not "fix" path-guard's matcher and duplicate the fence.
     const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('path-guard.mjs')));
     assert.ok(group, 'expected a PreToolUse group for path-guard.mjs');
     for (const tool of SHELL_TOOLS) {
-      assert.ok(!toolMatches(group.matcher, tool), `path-guard now matches ${tool}; see D22 before widening it`);
+      assert.ok(!toolMatches(group.matcher, tool), `path-guard now matches ${tool}; redirect-guard should cover this instead`);
     }
+
+    const redirectGroup = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('redirect-guard.mjs')));
+    assert.ok(redirectGroup, 'expected a PreToolUse group for redirect-guard.mjs');
+    for (const tool of SHELL_TOOLS) {
+      assert.ok(toolMatches(redirectGroup.matcher, tool), `redirect-guard does not match ${tool}`);
+    }
+  });
+
+  test('redirect-guard is ordered before commit-gate (a stated intent, not a measured saving)', () => {
+    // The three gates on this matcher block on an order-independent union: any one of
+    // them refusing is enough. Ordering redirect-guard first cannot change WHETHER a
+    // command is refused, only WHICH message a role sees first when more than one gate
+    // would have refused it (redirect-guard's own header says as much, and does not claim
+    // a measured cost saving -- this repo's principle is measure, don't speculate, and
+    // nothing here times it). This test can only assert array position, which is all the
+    // intent claims.
+    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('redirect-guard.mjs')));
+    assert.ok(group, 'expected a PreToolUse group for redirect-guard.mjs');
+    const names = group.hooks.map((h) => scriptOf(h));
+    const redirectIdx = names.findIndex((n) => n?.endsWith('redirect-guard.mjs'));
+    const commitIdx = names.findIndex((n) => n?.endsWith('commit-gate.mjs'));
+    assert.ok(redirectIdx !== -1 && commitIdx !== -1);
+    assert.ok(redirectIdx < commitIdx, 'redirect-guard must be ordered before commit-gate in its hooks array');
   });
 
   test('the forge-tool matcher matches D14\'s namespace-agnostic pattern, not one literal server name', () => {
@@ -377,6 +402,12 @@ describe('timeouts', () => {
     // The jail reads a payload and compares two paths. It spawns nothing, so there is
     // nothing for a long timeout to protect.
     assert.equal(timeoutOf('review-jail.mjs'), 10);
+  });
+
+  test('redirect-guard declares the same short timeout as path-guard', () => {
+    // Parses a string and resolves a handful of git toplevels; no test suite, no long
+    // subprocess, same cost profile as path-guard's own 10s.
+    assert.equal(timeoutOf('redirect-guard.mjs'), 10);
   });
 
   test('block-merge declares no timeout override', () => {

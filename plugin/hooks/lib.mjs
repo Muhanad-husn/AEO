@@ -592,12 +592,16 @@ function scanShell(command) {
 /**
  * The command split into the segments the shell will execute as separate commands.
  *
- * Each segment carries every word it contains, the `NAME=value` assignments in its leading
- * position, the program it runs, that program's arguments, and the operator that follows
- * it. `error` is non-null when the command could not be read; `segments` is then empty and
- * the caller decides, which for a fail-closed gate means blocking.
+ * Each segment carries every word it contains, the redirection destinations among them
+ * (`redirects`, added for #116: `printf x > .claude/y` and `printf x 2>> .claude/y` both
+ * report `redirects: ['.claude/y']`, in the order they appear, fd-duplication forms like
+ * `2>&1` excluded because they name a file descriptor, not a path), the `NAME=value`
+ * assignments in its leading position, the program it runs, that program's arguments, and
+ * the operator that follows it. `error` is non-null when the command could not be read;
+ * `segments` is then empty and the caller decides, which for a fail-closed gate means
+ * blocking.
  *
- * @returns {{segments: Array<{tokens: string[], assignments: string[], program: string|null, args: string[], followedBy: string}>, error: string|null}}
+ * @returns {{segments: Array<{tokens: string[], redirects: string[], assignments: string[], program: string|null, args: string[], followedBy: string}>, error: string|null}}
  */
 export function commandSegments(command) {
   if (typeof command !== 'string' || command.trim() === '') return { segments: [], error: null };
@@ -612,16 +616,16 @@ export function commandSegments(command) {
   }
 
   const segments = [];
-  let current = { tokens: [], assignments: [], program: null, args: [], followedBy: '' };
+  let current = { tokens: [], redirects: [], assignments: [], program: null, args: [], followedBy: '' };
   for (const item of items) {
     if (item.op !== undefined) {
       current.followedBy = item.op;
       segments.push(current);
-      current = { tokens: [], assignments: [], program: null, args: [], followedBy: '' };
+      current = { tokens: [], redirects: [], assignments: [], program: null, args: [], followedBy: '' };
       continue;
     }
     current.tokens.push(item.word);
-    if (item.target) continue; // a redirection destination runs nothing and assigns nothing
+    if (item.target) { current.redirects.push(item.word); continue; } // runs nothing, assigns nothing
     if (NOT_A_PROGRAM.has(item.word)) continue;
     if (current.program !== null) current.args.push(item.word);
     else if (ASSIGNMENT.test(item.word)) current.assignments.push(item.word);
@@ -871,6 +875,135 @@ export function gitCommonDir(dir) {
  */
 export function currentBranch(dir) {
   return git(dir, 'rev-parse', '--abbrev-ref', 'HEAD');
+}
+
+// ---------------------------------------------------------------------------
+// The harness fence: is a path inside a project's own .claude/? (#116)
+// ---------------------------------------------------------------------------
+//
+// Shared by path-guard (Edit/Write/MultiEdit/NotebookEdit) and redirect-guard (Bash/
+// PowerShell write targets), so the V-11/#113 escalation walk lives in exactly one
+// place. #113 found a real hole in an EARLIER version of this walk: a bypass that
+// returned out of the whole loop dropped every fence above it, not only the level it
+// applied to. A second, hand-copied version of the loop is exactly how that bug would
+// come back a level deeper. Every gate that needs "does this path sit inside a
+// project's harness config" calls isPathIntoHarness; none re-derives it.
+
+/** The directory name every AEO gate fences. */
+export const HARNESS_DIRNAME = '.claude';
+
+/**
+ * True when `dirPath`'s own basename is `.claude`, a whole path segment, not a
+ * substring anywhere in the path (V-12). Case-insensitive on Windows, where the
+ * filesystem is; a real distinction on a case-sensitive host.
+ */
+export function isHarnessNamed(dirPath) {
+  const base = path.basename(dirPath);
+  return process.platform === 'win32' ? base.toLowerCase() === HARNESS_DIRNAME : base === HARNESS_DIRNAME;
+}
+
+/** True when any whole segment of `p` is `.claude`. Same segment rule, applied along the path. */
+export function hasHarnessSegment(p) {
+  return path.resolve(p).split(/[\\/]+/).some(isHarnessNamed);
+}
+
+/**
+ * The nearest ancestor of `dir` that exists on disk, or null when none does (the walk
+ * reaches a filesystem root that itself does not exist, which does not happen on a real
+ * filesystem but is not assumed away). The target file, and its parent directory, may
+ * not exist yet.
+ */
+export function nearestExistingAncestor(dir) {
+  let probe = dir;
+  while (probe && !existsSync(probe)) {
+    const parent = path.dirname(probe);
+    if (parent === probe) return null;
+    probe = parent;
+  }
+  return probe || null;
+}
+
+/**
+ * True when `inner` is a linked worktree of `outer` -- an ordinary checkout of the SAME
+ * project, not a second repository that happens to live under it (#113). A linked
+ * worktree's `--git-common-dir` resolves to the MAIN checkout's `.git`; a genuinely
+ * separate repository's resolves to its own, which is never `outer`'s. `gitCommonDir`
+ * returns null on any failure (not a repo, git too old for `--path-format`), and that
+ * reads as "not proven a worktree", the same fail-closed direction the escalation walk
+ * already takes when `outer` or containment can't be established.
+ */
+export function isLinkedWorktreeOf(inner, outer) {
+  const common = gitCommonDir(inner);
+  if (!common) return false;
+  return path.resolve(common) === path.resolve(outer, '.git');
+}
+
+/**
+ * Whether an already-resolved absolute path `full` sits inside a project's own harness
+ * config.
+ *
+ * Returns null when it does not. Returns `{root, rel}` when it does: `root` is the
+ * repository root whose `.claude/` fenced it (`null` when `full` is not inside any git
+ * worktree at all -- see below), and `rel` is `full`'s path relative to `root`, forward
+ * slashes, for a message (or `full` itself, unrooted, when `root` is null). The return
+ * is truthy exactly when the path is fenced, so `isPathIntoHarness(full)` alone reads as
+ * the boolean most callers want; a caller that has to say WHERE the fence fired -- both
+ * path-guard and redirect-guard do, in their block message -- reads `root`/`rel` off the
+ * same call instead of re-walking to find out.
+ *
+ * Two cases, ported from path-guard's own walk (its header comment has the long form of
+ * V-11 and #113; this is that walk, unchanged in substance, with the block() calls
+ * turned into return values):
+ *
+ * 1. No git worktree contains `full` at all. There is no root to be relative to, so the
+ *    fence runs the same whole-segment `.claude` test (V-12) over the absolute path:
+ *    `~/.claude/settings.json` on a machine where `$HOME` is not a repository is still
+ *    fenced this way.
+ * 2. `full` sits inside a git worktree. The root-named-.claude case (V-11: `.claude/`
+ *    made its own repository, so `rev-parse --show-toplevel` resolves to the harness
+ *    directory itself) and ordinary containment (`<root>/.claude` contains `full`) are
+ *    both checked at each root, re-run against every enclosing root in turn, with the
+ *    #113 linked-worktree discriminator skipping ONLY that level's containment block --
+ *    never returning out of the loop, so a genuine vendored repository one level further
+ *    out still gets its own fence.
+ */
+export function isPathIntoHarness(full) {
+  const ancestor = nearestExistingAncestor(path.dirname(full));
+  const toplevel = ancestor ? gitToplevel(ancestor) : null;
+
+  if (!toplevel) {
+    return hasHarnessSegment(full) ? { root: null, rel: full } : null;
+  }
+
+  let root = path.resolve(toplevel);
+  // The root the loop escalated FROM, so the worktree discriminator has something to
+  // check the NEXT root against. Null on the first iteration: the target's own toplevel
+  // has not escalated from anything, so its own `.claude/` containment below is the
+  // ordinary, unconditional fence, never the worktree bypass.
+  let child = null;
+  for (;;) {
+    if (isHarnessNamed(root)) return { root, rel: relativeToHarnessRoot(root, full) };
+    if (isPathInside(path.join(root, HARNESS_DIRNAME), full)) {
+      // #113: `child` is a linked worktree of THIS root, so containment here only holds
+      // because the worktree happens to be parked under root/.claude/. That bypasses
+      // THIS level's block only -- fall through to escalation exactly as if this level
+      // had found no containment, so an outer genuinely-vendored repository (V-11) can
+      // still fire its own fence.
+      const bypassed = child && isLinkedWorktreeOf(child, root);
+      if (!bypassed) return { root, rel: relativeToHarnessRoot(root, full) };
+    }
+    if (!hasHarnessSegment(root)) return null; // no outer root can change either answer
+    const parent = path.dirname(root);
+    if (parent === root) return null; // filesystem root
+    const outer = gitToplevel(parent);
+    if (!outer || !isPathInside(outer, parent)) return null;
+    child = root;
+    root = path.resolve(outer);
+  }
+}
+
+function relativeToHarnessRoot(root, full) {
+  return path.relative(root, full).split(path.sep).join('/');
 }
 
 // Cached per process, which is per hook invocation, not per session (D14). Keyed by
