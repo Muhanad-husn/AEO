@@ -938,18 +938,52 @@ describe('a command the shell scanner cannot read (#119)', () => {
     assert.equal(result.status, 2, result.stderr);
     assert.match(result.stderr, /could not be read as a sequence of shell commands/);
     assert.doesNotMatch(result.stderr, /no direct commits on main/);
+    // The remedy sentence is the actionable half of the message and the workaround
+    // actually used in the wild (#119); a message that named the failure but not the fix
+    // would pass every other assertion here while leaving a reader stuck.
+    assert.match(result.stderr, /git commit -F/);
   });
 
   // The direction that must not regress in the other sense: failing to parse must never
-  // become quieter than parsing correctly. A genuinely unparseable line still blocks even
-  // when the directory it would have fallen back to is not the protected branch, so an
-  // agent cannot dodge the gate by making its own command line unreadable.
-  test('an unparseable commit line still blocks even off the protected branch', () => {
+  // become quieter than parsing correctly. This constructs the actual dodge the check has
+  // to close, not a weaker stand-in for it: a feature-branch caller prefixes an
+  // unparseable line with a `cd` into a repository that really is on the protected
+  // branch. Without the parseError check firing ahead of resolveWorktree, the walk would
+  // fall through to payload.cwd -- the feature-branch checkout -- read ITS branch instead,
+  // find it is not the protected one, and allow a commit that actually lands on main. A
+  // command with no `cd` at all would not exercise this: it would still block today (for
+  // a missing test record, not a parse failure), so it cannot tell a reorder of the check
+  // apart from the check working.
+  test('an unparseable commit line still blocks even when the hidden cd target is the protected branch', () => {
+    const mainRepo = makeRepo({ branch: 'main', defaultBranch: 'main' });
     const elsewhere = makeRepo({ branch: 'feat/orchestrator-side', defaultBranch: 'main' });
-    const command = `git commit -m "first" doesn't "second"`;
+    const command = `cd ${mainRepo.replace(/\\/g, '/')} && git commit -m "first" doesn't "second"`;
     const result = runGate({ cwd: elsewhere, tool_name: 'Bash', tool_input: { command } });
     assert.equal(result.status, 2, result.stderr);
     assert.match(result.stderr, /could not be read as a sequence of shell commands/);
+  });
+
+  // Finding 1 from review, measured directly rather than left as an open question: a
+  // heredoc -- how an agent writes a genuine multi-line commit body -- is not
+  // unparseable. commandSegments reads and skips a heredoc's data lines (skipHeredoc in
+  // lib.mjs) precisely so they are never read as command syntax, and the same skip means
+  // this form parses cleanly. The refusal surface the fix adds is narrower than "any
+  // commit carrying a body": it is the lines the scanner genuinely cannot tokenise.
+  test('a commit body written as a heredoc parses cleanly and never reaches the new check', () => {
+    const dir = makeRepo({
+      branch: 'feat/heredoc-119',
+      defaultBranch: 'main',
+      change: { 'README.md': '# x' },
+    });
+    const command = [
+      'git commit -F m.txt <<EOF',
+      'first line',
+      "a line with \"quotes\" and it's an apostrophe too",
+      'EOF',
+    ].join('\n');
+    const result = runGate(commitPayload(dir, command));
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stderr, /could not be read as a sequence of shell commands/);
   });
 
   // A genuine commit on the default branch is still refused -- the fix narrows the
