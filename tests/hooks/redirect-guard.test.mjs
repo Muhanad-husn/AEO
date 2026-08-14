@@ -378,6 +378,22 @@ describe('write-through-a-tool routes', () => {
         assertAllowed(runHook(pwsh("Set-Content -Value y out.txt", { cwd: repo })));
         assertAllowed(runHook(pwsh('Out-File -Encoding utf8 out.txt', { cwd: repo })));
       });
+
+      // Review finding 7: the -Value carve-out itself was the one part of the widening no
+      // test could fail on -- deleting nonFlagWordsExcludingValueArg's skip left every
+      // existing test green, because in each of them the skipped word ('y') was never
+      // .claude-shaped anyway. These two pin the carve-out's actual job: -Value's own
+      // ARGUMENT contains a .claude-shaped string and must not be misread as the target,
+      // which is a false-refusal risk (decision 1's whole concern), not a false-allow one.
+      test("-Value's own argument naming .claude is not mistaken for the write target (the real path is elsewhere)", () => {
+        const repo = makeRepo();
+        assertAllowed(runHook(pwsh('Set-Content out.txt -Value .claude/settings.json', { cwd: repo })));
+      });
+
+      test('the same carve-out on New-Item, the cmdlet the carve-out comment used to forget', () => {
+        const repo = makeRepo();
+        assertAllowed(runHook(pwsh('New-Item -Value .claude/x out.txt', { cwd: repo })));
+      });
     });
   });
 

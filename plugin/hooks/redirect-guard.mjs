@@ -100,11 +100,18 @@
 // name their destination through a flag's value rather than the last positional word;
 // this gate reads only the last-positional form. The same class of miss runs the other
 // way too, for `cp`/`mv`/`install` and for `Copy-Item`/`Move-Item` alike: a value-taking
-// flag placed AFTER the destination (`cp a.txt .claude/b -m 644`, `Copy-Item a.txt
-// .claude\b -Filter *.txt`) makes that flag's OWN value look like the new last
-// positional word, hiding the real destination one word earlier. Both directions need
-// the same fix -- a table of which flags take a value, per program -- which is the
-// unbounded per-program surface this gate's scope declines to build.
+// flag placed AFTER the destination (`install a.txt .claude/b -m 644`, `cp a.txt
+// .claude/b -S .bak`, `Copy-Item a.txt .claude\b -Filter *.txt` -- verified live, exits
+// 0) makes that flag's OWN value look like the new last positional word, hiding the real
+// destination one word earlier.
+//
+// Closing either direction needs a table of which flags take a value, per program. The
+// two halves decline for different reasons, not one shared one (review, #116, finding
+// 7): on the Unix side the program can be anything on PATH, so the table is genuinely
+// unbounded. On the PowerShell side it is exactly two named cmdlets with a published,
+// closed parameter set -- bounded in principle -- and the decline there is plain cost:
+// keeping that table in sync with two cmdlets' own documented parameters is upkeep this
+// gate's acceptance bar does not pay for, not a surface with no edge to find.
 //
 // KNOWN LIMIT: PowerShell's own abbreviated-parameter matching (`-Pat` for `-Path`,
 // unambiguous prefixes) is not read; only the full flag spelling is. Comma-separated
@@ -209,9 +216,16 @@ const PS_PATH_CMDLETS = new Set(['set-content', 'add-content', 'out-file', 'tee-
 const PS_PATH_FLAG = /^-(?:path|filepath|literalpath)(?::(.*))?$/i;
 const PS_COPY_MOVE_CMDLETS = new Set(['copy-item', 'move-item']);
 const PS_DESTINATION_FLAG = /^-(?:destination)(?::(.*))?$/i;
-// The one PS_PATH_CMDLETS parameter whose argument is content, not a path: `-Value`
-// (Set-Content/Add-Content). Everything else in that set takes a path or a flag with no
-// argument, so this is the sole exclusion the positional fallback below needs.
+// `-Value` (Set-Content/Add-Content/New-Item) is the one PS_PATH_CMDLETS parameter whose
+// argument is free-form content likely to be path-shaped, so it is the sole exclusion the
+// positional fallback below needs (review, #116, finding 7's comment correction). This is
+// NOT a claim that every other parameter in the set is pathless: `-ItemType`, `-Encoding`,
+// `-Name`, `-Width`, `-Stream`, `-Filter`, `-InputObject` and `-Variable` all take
+// non-path arguments too, and none of them is excluded. They cost nothing to include as
+// candidates anyway, because their real values (`File`, `utf8`, ...) are short tokens that
+// resolve to unfenced paths; `-Value`'s content is excluded because it is exactly the
+// shape a false refusal would come from -- arbitrary text a role writes, which can easily
+// happen to look like a path.
 const PS_VALUE_FLAG_BARE = /^-value$/i;
 
 const nonFlagWords = (args) => args.filter((a) => a !== '' && !a.startsWith('-'));
