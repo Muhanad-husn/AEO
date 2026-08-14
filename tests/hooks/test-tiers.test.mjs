@@ -1,11 +1,13 @@
-// Tests for the two-tier split of this repo's own battery (D17).
+// Tests for the two-tier split of this repo's own battery (D17, amended by D30).
 //
-//   npm test                # the fast tier, which is what the commit gate runs
+//   npm test                # the fast tier
 //   npm run test:integration
 //   npm run test:all        # both, in that order; the CI entry point
 //
-// D17 puts the process-level gate suites behind their own script so the commit gate
-// stays a fast signal. Both tiers name their files explicitly, because `node --test`
+// D17 put the process-level gate suites behind their own script so the fast tier stayed
+// a fast signal for whoever ran it locally before every commit — the commit gate, while
+// it existed. That local trigger is deleted (D30); the split and its reasoning stand.
+// Both tiers name their files explicitly, because `node --test`
 // can include by glob but cannot exclude, and because a rename-everything scheme
 // (`*.gate.test.mjs`) would be churn for the same result.
 //
@@ -96,7 +98,7 @@ describe('the two Phase 6 artifacts keep a smoke check in the fast tier (D26)', 
       assert.ok(
         fast.includes(smoke),
         `${smoke} is not in the fast tier. It exists because ${full} is too expensive to run ` +
-          'on every commit, so moving it out leaves the commit gate blind to this artifact again.',
+          'on every commit, so moving it out leaves the fast tier blind to this artifact again.',
       );
       assert.ok(
         integration.includes(full),
@@ -107,18 +109,18 @@ describe('the two Phase 6 artifacts keep a smoke check in the fast tier (D26)', 
   }
 });
 
-describe('the commit gate resolves the fast tier', () => {
-  // The whole point of D17 turns on which command the gate runs on this repository. It
-  // runs whatever aeo-tests.json records (D29), so the fast tier has to BE `npm test`
-  // rather than sit beside it under another name, and the record has to say so. This
-  // asserts that against the real repo root and the real resolver, not against the
-  // record's text.
-  test('this repository records npm test, and that is what the gate would run', () => {
+describe('this repository\'s own record resolves to the fast tier', () => {
+  // aeo-tests.json is what sandbox-guard reads to recognise this repository's own suite
+  // during a live sentinel (D29, amended by D30) — it names no gate any more, but the
+  // fast tier still has to BE `npm test` rather than sit beside it under another name, and
+  // the record has to say so. This asserts that against the real repo root and the real
+  // resolver, not against the record's text.
+  test('this repository records npm test, and that is what stack.mjs resolves', () => {
     const plan = resolveTestPlan({ toplevel: repoRoot, files: ['plugin/hooks/lib.mjs'] });
     assert.deepEqual(
       plan.missing,
       [],
-      'no aeo-tests.json resolves at this repository root, so AEO\'s own commit gate blocks every commit here',
+      'no aeo-tests.json resolves at this repository root, so sandbox-guard cannot recognise this repo\'s own suite',
     );
     assert.deepEqual(plan.units.map((u) => u.command), ['npm test']);
     assert.equal(plan.units[0].root, repoRoot);

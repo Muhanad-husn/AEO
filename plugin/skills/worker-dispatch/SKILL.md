@@ -121,21 +121,23 @@ is a planning failure surfacing at the safest possible moment, and merging two
 proposals by hand in the middle of a fan-out produces a change nobody specified
 and nobody reviewed. Re-divide the work and run it again.
 
-## Gates apply once, at the commit
+## The test suite runs once, before the commit
 
-The workers write; the single commit at the end passes the same commit gate
-every other change does, and the test suite runs once for the whole run.
+The workers write; run the project's suite once for the whole batch, by hand,
+before the single commit at the end — no local gate runs it for you any more
+([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). CI's required status check is what
+enforces the suite reached green once the commit is pushed.
 
-That commit is subject to the run-in-progress sentinel like any other. Because
-the commit gate runs the test suite, committing executes code, and a commit
-fired alongside a live long-running job is what killed a four-hour pipeline four
-times over. **A batch of mechanical work is not an exception to that rule.**
-
-So a worker run started while a sentinel is live behaves this way: the workers
-are dispatched and write into their scopes normally, because writing files
-executes nothing, and then the commit at the end is blocked until the long job
-finishes and its sentinel clears. The work completes and waits. Check the
-sentinel before you start a fan-out you need committed promptly:
+No local gate blocks that commit against a live run-in-progress sentinel
+either. That protection existed because the commit gate itself ran the test
+suite as part of every commit, and a suite fired alongside a live
+long-running job is what killed a four-hour pipeline four times over; deleting
+the gate removed the thing the sentinel was guarding the commit path against,
+not just the guard. **What the sentinel still stops** is a worker's own task
+running the project's declared suite directly through Bash — `sandbox-guard`
+refuses that while a sentinel is live, the same as it would for any session.
+Check the sentinel before you start a fan-out whose task runs the suite
+itself:
 
     node "${CLAUDE_PLUGIN_ROOT}/scripts/run-sentinel.mjs" list
 

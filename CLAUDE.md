@@ -167,6 +167,14 @@ miss and expensive to discover late:
 - The gates are **Node**, not Python — `python3` on this machine is a Microsoft Store
   alias stub, and a hook that cannot start fails *open* ([D8](docs/DECISIONS.md)).
 
+**One post-ship subtraction, not a phase.** `commit-gate.mjs` is deleted, and
+`block-merge.mjs` no longer resolves a push's destination against the repository's
+default branch. Both re-derived a check GitHub's own branch protection already makes
+server-side, and getting that re-derivation's directory resolution wrong cost two
+defects (#119, #121). [D30](docs/DECISIONS.md) has the boundary rule, the table of what
+was removed against the GitHub setting that covers it, and what a project now has to
+configure branch protection to get instead of a local gate.
+
 ## How the work is done
 
 **Every artifact is authored by a dispatched subagent with a model matched to the

@@ -16,9 +16,13 @@
 //   - A conftest fixture that snapshotted and restored a shared state directory. That
 //     was the mitigation which already existed; it addresses collision, not reach.
 //
-// Plus the fourth (L-02): because the commit gate runs the test suite, `git commit`
-// executes code, and four simultaneous external kills of a live four-hour pipeline were
-// traced to a concurrent session's commit gate firing the suite.
+// Plus the fourth (L-02): four simultaneous external kills of a live four-hour pipeline
+// were traced to a concurrent session running the project's suite over it. Rule 1 below
+// is what still guards that: it refuses a Bash invocation of the declared suite while a
+// sentinel is up, whoever types it. The commit gate this rule used to be backstopped by
+// is gone (D30) — it ran the suite as a side effect of every commit, which was the other
+// half of L-02's own hazard, so deleting it removes that half of the risk rather than
+// reopening it.
 //
 // REFUSE, NEVER WARN. Advice is what cost 19,000 documents. There is no override flag
 // and the absence of one is the point (L-05): an override is what you reach for at 2am,
@@ -49,10 +53,11 @@
 //
 // The sentinel rule does need to recognise a suite, and it takes that from the project's
 // own recorded test command (stack.mjs) rather than from a table of its own. A project
-// with no record declares no suite here, and the commit gate blocks such a commit anyway
-// before anything runs. Its recognition is deliberately generous
-// and its misses are backstopped by the commit gate, which refuses to cross a live
-// sentinel with no recognition involved at all.
+// with no record declares no suite here, so a live run is protected only for a project
+// that has named its own test command; recognition is deliberately generous within that.
+// A command shape the recognition misses (D22's known miss: `node --test`, when the
+// record says `npm test`) is a gap this rule alone carries (D30): nothing else backstops
+// it now that the commit gate is gone.
 //
 // WHO IT APPLIES TO: everyone, the orchestrator included. There is no identity test in
 // this file. block-merge exempts the orchestrator because a founder-approved merge is a
@@ -217,9 +222,10 @@ function isOrderedSubsequence(tokens, wanted) {
  *
  * A KNOWN MISS, in the other direction: `node --test` is not recognised, and it is how
  * this project's own suite runs. The recorded command is `npm test`, and what that
- * expands to is the package manager's business, not this function's to guess. During
- * a live run a hand-typed `node --test` is not held; a commit that would run it is,
- * because the commit gate refuses to cross a live sentinel with no recognition involved.
+ * expands to is the package manager's business, not this function's to guess. During a
+ * live run a hand-typed `node --test` is not held by anything (D30): nothing runs a
+ * suite as a side effect of a commit any more, so there is no second check downstream of
+ * this one to catch what it misses.
  */
 export function invokesDeclaredSuite(command, declared) {
   const tokens = shellTokens(command);

@@ -1,14 +1,19 @@
 // AEO run-in-progress sentinel: the marker that says a long job is live.
 //
-// WHY THIS EXISTS (L-02). Every other gate blocks an action. The commit gate PERFORMS
-// one: it runs the project's test suite, so `git commit` executes code. Four
-// simultaneous external kills of a running four-hour pipeline were traced to a
-// concurrent session's commit gate firing the suite. The runbook states it bluntly:
-// while a corpus run is live, no test runs and no commits, from any session.
+// WHY THIS EXISTS (L-02). Four simultaneous external kills of a running four-hour
+// pipeline were traced to a concurrent session running the project's test suite over it.
+// The runbook states it bluntly: while a corpus run is live, no test runs, from any
+// session.
 //
 // A sentinel is how one session tells every other session that this machine is busy.
-// It is read by the commit gate and by the sandbox guard, and written by whoever starts
-// the long job (plugin/scripts/run-sentinel.mjs is the shipped writer).
+// It is read by the sandbox guard, and written by whoever starts the long job
+// (plugin/scripts/run-sentinel.mjs is the shipped writer).
+//
+// AN EARLIER VERSION WAS ALSO READ BY THE COMMIT GATE, which ran the suite as a side
+// effect of every commit and was itself half of L-02's hazard, not only a guard against
+// it. That gate is deleted (D30) — GitHub's branch protection covers the check it made
+// about the protected branch, and nothing runs a suite as a side effect of a commit any
+// more, so there is nothing left there for a live sentinel to guard against.
 //
 // WHERE IT LIVES (D12). `<repo toplevel>/.aeo/runs/`, in the project repo, gitignored.
 // It must be visible to every session and every worktree of that project, which rules

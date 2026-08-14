@@ -5,9 +5,10 @@
 // The scaffolder's real test is tests/skills/new-project-scaffold.test.mjs, which writes
 // the tree, runs git and spawns the emitted suite. That cost is why it lives in the
 // integration tier, and D26 says it stays there. The consequence D26 also records is that
-// a commit which breaks the scaffolder passes the commit gate, because the gate runs the
-// fast tier only. This file narrows that window at a price the gate can afford: it reads
-// one data file and asserts nothing that needs a process.
+// a commit which breaks the scaffolder still passes the fast tier, which is the only tier
+// that ran locally before every commit to this repo (D26, amended by D30). This file
+// narrows that window at a price the fast tier can afford: it reads one data file and
+// asserts nothing that needs a process.
 //
 // Two properties, both named by issue #96. That scaffold-plan.json parses at all, because
 // a manifest that does not parse takes every scaffold down with it and takes SKILL.md's

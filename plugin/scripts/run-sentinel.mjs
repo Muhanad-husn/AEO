@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 // Raise, clear and list run-in-progress sentinels.
 //
-// A sentinel says "a long job is live in this project". While one is up, the commit gate
-// refuses to commit and the sandbox guard refuses to run the project's test command,
-// from any session and any worktree. That is L-02: because the commit gate runs the
-// suite, `git commit` executes code, and four simultaneous external kills of a live
-// four-hour pipeline were traced to a concurrent session's commit gate firing tests.
+// A sentinel says "a long job is live in this project". While one is up, the sandbox
+// guard refuses a Bash invocation of the project's declared test command, from any
+// session and any worktree. That is L-02: four simultaneous external kills of a live
+// four-hour pipeline were traced to a concurrent session running the project's suite
+// over it. (An earlier version of this guarantee also lived in the commit gate, which
+// ran the suite as a side effect of every commit; that gate is deleted (D30), and with
+// it the half of L-02's hazard it was itself the cause of.)
 //
 //   node run-sentinel.mjs start <id> [--what "text"] [--pid <n>]
 //   node run-sentinel.mjs stop  <id>
@@ -28,7 +30,7 @@
 // AND THE RECORDED PID MUST BE ONE THE OPERATING SYSTEM CAN SEE, so `start` checks it
 // against the OS process table before writing anything. This is the only place a bad pid
 // can enter the system, and it is the only place cheap enough to refuse it outright: every
-// downstream reader (this script's own stale check, the commit gate, the monitor's CPU
+// downstream reader (this script's own stale check, the sandbox guard, the monitor's CPU
 // probe) instead has to treat "cannot resolve" and "resolved and gone" as the same fact,
 // because by the time they look the process may legitimately have exited. Raise time has
 // no such ambiguity — the process is supposed to be running right now. Under Git Bash /

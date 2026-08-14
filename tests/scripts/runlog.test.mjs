@@ -22,7 +22,7 @@
 // land in the worktree that called it (#36) and the sentinel must still resolve to the
 // main checkout (D12), and a change that quietly narrowed the second while fixing the
 // first would be the worse defect: sharing sentinels across worktrees is what stops one
-// actor's commit gate from running the suite alongside another actor's live job (L-02).
+// actor's sandbox guard from running the suite alongside another actor's live job (L-02).
 //
 // The last describe block forces a child process for every call in a full open -> record
 // -> close cycle. Most calls above it run in a worker thread, which is what makes the file
@@ -174,7 +174,7 @@ describe('open from a linked worktree', () => {
     assert.equal(
       projectAnchor(worktree),
       main,
-      'a linked worktree no longer shares the main checkout\'s sentinels, so one actor\'s commit gate can no longer see another actor\'s live run',
+      'a linked worktree no longer shares the main checkout\'s sentinels, so one actor\'s sandbox guard can no longer see another actor\'s live run',
     );
   });
 

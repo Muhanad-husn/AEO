@@ -29,8 +29,8 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
 ## Preconditions
 
 1. The slice is green locally — its acceptance test and the fast tier,
-   already established through `red-green-refactor` and the commit gate.
-   Never open a PR on red; if anything regressed, return there.
+   already established through `red-green-refactor`. Never open a PR on red;
+   if anything regressed, return there.
 2. CI exists (`.github/workflows/`, from `tdd-ci`). If missing, run that
    first.
 3. On the slice's feature branch (`feat/<feature-slug>/<NN>-<slice-slug>`),
@@ -119,8 +119,10 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    ```
 
    Never force-push.
-7. Open the PR against the repo's default branch, resolved from repository
-   evidence the same way the merge gate resolves it, never hardcoded ([D16](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)):
+7. Open the PR against the repo's default branch, resolved from repository evidence —
+   `git symbolic-ref --short refs/remotes/origin/HEAD` (strip the `origin/` prefix), or
+   `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name` — never hardcoded
+   as `main` ([D16](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)):
 
    ```
    gh pr create --base <default-branch> --head feat/<feature-slug>/<NN-slice-slug> --title "feat(<feature-slug>): <slice goal> [slice NN]" --body-file PR_BODY.md

@@ -15,7 +15,7 @@ first if you haven't this session — it's the authoritative rulebook; what
 follows is a summary. For detecting and running the project's test tooling
 across stacks, read
 `${CLAUDE_PLUGIN_ROOT}/skills/red-green-refactor/references/test-strategy.md`
-— it also carries the record the commit gate reads, which is where the command
+— it also carries the record `sandbox-guard` reads, which is where the command
 you settle on has to end up.
 
 ## Input
@@ -78,10 +78,11 @@ Repeat 6–11 until the acceptance test can pass.
     duplication between new and existing code, leaky abstractions, names.
     Re-run after each change.
 14. Commit in small, green-only Conventional commits:
-    `feat(<slug>): <goal> [slice NN]`. The commit gate runs the project's
-    fast tier on every commit; the full acceptance tree is CI's job, not a
-    step to repeat here. One test may stay red in the *uncommitted* working
-    tree as a cross-session resume marker.
+    `feat(<slug>): <goal> [slice NN]`. Run the project's fast tier yourself
+    before each one — no local gate runs it for you ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md));
+    the full acceptance tree is CI's job, not a step to repeat here. One test
+    may stay red in the *uncommitted* working tree as a cross-session resume
+    marker.
 15. Update the plan's Definition-of-Done boxes.
 
 ## Invariants

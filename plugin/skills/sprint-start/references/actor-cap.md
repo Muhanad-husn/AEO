@@ -38,7 +38,7 @@ reached its PR and stopped is finished, and its slot is free.
 
 ## What the cap is not
 
-It is not a limit on how much the machine can take. Four commit gates running a
+It is not a limit on how much the machine can take. Four builders running a
 test suite at the same time is a real cost, and it is a thing to measure rather
 than assume — but if that measurement ever argues for a different number, the
 argument goes to the founder, because the parameter is theirs. A lane does not

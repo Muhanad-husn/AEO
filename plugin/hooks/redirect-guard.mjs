@@ -12,12 +12,12 @@
 //
 // ORDERING IN hooks.json IS A STATED INTENT, NOT A MEASURED SAVING (review, #116). This
 // repository's own principle is measure, don't speculate, and nothing here times the
-// difference between running first and running after block-merge/commit-gate. The three
-// gates' refusals are order-independent -- any one of them blocking is enough to refuse
-// the call -- so the only thing being first actually changes is which message a role
-// sees when more than one gate would have refused the same command. Placed first on
-// that basis alone: the cheapest, most specific explanation, ahead of ones that would
-// otherwise fire (or spend a full test-suite run) for the same underlying mistake.
+// difference between running first and running after block-merge. The two gates'
+// refusals are order-independent -- either one blocking is enough to refuse the call --
+// so the only thing being first actually changes is which message a role sees when both
+// gates would have refused the same command. Placed first on that basis alone: the
+// cheapest, most specific explanation, ahead of the one that would otherwise fire for
+// the same underlying mistake.
 //
 // WHAT COUNTS AS "INSIDE THE HARNESS" IS NOT REDERIVED HERE. Once a target is resolved
 // to an absolute path, whether it sits inside a project's `.claude/` -- the V-11
@@ -47,8 +47,8 @@
 //     substitution): ALLOW, unless its raw text contains a literal `.claude` segment.
 //
 // WHY THE OTHER DIRECTION WAS REJECTED. This gate fires on every Bash or PowerShell call
-// every AEO role makes -- not once per commit like commit-gate, every call. Blocking
-// every unresolvable redirect would refuse a huge share of ordinary work: a builder
+// every AEO role makes, not on some narrower subset of them. Blocking every unresolvable
+// redirect would refuse a huge share of ordinary work: a builder
 // redirecting test output to a path held in a variable, or any line that happens to
 // carry a backtick for an unrelated reason. A gate that fires on legitimate work gets
 // switched off, which protects nothing. What this leaves open is a target hidden
@@ -123,9 +123,10 @@
 //
 // KNOWN LIMIT: one operating directory is resolved for the WHOLE command
 // (resolveOperationDir), not per segment. A command that `cd`s twice to two different
-// directories before its second write is judged against the first `cd` alone. Every
-// other Phase 1 gate that reads a command's directory makes the same simplification
-// (commit-gate, block-merge); this gate does not widen it.
+// directories before its second write is judged against the first `cd` alone.
+// sandbox-guard, the other gate that reads a command's directory, makes the same
+// simplification (D30 removed block-merge's own directory resolution entirely); this
+// gate does not widen it.
 
 import path from 'node:path';
 

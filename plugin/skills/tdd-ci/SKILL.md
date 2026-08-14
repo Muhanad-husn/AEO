@@ -20,10 +20,10 @@ than trusting a remembered one.
 
 ## Preconditions
 
-- The slice is green locally — its acceptance test and the commit gate's
-  fast tier, already established by `red-green-refactor`. Don't promote red
-  or unrun tests to CI; the full acceptance tree runs there for the first
-  time, not before.
+- The slice is green locally — its acceptance test and the fast tier,
+  already established by `red-green-refactor`. Don't promote red or unrun
+  tests to CI; the full acceptance tree runs there for the first time, not
+  before.
 - A GitHub remote exists (`git remote -v`). If not, tell the founder CI
   only takes effect once the repo is pushed — write the workflow anyway so
   it's ready.

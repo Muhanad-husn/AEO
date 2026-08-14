@@ -55,12 +55,13 @@ Bundled resource:
      entirely: do not write a second manifest over a project that has one.
 
    Either way you finish this step holding one command line: the thing that runs
-   this project's fast suite. That is what step 3 records and what the commit
-   gate will run on every commit from here on
-   ([D10](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). The gate never invents a command
-   and never falls back to one, so a project with no record blocks every commit
-   until the record exists. A gate that runs nothing and says OK is worse than no
-   gate.
+   this project's fast suite. That is what step 3 records
+   ([D10](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). No local gate runs it — CI's
+   required status check enforces that the suite reached green
+   ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)); `tdd-ci` writes that workflow on
+   the first slice. The record itself still matters: `sandbox-guard` reads it to
+   recognise this project's suite by name, so it can refuse running that suite
+   over a live long job.
 
 3. **Write the tree, in the plan's order.** Walk `scaffold-plan.json`'s `steps`
    array from the top, taking every step whose `stage` is 0, and create each path
@@ -82,14 +83,17 @@ Bundled resource:
    confirms you got it right, so write the smallest thing that could work and let
    the check tell you.
 
-   `aeo-tests.json` is the project's record of its own test command, and it is
-   the whole of what the commit gate reads. One key, `test`, holding a command
-   line rather than a list — a project that needs two suites writes
-   `npm test && pytest`. There is no directory field, because the record runs
-   where it sits; a mono-repo puts one record in each project directory and the
-   nearest one above a changed file is the one that runs. It is tracked in git
-   and it is deliberately not under `.claude/`, so that a builder who changes the
-   test setup can update it in the same slice.
+   `aeo-tests.json` is the project's record of its own test command, and
+   `sandbox-guard` is what reads it now — to recognise the declared suite by
+   name so it can refuse running it over a live long job
+   ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). One key, `test`, holding a
+   command line rather than a list — a project that needs two suites writes
+   `npm test && pytest`. There is no directory field, because the record
+   belongs where it sits; a mono-repo puts one record in each project
+   directory and the nearest one above a changed file is the one that
+   resolves. It is tracked in git and it is deliberately not under `.claude/`,
+   so that a builder who changes the test setup can update it in the same
+   slice.
 
    The two steps marked `authored` are yours to write, not the plan's to hand
    you. `README.md` is one paragraph in the founder's own words: what this
@@ -105,8 +109,8 @@ Bundled resource:
    absolute path to wherever this project's production data lives, and
    `AEO_DATA_ROOT` with a sandbox path outside it, is what turns the guard on.
 
-4. **Confirm the gate can see the project.** Run the resolver the commit gate
-   uses, from the target directory:
+4. **Confirm `sandbox-guard` can see the project.** Run the same resolver it
+   reads from, from the target directory:
 
    ```
    node --input-type=module -e "import { pathToFileURL } from 'node:url'; const m = await import(pathToFileURL('${CLAUDE_PLUGIN_ROOT}/hooks/stack.mjs')); console.log(JSON.stringify(m.resolveTestPlan({ toplevel: process.cwd(), files: [] }), null, 2));"
@@ -121,9 +125,9 @@ Bundled resource:
    proceed on the assumption that it will sort itself out later.
 
 5. **Run that command and require green.** Not a command you think is
-   equivalent; the one the record names. A red or erroring baseline means
-   the first commit installs a suite the commit gate will refuse, and the founder
-   discovers it on their first real change instead of now.
+   equivalent; the one the record names. A red or erroring baseline means the
+   first commit lands with a suite nobody can trust, and the founder discovers
+   it on their first real change instead of now.
 
 6. **Initialize git and commit once.**
 
@@ -134,13 +138,10 @@ Bundled resource:
    ```
 
    Exactly one commit, on `main`. Verify it: `git log --oneline` shows one line
-   and `git rev-parse --abbrev-ref HEAD` says `main`.
-
-   The commit gate allows this one and refuses every commit on `main` after it.
-   Before the first commit exists, `HEAD` is unborn and there is no branch for the
-   gate to compare, which is deliberate rather than a loophole: blocking here would
-   make the first commit in a new repository impossible. The gate still runs the
-   suite, which is the other reason step 5 has to be green before you get here.
+   and `git rev-parse --abbrev-ref HEAD` says `main`. No local gate blocks a
+   direct commit to `main` any more ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md));
+   step 7's branch protection is what refuses that, once it is on, admins
+   included.
 
 7. **⛔ Checkpoint — the remote and its branch protection.** Prepare both
    commands, fill in the owner and repository name, and present them to the
@@ -249,17 +250,19 @@ Cover these, briefly, in this order:
   forever, so polishing past the bar is a process defect rather than diligence.
 
 - **The gates, and what each refuses.** These are hooks with exit-code
-  enforcement, not advice. `commit-gate` refuses a commit on the protected branch
-  and a commit while the suite is red or `aeo-tests.json` records no command.
-  `block-merge` refuses a role or the GitHub forge tool merging, deleting a
-  branch, or pushing to the protected branch. `path-guard` refuses a role editing
-  the harness's own `.claude/` configuration. `sandbox-guard` refuses anything
+  enforcement, not advice. `block-merge` refuses a role or the GitHub forge
+  tool merging, or deleting a branch. `path-guard` refuses a role editing the
+  harness's own `.claude/` configuration. `sandbox-guard` refuses anything
   reaching declared production data — `.claude/settings.json` ships with
   `AEO_LIVE_DATA_ROOT` and `AEO_DATA_ROOT` blank, and the guard stays off until
-  you fill both in. `review-jail` confines the reviewer and verifier to reading
+  you fill both in — and refuses running the project's declared suite over a
+  live long job. `review-jail` confines the reviewer and verifier to reading
   their own staged evidence. `session-status` refuses nothing; it reports which
-  of the others are actually wired. Close with: if a gate fires, fix the cause,
-  never the hook.
+  of the others are actually wired. A direct push to the protected branch and a
+  merge on a red suite are refused server-side by GitHub's branch protection,
+  not by a local gate ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)) — set up in
+  the checkpoint below. Close with: if a gate fires, fix the cause, never the
+  hook.
 
 - **Conventions**, in a few lines. Model tiering, the four statuses
   (`DONE`, `DONE_WITH_CONCERNS`, `BLOCKED`, `NEEDS_CONTEXT`), and the prose rules

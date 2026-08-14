@@ -5,9 +5,9 @@
 // The renderer's real test is tests/skills/status.test.mjs, which spawns the skill's
 // script against a fake `gh` in a throwaway git repository. That cost is why it lives in
 // the integration tier, and D26 says it stays there. The consequence D26 also records is
-// that a commit which breaks the renderer passes the commit gate, because the gate runs
-// the fast tier only. This file narrows that window with an in-process import and four
-// pure calls: no process is spawned, no git is run, no network is touched.
+// that a commit which breaks the renderer still passes the fast tier alone (D26, amended
+// by D30). This file narrows that window with an in-process import and four pure calls:
+// no process is spawned, no git is run, no network is touched.
 //
 // plugin/hooks/status-render.mjs is one renderer with two callers -- the `status` skill's
 // script and session-status.mjs's SessionStart hook. What is asserted here is the renderer

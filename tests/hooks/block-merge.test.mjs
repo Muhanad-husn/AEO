@@ -90,7 +90,7 @@ describe('PowerShell is gated on the same terms as Bash (C-07)', () => {
     'git merge feat/x',
     'git -C sub merge feat/x',
     'git branch -D feat/x',
-    'git push --mirror',
+    'git push origin --delete feat/dead',
     'gh pr merge 12',
   ]) {
     test(`${command} is blocked for a role`, () => {
@@ -207,127 +207,46 @@ describe('local branch deletion', () => {
 });
 
 // ---------------------------------------------------------------------------
-// push-refspec resolution: the highest-value new work in this slice
+// remote branch deletion, every spelling (D30)
 // ---------------------------------------------------------------------------
+//
+// This section used to also resolve a push's destination refspec against the
+// repository's default branch (`git push origin main` and its variants) and refuse
+// `git push --all`/`--mirror`. Both are gone: GitHub's branch protection refuses that
+// push server-side once it reaches the remote, so the local re-derivation bought
+// nothing the server does not already refuse, and it was the source of issue #121 — a
+// wrong answer from resolving the wrong worktree directory. What is left, remote
+// branch deletion, needs no directory resolved to judge it.
 
-describe('push refspec resolution (D14)', () => {
-  test('git push origin HEAD:main is blocked', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin HEAD:main', { cwd: repo }));
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /subagents never push to main\./);
-  });
-
-  test('git push origin +main is blocked', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin +main', { cwd: repo }));
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /subagents never push to main\./);
-  });
-
-  test('git push origin feat/main-thing is allowed: not a false positive on the substring', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin feat/main-thing', { cwd: repo }));
-    assert.equal(r.status, 0);
-  });
-
-  test('git push origin main is blocked (plain refspec)', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin main', { cwd: repo }));
-    assert.equal(r.status, 2);
-  });
-
-  test('a bare git push while sitting on the default branch is blocked', () => {
-    const repo = makeRepo({ branch: 'main', defaultBranch: 'main' });
-    const r = runHook(bash('git push', { cwd: repo }));
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /subagents never push to main\./);
-  });
-
-  test('a bare git push from a feature branch is allowed', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push', { cwd: repo }));
-    assert.equal(r.status, 0);
-  });
-
-  test('git push origin feat/x is allowed regardless of current branch', () => {
-    const repo = makeRepo({ branch: 'main', defaultBranch: 'main' }); // current branch is protected...
-    const r = runHook(bash('git push origin feat/x', { cwd: repo })); // ...but the refspec is not
-    assert.equal(r.status, 0);
-  });
-
+describe('push refspec resolution: remote branch deletion (D30)', () => {
   test('git push origin :main (colon-deletion form) is blocked as a remote deletion', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
+    const repo = makeRepo({ branch: 'feat/x' });
     const r = runHook(bash('git push origin :main', { cwd: repo }));
     assert.equal(r.status, 2);
     assert.match(r.stderr, /subagents never delete remote branches\./);
   });
 
   test('git push origin --delete feat/dead is blocked regardless of branch name', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
+    const repo = makeRepo({ branch: 'feat/x' });
     const r = runHook(bash('git push origin --delete feat/dead', { cwd: repo }));
     assert.equal(r.status, 2);
     assert.match(r.stderr, /subagents never delete remote branches\./);
   });
-});
 
-describe('push resolution honours the detected default branch (D14)', () => {
-  test('a repo whose default branch is master blocks a push to master', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'master' });
-    const r = runHook(bash('git push origin master', { cwd: repo }));
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /subagents never push to master\./);
-  });
-
-  test('the same repo does NOT block a push literally named main', () => {
-    // main is not this repo's protected branch; only master is.
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'master' });
+  test('an ordinary push naming the default branch is no longer this gate\'s business', () => {
+    // GitHub's branch protection refuses this at the remote; the local gate no longer
+    // re-derives that check (D30).
+    const repo = makeRepo({ branch: 'feat/x' });
     const r = runHook(bash('git push origin main', { cwd: repo }));
-    assert.equal(r.status, 0);
+    assert.equal(r.status, 0, r.stderr);
   });
 
-  test('a repo on main still blocks a push to main', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin main', { cwd: repo }));
-    assert.equal(r.status, 2);
-  });
-
-  test('a slashed default branch is matched whole, not split on its slash', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'release/stable' });
-    const blocked = runHook(bash('git push origin release/stable', { cwd: repo }));
-    assert.equal(blocked.status, 2);
-
-    const allowed = runHook(bash('git push origin release/other', { cwd: repo }));
-    assert.equal(allowed.status, 0);
-  });
-
-  test('a push to main in a repo with NO origin is blocked', () => {
-    // The integration defect, on this gate's side. defaultBranch used to read
-    // init.defaultBranch from system scope, which on this machine says `master`, so a
-    // repo whose real branch is main resolved to master and `git push origin main`
-    // was not the protected branch. No config is set here; the fixture is the bare
-    // failing case.
-    const repo = makeRepo({ branch: 'main' }); // no defaultBranch => no origin/HEAD, no remote
-    assert.equal(git(repo, 'remote'), '', 'fixture must have no remote at all');
-    const r = runHook(bash('git push origin main', { cwd: repo }));
-    assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /subagents never push to main\./);
-  });
-
-  test('an unresolvable default branch blocks the push and names the remedy', () => {
-    const repo = makeRepo({ branch: 'main' });
-    git(repo, 'branch', 'master'); // both conventional names present, no remote to break the tie
-    const r = runHook(bash('git push origin feat/x', { cwd: repo }));
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /does not say what its default branch is/);
-    assert.match(r.stderr, /git remote set-head origin -a/);
-  });
-
-  test('worktree resolution uses the leading cd, not the launch cwd', () => {
-    const launch = makeRepo({ branch: 'main' });
-    const worktree = makeRepo({ branch: 'feat/other', defaultBranch: 'main' });
-    const r = runHook(bash(`cd ${worktree} && git push`, { cwd: launch }));
-    assert.equal(r.status, 0, 'the push runs from the worktree, which is not on the default branch');
+  test('git push --all and --mirror are no longer this gate\'s business either', () => {
+    const repo = makeRepo({ branch: 'feat/x' });
+    for (const flag of ['--all', '--mirror']) {
+      const r = runHook(bash(`git push ${flag} origin`, { cwd: repo }));
+      assert.equal(r.status, 0, r.stderr);
+    }
   });
 });
 
@@ -337,77 +256,56 @@ describe('push resolution honours the detected default branch (D14)', () => {
 //
 // The gate used to find one `git push` per command through a regex whose argument
 // capture stopped at the first `;`, `&` or `|`. Everything after the first separator
-// was invisible, so a protected push hidden behind a harmless one passed. Each test
-// below is one of the commands that was confirmed to exit 0 as an `aeo:builder`.
+// was invisible, so a protected push hidden behind a harmless one passed. What is left
+// to judge, after D30, is remote branch deletion; the destination-refspec cases this
+// section used to cover are gone along with that rule.
 
-describe('a protected push chained after a harmless one (confirmed bypass)', () => {
+describe('a chained remote branch deletion is judged, not only the first push (confirmed bypass)', () => {
   test('&& chaining: the second push is judged', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin feat/x && git push origin main', { cwd: repo }));
-    assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /subagents never push to main\./);
-  });
-
-  test('; chaining: the second push is judged', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin feat/x; git push origin main', { cwd: repo }));
-    assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /subagents never push to main\./);
-  });
-
-  test('| chaining: the piped push is judged', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin feat/x || git push origin main', { cwd: repo }));
-    assert.equal(r.status, 2, r.stderr);
-  });
-
-  test('a chained remote deletion of the protected branch is judged', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin feat/x && git push origin --delete main', { cwd: repo }));
+    const repo = makeRepo({ branch: 'feat/x' });
+    const r = runHook(bash('git push origin feat/x && git push origin --delete feat/dead', { cwd: repo }));
     assert.equal(r.status, 2, r.stderr);
     assert.match(r.stderr, /subagents never delete remote branches\./);
   });
 
-  // Position and decision path are varied deliberately: the defect hid anything after
-  // the first invocation, so each of the gate's four push decisions has to be shown
-  // surviving the chain, not just the destination match.
-  test('the THIRD push in a chain is judged, not only the second', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin a; git push origin b; git push origin main', { cwd: repo }));
+  test('; chaining: the second push is judged', () => {
+    const repo = makeRepo({ branch: 'feat/x' });
+    const r = runHook(bash('git push origin feat/x; git push origin --delete feat/dead', { cwd: repo }));
     assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /subagents never push to main\./);
+    assert.match(r.stderr, /subagents never delete remote branches\./);
+  });
+
+  test('| chaining: the piped push is judged', () => {
+    const repo = makeRepo({ branch: 'feat/x' });
+    const r = runHook(bash('git push origin feat/x || git push origin --delete feat/dead', { cwd: repo }));
+    assert.equal(r.status, 2, r.stderr);
+  });
+
+  // Position is varied deliberately: the defect hid anything after the first
+  // invocation.
+  test('the THIRD push in a chain is judged, not only the second', () => {
+    const repo = makeRepo({ branch: 'feat/x' });
+    const r = runHook(bash('git push origin a; git push origin b; git push origin :feat/dead', { cwd: repo }));
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stderr, /subagents never delete remote branches\./);
   });
 
   test('a chained colon-deletion is judged', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
+    const repo = makeRepo({ branch: 'feat/x' });
     const r = runHook(bash('git push origin feat/x && git push origin :feat/dead', { cwd: repo }));
     assert.equal(r.status, 2, r.stderr);
     assert.match(r.stderr, /subagents never delete remote branches\./);
   });
 
-  test('a chained --all is judged', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin feat/x && git push --all origin', { cwd: repo }));
-    assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /pushes every local ref/);
-  });
-
   test('a chained git -C <dir> push is judged: the option prefix survives the chain', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash(`git push origin feat/x && git -C ${repo} push origin main`, { cwd: repo }));
+    const repo = makeRepo({ branch: 'feat/x' });
+    const r = runHook(bash(`git push origin feat/x && git -C ${repo} push origin --delete feat/dead`, { cwd: repo }));
     assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /subagents never push to main\./);
-  });
-
-  test('a chained bare push from the default branch is judged', () => {
-    const repo = makeRepo({ branch: 'main', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin feat/x && git push', { cwd: repo }));
-    assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /subagents never push to main\./);
+    assert.match(r.stderr, /subagents never delete remote branches\./);
   });
 
   test('a chain of genuinely harmless pushes is still allowed', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
+    const repo = makeRepo({ branch: 'feat/x' });
     const r = runHook(bash('git push origin feat/a && git push origin feat/b', { cwd: repo }));
     assert.equal(r.status, 0, r.stderr);
   });
@@ -415,63 +313,36 @@ describe('a protected push chained after a harmless one (confirmed bypass)', () 
 
 describe('git push -d, the short form of --delete (confirmed bypass)', () => {
   test('-d after the remote is blocked', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
+    const repo = makeRepo({ branch: 'feat/x' });
     const r = runHook(bash('git push origin -d feat/dead', { cwd: repo }));
     assert.equal(r.status, 2, r.stderr);
     assert.match(r.stderr, /subagents never delete remote branches\./);
   });
 
   test('-d before the remote is blocked', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
+    const repo = makeRepo({ branch: 'feat/x' });
     const r = runHook(bash('git push -d origin feat/dead', { cwd: repo }));
     assert.equal(r.status, 2, r.stderr);
     assert.match(r.stderr, /subagents never delete remote branches\./);
   });
 
   test('a short flag that is not -d is not a deletion', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
+    const repo = makeRepo({ branch: 'feat/x' });
     const r = runHook(bash('git push -u origin feat/x', { cwd: repo }));
     assert.equal(r.status, 0, r.stderr);
   });
 });
 
-describe('git push --all and --mirror (confirmed bypass)', () => {
-  // Both are flags, so the old parser saw a non-flag list holding only the remote, an
-  // empty refspec list, and fell through to the bare-push branch. From a feature branch
-  // that allowed the call, and both push the protected branch without naming it.
-  for (const flag of ['--all', '--mirror']) {
-    test(`git push ${flag} origin is blocked from a feature branch`, () => {
-      const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-      const r = runHook(bash(`git push ${flag} origin`, { cwd: repo }));
-      assert.equal(r.status, 2, r.stderr);
-      assert.match(r.stderr, /pushes every local ref/);
-    });
-  }
-
-  test('--tags is not an every-ref push: tags are not branches', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push --tags origin', { cwd: repo }));
-    assert.equal(r.status, 0, r.stderr);
-  });
-});
-
-describe('a shell-quoted refspec is unwrapped (confirmed bypass)', () => {
-  test('git push origin "main" is blocked', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash('git push origin "main"', { cwd: repo }));
+describe('a shell-quoted colon-deletion refspec is unwrapped (confirmed bypass)', () => {
+  test('git push origin ":main" is blocked as a remote deletion', () => {
+    const repo = makeRepo({ branch: 'feat/x' });
+    const r = runHook(bash('git push origin ":main"', { cwd: repo }));
     assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /subagents never push to main\./);
+    assert.match(r.stderr, /subagents never delete remote branches\./);
   });
 
-  test("git push origin 'main' is blocked", () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
-    const r = runHook(bash("git push origin 'main'", { cwd: repo }));
-    assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /subagents never push to main\./);
-  });
-
-  test('a quoted feature refspec is still allowed', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'main' });
+  test('a quoted, non-deleting refspec is still allowed', () => {
+    const repo = makeRepo({ branch: 'feat/x' });
     const r = runHook(bash('git push origin "feat/main-thing"', { cwd: repo }));
     assert.equal(r.status, 0, r.stderr);
   });
@@ -586,98 +457,33 @@ describe('forge merge tool (D14)', () => {
   });
 });
 
-describe('forge direct-write tools (D14)', () => {
-  test('create_or_update_file targeting the default branch is blocked', () => {
+// D30: the forge direct-write check (create_or_update_file/push_files/delete_file
+// targeting the default branch) is deleted. GitHub's contents API refuses that write
+// server-side once branch protection is on, the same as it refuses the equivalent git
+// push, so the local re-derivation is gone along with the push-refspec check above.
+// These are the sanity checks that the write actions pass through untouched now,
+// including the shape that used to be the sharpest case: an omitted `branch`.
+describe('forge direct-write tools are no longer this gate\'s business (D30)', () => {
+  test('create_or_update_file targeting the default branch is no longer blocked here', () => {
     const repo = makeRepo({ branch: 'main', defaultBranch: 'main' });
     const r = runHook({
       tool_name: 'mcp__plugin_github_github__create_or_update_file',
       tool_input: { branch: 'main' },
       cwd: repo,
     });
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /no direct writes to main through the forge\./);
+    assert.equal(r.status, 0, r.stderr);
   });
 
-  test('create_or_update_file targeting refs/heads/<default> is blocked', () => {
-    const repo = makeRepo({ branch: 'main', defaultBranch: 'main' });
-    const r = runHook({
-      tool_name: 'mcp__plugin_github_github__create_or_update_file',
-      tool_input: { branch: 'refs/heads/main' },
-      cwd: repo,
-    });
-    assert.equal(r.status, 2);
-  });
-
-  test('create_or_update_file targeting a feature branch is allowed', () => {
-    const repo = makeRepo({ branch: 'main', defaultBranch: 'main' });
-    const r = runHook({
-      tool_name: 'mcp__plugin_github_github__create_or_update_file',
-      tool_input: { branch: 'feat/x' },
-      cwd: repo,
-    });
-    assert.equal(r.status, 0);
-  });
-
-  test('push_files and delete_file are checked the same way', () => {
-    const repo = makeRepo({ branch: 'main', defaultBranch: 'main' });
-    for (const action of ['push_files', 'delete_file']) {
-      const r = runHook({
-        tool_name: `mcp__plugin_github_github__${action}`,
-        tool_input: { branch: 'main' },
-        cwd: repo,
-      });
-      assert.equal(r.status, 2, action);
-    }
-  });
-
-  // CHANGED at Checkpoint 1. This test used to pin the opposite: "a missing branch
-  // field is not enforced: nothing to compare". That reading was wrong. The GitHub
-  // contents API defaults an omitted `branch` to the repository's default branch, so
-  // an omitted branch is not an absent target, it is the protected target spelled
-  // without naming it. The gate is deliberately written not to assume one install
-  // (D14/D16), so "the reference server marks the field required" does not settle it;
-  // and the same function already blocks when the default branch is merely unresolved,
-  // which is the opposite disposition for a strictly weaker uncertainty.
-  test('a forge write with no branch field is blocked: an omitted branch IS the default branch', () => {
+  test('an omitted branch is no longer blocked here either', () => {
     const r = runHook({ tool_name: 'mcp__plugin_github_github__create_or_update_file', tool_input: {} });
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /no `branch` goes to the repository default branch/);
+    assert.equal(r.status, 0, r.stderr);
   });
 
-  test('every write action is checked for an omitted branch, not just create_or_update_file', () => {
-    for (const action of ['create_or_update_file', 'push_files', 'delete_file']) {
+  test('push_files and delete_file pass through the same way', () => {
+    for (const action of ['push_files', 'delete_file']) {
       const r = runHook({ tool_name: `mcp__plugin_github_github__${action}`, tool_input: {} });
-      assert.equal(r.status, 2, action);
+      assert.equal(r.status, 0, action);
     }
-  });
-
-  test('an unresolvable default branch blocks the forge write rather than allowing it', () => {
-    const repo = makeRepo({ branch: 'main' });
-    git(repo, 'branch', 'master'); // no remote, two conventional names: genuinely ambiguous
-    const r = runHook({
-      tool_name: 'mcp__plugin_github_github__create_or_update_file',
-      tool_input: { branch: 'feat/x' },
-      cwd: repo,
-    });
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /does not say what its default branch is/);
-  });
-
-  test('honours a repo default branch other than main', () => {
-    const repo = makeRepo({ branch: 'feat/x', defaultBranch: 'trunk' });
-    const blocked = runHook({
-      tool_name: 'mcp__plugin_github_github__push_files',
-      tool_input: { branch: 'trunk' },
-      cwd: repo,
-    });
-    assert.equal(blocked.status, 2);
-
-    const allowed = runHook({
-      tool_name: 'mcp__plugin_github_github__push_files',
-      tool_input: { branch: 'main' },
-      cwd: repo,
-    });
-    assert.equal(allowed.status, 0);
   });
 });
 

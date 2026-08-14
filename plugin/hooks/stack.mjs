@@ -1,5 +1,5 @@
-// AEO test-command resolution: the command a change must run, read from the project's
-// own record rather than guessed from its manifests.
+// AEO test-command resolution: the command a project runs its suite with, read from the
+// project's own record rather than guessed from its manifests.
 //
 // WHY THIS EXISTS (V-05, D10, D29). The vendored harness hard-coded `uv run pytest` and
 // `ruff` in the commit gate. The first replacement was an eleven-row table that inferred a
@@ -16,32 +16,36 @@
 //   { "test": "npm test" }
 //
 // By the time a commit fires, an actor has already inspected the repository, chosen the
-// runner, and run the suite. The record is where that answer is written down. The gate
-// still RUNS the command itself and never trusts a recorded verdict, so it keeps the one
-// protection the table was providing: catching an actor that skipped the tests.
+// runner, and run the suite. The record is where that answer is written down.
 //
-// THE COMMAND IS A STRING RUN THROUGH A SHELL, not a program and an argv array. That is
-// the same shape as `scripts.test` in package.json and the same shape a founder types, so
-// `npm test && pytest` is how a project with two suites says so and nothing here has to
-// model shell quoting. What executing a repository-controlled string costs is stated where
-// it is spawned, in commit-gate.mjs.
+// WHO READS THIS NOW, AND WHAT FOR (D30). The commit gate that used to run this command
+// on every commit is deleted — the branch it protected is enforced server-side by GitHub
+// instead, and re-running the project's suite locally was that gate's own job, not this
+// module's. The remaining consumer is sandbox-guard.mjs, which reads the record to
+// RECOGNISE the declared suite as text (`invokesDeclaredSuite`), never to run it, so it
+// can refuse a Bash invocation of that suite while a long job's sentinel is up (L-02).
+// This module still never trusts a recorded verdict; it just no longer executes anything.
 //
-// THERE IS NO `dir` FIELD. A record's own directory is where its command runs, so a
+// THE COMMAND IS A STRING, not a program and an argv array. That is the same shape as
+// `scripts.test` in package.json and the same shape a founder types, so `npm test &&
+// pytest` is how a project with two suites says so.
+//
+// THERE IS NO `dir` FIELD. A record's own directory is where its command belongs, so a
 // mono-repo says "two projects" by holding two records. A directory field would be a
 // config option almost nobody sets, which is the tripwire D10 rejected a config file over
 // in the first place.
 //
-// A MISSING RECORD IS A BLOCK, never a fallback to a guess (L-08: a gate that runs nothing
-// and reports OK is worse than no gate). There is no per-language table anywhere, and a
-// record that does not parse is a failure with a message rather than a reason to look
-// somewhere else.
+// A MISSING RECORD RESOLVES NOTHING, never a fallback to a guess (L-08). There is no
+// per-language table anywhere, and a record that does not parse is a failure with a
+// message rather than a reason to look somewhere else.
 //
 // THE FILE NAME `stack.mjs` IS NOW A MISNOMER, and it is kept anyway. docs/MIGRATION.md
 // and five files under logs/ name it; renaming would leave those pointing at nothing for
 // no behavioural gain.
 //
-// Why a separate module rather than lib.mjs: the commit gate and the sandbox guard both
-// consume this, so it is shared code rather than gate-local code.
+// Why a separate module rather than lib.mjs: sandbox-guard is the shared-code boundary
+// this module exists to serve, kept apart from gate-local code on the same grounds D10
+// originally gave.
 
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';

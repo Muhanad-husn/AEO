@@ -11,10 +11,12 @@
 //
 // THREE CASES THE ISSUE NAMES, in order below: two workers in one run get non-colliding
 // paths; a worker writing outside its scope is caught; a worker run started while a
-// run-in-progress sentinel is live behaves as specified. The third is the interesting
-// one — the specified behaviour is that workers are unaffected and the run's single
-// commit is not, which is why both halves are asserted in the same test rather than the
-// sentinel case being written as "it blocks".
+// run-in-progress sentinel is live behaves as specified. The third case's own
+// specification changed with the commit gate's deletion (D30): a worker run and its
+// closing commit are now unaffected by a live sentinel either way, because writing
+// files and committing both execute no code of the project's own. What the sentinel
+// still guards is a worker's task running the project's suite directly through Bash,
+// which sandbox-guard refuses on its own terms (L-02) — that is not this file's test.
 //
 // HOW IT RUNS. Same shape as tests/scripts/runlog.test.mjs, and now through the same
 // runner: runlog-harness.mjs, whose header carries the reasoning. This file used to hold
@@ -371,10 +373,10 @@ describe('a worker run started while a sentinel is live', () => {
 
   // THE SPECIFIED BEHAVIOUR, in one sentence: a live sentinel does not stop operation
   // workers from being dispatched or from writing into their run-scoped paths, because
-  // those write files and execute nothing; it stops the single commit at the end of the
-  // run, which is subject to the commit gate exactly as any other commit is, so a batch
-  // of mechanical work started during a long job completes and then waits, uncommitted,
-  // until that job's sentinel clears.
+  // those write files and execute nothing — and it no longer stops the run's closing
+  // commit either (D30 deleted the gate that ran a suite as part of every commit, which
+  // is the hazard the sentinel-on-commit check existed to guard). What it still stops is
+  // a worker's own task running the project's declared suite directly through Bash.
   test('workers still get scopes and can write into them', async () => {
     const { anchor, dir } = await openedRun('during-a-long-job');
     raiseLiveSentinel(anchor);
@@ -387,14 +389,12 @@ describe('a worker run started while a sentinel is live', () => {
     assert.equal(inside.status, 0, inside.stderr);
   });
 
-  test('a whole worker run leaves the sentinel its commit must wait on standing', async () => {
-    // Asserted through runInProgress(), the exact predicate the commit gate calls
-    // (plugin/hooks/commit-gate.mjs); spawning the gate itself belongs to the integration
-    // tier. The run is driven end to end first, because the claim worth pinning is not
-    // "a live sentinel blocks" — that is sentinel.mjs's own behaviour and it has its own
-    // tests — but that nothing THIS lane does clears the sentinel or exempts its commit
-    // from it. An earlier version asserted only the former and passed with the whole
-    // slice deleted.
+  test('a whole worker run leaves a live sentinel standing, untouched by anything it did', async () => {
+    // Asserted through runInProgress(), sentinel.mjs's own predicate. The run is driven
+    // end to end first, because the claim worth pinning is not "a live sentinel reads as
+    // live" — that is sentinel.mjs's own behaviour and it has its own tests — but that
+    // nothing THIS lane does clears the sentinel it has no business touching. An earlier
+    // version asserted only the former and passed with the whole slice deleted.
     const job = 'blocked-commit';
     const { anchor, dir } = await openedRun(job);
     assert.equal(runInProgress(anchor).reason, null, 'the anchor was not clear before the sentinel went up');
@@ -421,8 +421,9 @@ describe('a worker run started while a sentinel is live', () => {
 
   test('a worker run raises no sentinel of its own', async () => {
     // Workers execute no test suite, so a worker run is not a long job and must not
-    // become one. If it raised a sentinel, every other session's commits would block for
-    // the duration of a batch of mechanical edits.
+    // become one. A sentinel it raised would still stand after the run closes, exactly
+    // like the case above, and would refuse a Bash invocation of the project's declared
+    // suite from any other session for as long as it stood (L-02).
     const { anchor, dir } = await openedRun('no-sentinel');
     await claim(anchor, dir, 'w1');
     await claim(anchor, dir, 'w2');
