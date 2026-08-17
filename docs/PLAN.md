@@ -322,7 +322,7 @@ flowchart TB
   end
 
   sentinel["run-in-progress sentinel,<br>anchored through the main checkout"]
-  sentinel -.->|"one raised in any worktree<br>refuses every actor's commit,<br>because the commit gate runs<br>the suite (L-02)"| g1
+  sentinel -.->|"one raised in any worktree<br>refuses every actor's suite run<br>(L-02). Until D30 this reached<br>commits too, via the commit gate"| g1
   sentinel -.-> gN
 
   p1 --> seat
@@ -340,10 +340,14 @@ either. That is deliberate: a quietly smaller group hides the collision the foun
 needs to decide about.
 
 **The sentinel edge cuts across the lanes.** Everything else in a lane is private to
-it — its worktree, its branch, its PR. The sentinel is the one thing that is not, and
-it points at the commit gate specifically, because the commit gate is the only gate
-that *performs* an operation rather than refusing one: it runs the suite, so a commit
-executes code.
+it — its worktree, its branch, its PR. The sentinel is the one thing that is not.
+
+It pointed at the commit gate originally, because that gate was the only one that
+*performed* an operation rather than refusing one: it ran the suite, so a commit
+executed code. [D30](DECISIONS.md) deleted that gate, so a commit no longer runs
+anything and the sentinel no longer reaches commits. The sentinel itself stays, read by
+`sandbox-guard`, and still refuses a suite run while a job is live — which is the half
+of L-02 that was never about committing.
 
 **The fan-in is where the cost lands, not the fan-out.** The measurement in #17 gives
 the two edges their numbers. Four concurrent gates cost each actor 3.02x its solo
