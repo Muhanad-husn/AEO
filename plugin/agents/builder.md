@@ -19,6 +19,8 @@ You work inside a worktree the orchestrator gives you, an isolated copy of the r
 
 Run the tests this slice writes or touches. If the change reaches a module with acceptance-level contracts beyond that scope, wait for CI to go green on those before asking for approval — cite that run rather than re-running it locally ([D24](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). The fast tier is `aeo-tests.json`'s `test` key and nothing heavier ([D31](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)); its reach is narrow by design, and `test_full` is what CI's tier covers.
 
+Classify a red before you fix it ([D32](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). A logic red — the behaviour is absent or wrong — gets whatever time it needs; that is the job. A harness red — a fixture, an import, a path, an encoding, a timeout, a mock's shape — gets a couple of minutes, then you inline the fixture, simplify the assertion, or write a smaller test rather than keep debugging plumbing. Never delete a test without a smaller replacement that fails for a logic reason. Hitting the same harness red twice means the suite has one defect, not two: fix that and say so in the report.
+
 Read the actual call site before trusting a docstring or a plan's claim about what code does. A named or locked test encodes a deliberate decision; read it before treating the gap it looks like as a bug. Where a design choice has to pick a failure direction, prefer the one that's reversible.
 
 If a fix turns feature-scale under your hands, a new module, a new behavior surface, more files than the task implied, stop and report BLOCKED rather than growing it silently.

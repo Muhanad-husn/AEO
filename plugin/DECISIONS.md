@@ -273,3 +273,43 @@ when the measurement says the tiers have diverged.
 first is why a malformed `test_full` blocks with a message naming the key rather than
 falling back silently; the second is why the measurement sits in `red-green-refactor`'s
 step 3 rather than only in a reference nobody opens twice.
+
+## D32 — A harness red gets a couple of minutes; a logic red gets whatever it needs
+
+**Rule.** Classify a red before fixing it. A **logic red** — the behaviour under test is
+absent or wrong — is the signal the test exists to produce and carries no time budget. A
+**harness red** — a fixture, an import, a path, an encoding, a timeout, a mock's shape, a
+runner flag — proves nothing about the product and gets **a couple of minutes**. Past that,
+stop debugging the plumbing: inline what the fixture provided, drop to a simpler assertion
+through the same boundary, or delete the test and write a smaller one that fails for a logic
+reason. Deleting without replacing is coverage laundering and is not available.
+
+**The same harness red twice is one defect in the suite, not two in the tests.** Fix the
+shared cause — a fixture layer doing too much, a setup coupling tests, a path assembled
+instead of resolved — rather than the symptom N times.
+
+**Why.** `test-strategy.md` §6 already split good red from bad red, then told the agent to
+"fix the test/harness until it fails for the intended reason". *Until* was the whole
+instruction. Nothing bounded it, nothing said when to stop, and step 11's "on any unexpected
+red, shrink the step" applied the same remedy to both kinds — which for a harness red means
+the plumbing arrives more often, not less.
+
+The cost was measured the expensive way (issue #130): a redesigned suite produced dozens of
+small harness failures, each individually cheap to chase, together a day. None of them said
+anything about the product.
+
+Three fixed principles already decided this and were not being applied to test code. 80/20:
+more than a couple of minutes on one harness failure is past the acceptance bar, so it is a
+process defect. The tripwire "a fix larger than its bug": test plumbing that costs more to
+debug than the behaviour it covers is exactly that. Measure, don't speculate: ten occurrences
+of one shape is a measurement, and it names a single cause.
+
+**What it does not license.** Deleting a test that is red for a logic reason, however
+inconvenient — that budget is deliberately unbounded. Mocking the boundary. Skipping the red
+step, which is where the whole discipline lives. Nor is the budget per session; it is per
+red, and a second one of the same shape spends its predecessor's finding, not a fresh
+allowance.
+
+**Relation to [D31](#d31--the-record-names-two-tiers-and-the-doctrine-says-what-a-suite-may-cost).**
+D31 bounds wall clock per run. This bounds debug minutes per red. Same principle — the
+harness had no rule about its own cost — different axis, and neither implies the other.

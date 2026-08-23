@@ -51,6 +51,15 @@ exactly one slice; never batch slices.
    articulate why it fails, the requirement isn't understood yet. This test
    is now the slice's progress meter; it stays red until the slice is done.
 
+   Say which red you're looking at before you fix it (`test-strategy.md`
+   §6). A **logic red** — the behaviour is absent or wrong — gets whatever
+   time it needs; that is the work. A **harness red** — a fixture, an
+   import, a path, an encoding, a timeout, a mock's shape — gets a couple
+   of minutes, then you inline the fixture, simplify the assertion, or
+   write a smaller test instead of debugging the plumbing further
+   ([D32](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). The same harness red twice
+   is one defect in the suite, not two in the tests: fix that, once.
+
 ## The INNER loop — how, and quality
 
 Repeat per behaviour, working inward from the boundary the acceptance test
@@ -68,7 +77,9 @@ cheaply.
    reverted, not fixed forward.
 10. Log a one-line entry in the plan's status log; tick the unit-list box.
 11. Obvious Implementation when confident, Fake It when unsure, Triangulate
-    before generalising. On any unexpected red, shrink the step.
+    before generalising. On an unexpected **logic** red, shrink the step. On
+    a harness red, §6's budget applies instead — shrinking the step there
+    only makes the plumbing arrive more often.
 
 Repeat 6–11 until the acceptance test can pass.
 
@@ -101,7 +112,10 @@ Repeat 6–11 until the acceptance test can pass.
 - Done means the acceptance test is green and the unit suite passes, not
   unit coverage alone.
 - Eliminate duplication before closing each cycle.
-- Stuck, or surprised by red: shrink the step, run tests more often.
+- Stuck, or surprised by a logic red: shrink the step, run tests more often.
+- A harness red gets a couple of minutes, never a session. Past the budget,
+  change the test rather than keep debugging it — but never delete one
+  without a smaller replacement that fails for a logic reason.
 
 ## Hand-off
 

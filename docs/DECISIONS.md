@@ -15,6 +15,72 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-23 — One decision: a red gets a budget, and only one kind of red spends it (#130)
+
+### D32 — A harness red gets a couple of minutes; a logic red gets whatever it needs
+
+**Problem.** `test-strategy.md` §6 has always split a red into two kinds. It then gave one of
+them an unbounded instruction:
+
+> A **bad** red: a compile error, missing import, wrong selector, or harness misconfiguration.
+> Fix the test/harness until it fails for the *intended* reason, then proceed.
+
+*Until* was the whole instruction. No budget, no exit, and no rule for the tenth occurrence
+of the same shape. `red-green-refactor` step 11 and its invariants said "on any unexpected
+red, shrink the step" — the same remedy for both kinds, which for a harness red means the
+plumbing problem arrives more often rather than less.
+
+**What it cost.** Reported by the founder from a day of it, and filed as #130: a redesigned
+suite produced dozens of small harness failures "here and there" — fixture paths, imports,
+encodings, timeouts, assertion shapes. Each was individually cheap to chase. Together they
+were a day, and none of them said anything about the product.
+
+**Three fixed principles already decided this, and none was being applied to test code.**
+
+| Principle | What it already says | Why it binds here |
+| --- | --- | --- |
+| Practicality over perfectionism (80/20) | build the smallest thing that meets a strict acceptance bar; polishing past the bar is a process defect | more than a couple of minutes on one harness failure is past the bar |
+| Over-engineering tripwires | "a fix larger than its bug" — stop and simplify, or justify in one line | test plumbing that costs more to debug than the behaviour it covers is precisely that |
+| Measure, don't speculate | this repo has an eval harness; use it | ten occurrences of one shape *is* a measurement, and it names one cause, not ten |
+
+**Decision.**
+
+1. **Classify before fixing.** A **logic red** — the behaviour under test is absent or wrong
+   — is the signal the test exists to produce and carries **no** time budget. A **harness
+   red** — fixture, import, path, encoding, timeout, mock shape, runner flag — proves nothing
+   about the product and gets **a couple of minutes**.
+2. **Name the exit.** Past the budget, stop debugging the plumbing and take the cheapest
+   route back to a test that fails for a logic reason: inline what the fixture provided, drop
+   to a simpler assertion through the same boundary, or delete the test and write a smaller
+   one. **Deleting without replacing is coverage laundering** and stays forbidden.
+3. **The second occurrence of a shape is a cause, not an instance.** Fix the shared defect
+   once — a fixture layer doing too much, a setup coupling tests to each other, a `conftest`
+   with logic in it, a path assembled instead of resolved.
+4. **`red-green-refactor` says which red it means.** Step 5 classifies, step 11 sends only a
+   logic red to "shrink the step", and the invariants carry the budget.
+
+**Expected impact.** The day-shaped failure mode stops being available. An agent that hits
+the same fixture error twice fixes the fixture layer instead of the fixture, which is the
+80/20 move the doctrine never suggested. A logic red is explicitly protected from the budget,
+so the rule cannot be read as licence to make an inconvenient failure go away.
+
+**What it does not license.** Deleting a test that is red for a logic reason, however
+inconvenient — that budget is deliberately unbounded. Mocking the boundary. Skipping the red
+step, which is where the whole discipline lives. Nor is the budget per session: it is per
+red, and a second one of the same shape spends its predecessor's finding rather than a fresh
+allowance.
+
+**What it costs, with its name on it.** "A couple of minutes" is a judgement, not a constant,
+and it is not read by any code — a hard number here would be a hand-tuned constant in a
+heuristic, which is itself a tripwire. The risk it accepts is an agent classifying a logic
+red as a harness red to buy the exit. The countermeasure is the replacement rule: the exit
+always ends at a test that fails for a logic reason, so a misclassification has nowhere to
+land.
+
+**Relation to [D31](#d31--the-record-names-two-tiers-and-the-doctrine-says-what-a-suite-may-cost).**
+D31 bounds **wall clock per run**. D32 bounds **debug minutes per red**. Same principle — the
+harness had no rule about its own cost — different axis, and neither one implies the other.
+
 ## 2026-08-23 — One decision: the declared suite grows a second tier, and a cost rule (#127, #128)
 
 ### D31 — The record names two tiers, and the doctrine says what a suite may cost

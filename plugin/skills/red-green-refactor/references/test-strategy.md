@@ -128,9 +128,31 @@ test('user resets password and logs in', async ({ page }) => {
 
 ## 6. Watching a test fail for the right reason
 
-Never skip the red step. After writing a test, run it and read the failure:
-- A **good** red: the assertion fails because the behaviour/feature is genuinely absent (e.g. `expected "Password updated" to be visible`).
-- A **bad** red: a compile error, missing import, wrong selector, or harness misconfiguration. Fix the test/harness until it fails for the *intended* reason, then proceed. "If you cannot articulate why a test fails, you do not yet understand the requirement."
+Never skip the red step. After writing a test, run it and read the failure — then say **which of the two kinds it is** before you touch anything. They look similar on the terminal and they are worth completely different amounts of your time.
+
+| | **Logic red** | **Harness red** |
+|---|---|---|
+| Looks like | `expected "Password updated" to be visible` | `ModuleNotFoundError`, `FileNotFoundError: fixtures/x.json`, a compile error, a wrong selector, a `TimeoutExpired`, a mock whose shape is wrong, a runner flag the project doesn't have |
+| Says | the behaviour is absent or wrong — the signal this test exists to produce | nothing at all about the product |
+| Budget | **whatever it takes.** This *is* the work | **a couple of minutes.** Past that it costs more than it can return |
+
+"If you cannot articulate why a test fails, you do not yet understand the requirement" is about a logic red. A harness red is understood immediately and is still worth nothing.
+
+### When the harness budget runs out
+
+Stop debugging the plumbing. Take the cheapest route back to a test that fails for a logic reason:
+
+- **Inline what the fixture was providing.** A literal in the test beats a loader that needs debugging.
+- **Drop to a simpler assertion** on the same behaviour, through the same boundary.
+- **Delete the test and write a smaller one** that fails for the right reason.
+
+Deleting without replacing is coverage laundering, and it is the one move not available here. The budget covers plumbing. It never covers a behaviour you'd rather not have to make work.
+
+### The second occurrence of a shape is a cause, not an instance
+
+The same harness red twice is a measurement, and what it measures is **one** defect in the suite rather than N in the tests — a fixture layer doing too much, a shared setup coupling tests to each other, a `conftest` with logic in it, a path assembled instead of resolved. Fix that, once.
+
+Chasing the symptom N times is what this section exists to stop, and it is where a day goes. Test plumbing that costs more to debug than the behaviour it covers trips the over-engineering rule about a fix larger than its bug — that tripwire applies to test code too.
 
 ## 7. Branching & commits
 
