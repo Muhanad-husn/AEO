@@ -227,3 +227,60 @@ describe('resolveTestPlan', () => {
     assert.ok(searched.includes(path.resolve(root)));
   });
 });
+
+// ---------------------------------------------------------------------------
+// Two tiers, because one command cannot be both the loop and the gate (D31)
+// ---------------------------------------------------------------------------
+
+describe('the full tier', () => {
+  test('a record naming both tiers resolves both', () => {
+    const root = tree({
+      'aeo-tests.json': JSON.stringify({ test: 'pytest -m "not acceptance"', test_full: 'pytest -n auto' }),
+    });
+    const unit = projectAt(root);
+    assert.equal(unit.command, 'pytest -m "not acceptance"');
+    assert.equal(unit.full, 'pytest -n auto');
+  });
+
+  test('a record naming one tier runs that tier for both', () => {
+    // Every project written before the second key existed says this. It has to keep
+    // meaning exactly what it meant, or the change breaks every installed project.
+    const unit = projectAt(tree({ 'aeo-tests.json': record('npm test') }));
+    assert.equal(unit.command, 'npm test');
+    assert.equal(unit.full, 'npm test');
+  });
+
+  test('surrounding whitespace is trimmed off the full command too', () => {
+    const root = tree({
+      'aeo-tests.json': JSON.stringify({ test: 'npm test', test_full: '  npm run test:all\n' }),
+    });
+    assert.equal(projectAt(root).full, 'npm run test:all');
+  });
+
+  test('a full command that is present but unusable is a block, not a fallback', () => {
+    // Same direction as every other malformed field: a project that has stated how it is
+    // tested and stated it wrongly is corrected, never silently reinterpreted.
+    for (const value of ['', '   ', ['npm', 'test'], 42, null]) {
+      const unit = projectAt(tree({ 'aeo-tests.json': JSON.stringify({ test: 'npm test', test_full: value }) }));
+      assert.equal(unit.command, null, `test_full ${JSON.stringify(value)} resolved a command`);
+      assert.match(unit.reason, /"test_full"/);
+    }
+  });
+
+  test('an unusable record carries no tier at all', () => {
+    const unit = projectAt(tree({ 'aeo-tests.json': '{ not json' }));
+    assert.equal(unit.command, null);
+    assert.equal(unit.full, null);
+  });
+
+  test('resolveTestPlan carries the full tier through', () => {
+    const root = tree({
+      [path.join('services', 'api', 'aeo-tests.json')]: JSON.stringify({
+        test: 'npm test',
+        test_full: 'npm run test:all',
+      }),
+    });
+    const plan = resolveTestPlan({ toplevel: root, files: ['services/api/src/a.ts'] });
+    assert.equal(plan.units[0].full, 'npm run test:all');
+  });
+});

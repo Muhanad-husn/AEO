@@ -373,10 +373,12 @@ export function sandboxGuard(payload) {
       const { reason, notes } = runInProgress(anchor);
       for (const line of notes) note(`sandbox-guard: ${line}`);
       if (reason === null) continue;
-      // The record states one command line per project; this rule matches on tokens, so
-      // the line is tokenised here rather than stored pre-split.
+      // The record states two command lines per project, fast tier and full (D31); both
+      // are the project's suite and either one overlapping a live run is what L-02
+      // refuses. This rule matches on tokens, so the lines are tokenised here rather than
+      // stored pre-split.
       const declared = resolveTestPlan({ toplevel: anchor, files: [] })
-        .units.map((u) => u.command)
+        .units.flatMap((u) => [u.command, u.full])
         .filter((c) => typeof c === 'string')
         .map((c) => shellTokens(c));
       const invoked = invokesDeclaredSuite(command, declared);

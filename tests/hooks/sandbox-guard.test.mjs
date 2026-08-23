@@ -984,6 +984,19 @@ describe('the sentinel', () => {
     }
   });
 
+  // Both tiers are the project's suite. The full tier is the one most likely to launch
+  // real runs, so a guard that only knew the fast tier would miss the very command whose
+  // overlap with a live run L-02 exists to refuse (D31).
+  test('a live sentinel blocks either declared tier', () => {
+    const repo = makeRepo({
+      base: { 'aeo-tests.json': JSON.stringify({ test: 'pytest', test_full: 'tox' }) },
+    });
+    raise(repo);
+    for (const command of ['pytest', 'tox', 'cd sub && tox']) {
+      assertBlockedBecause(guard({ payload: bash(command, repo) }), LIVE_RUN, command);
+    }
+  });
+
   test('a live sentinel does not block reading, browsing or version control', () => {
     const repo = makeRepo();
     raise(repo);
