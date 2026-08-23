@@ -31,6 +31,12 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
 1. The slice is green locally — its acceptance test and the fast tier,
    already established through `red-green-refactor`. Never open a PR on red;
    if anything regressed, return there.
+   The exhaustive tier — `aeo-tests.json`'s `test_full`, which falls back to
+   `test` when a project declares only one ([D31](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md))
+   — belongs to this phase rather than to the loop. Run it once here, or cite
+   CI's run of it on this commit rather than repeating it locally
+   ([D24](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). Citing is the default when CI has
+   already gone green on the same SHA.
 2. CI exists (`.github/workflows/`, from `tdd-ci`). If missing, run that
    first.
 3. On the slice's feature branch (`feat/<feature-slug>/<NN>-<slice-slug>`),
@@ -39,8 +45,9 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
 
 ## Procedure
 
-1. Produce the evidence by actually running the tests. Always capture the
-   unit summary. Then, by boundary:
+1. Produce the evidence by actually running the tests — the full tier here,
+   not the loop's fast one. Always capture the unit summary. Then, by
+   boundary:
    - Web slice: run the e2e suite with video, screenshot, and HTML report
      capture on. The PR needs both a screenshot and a recording of the
      passing run — re-run with video on if either is missing.

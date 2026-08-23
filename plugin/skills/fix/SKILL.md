@@ -28,7 +28,8 @@ gates.
 3. **Dispatch the builder** with the scoped description. For a
    behavioural bug: a regression test that fails before the fix and
    passes after, committed with it. For a non-behavioural change: the
-   existing suite is the oracle. It runs the fast tier locally, and if
+   existing suite is the oracle. It runs the fast tier locally —
+   `aeo-tests.json`'s `test`, never `test_full` ([D31](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)) — and if
    the fix touches a module with outer acceptance contracts, the PR waits
    for CI green on those before approval is requested — that run is
    cited, not repeated locally ([D24](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). If the fix

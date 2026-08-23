@@ -15,6 +15,99 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-23 — One decision: the declared suite grows a second tier, and a cost rule (#127, #128)
+
+### D31 — The record names two tiers, and the doctrine says what a suite may cost
+
+**Problem.** [D17](#d17--two-test-tiers-the-fast-tier-is-the-commit-gates-the-full-tier-is-cis)
+split this repository's own battery into a fast tier and a full one, and every shipped skill
+has said "run the fast tier" ever since — `red-green-refactor` step 14, `safe-pr`'s
+preconditions, `tdd-ci`'s, `sprint-start` step 6, `builder.md`. The shipped record had one
+key. The phrase pointed at nothing. A project following the doctrine exactly ran its entire
+suite on every commit, forever, and the harness had no vocabulary for saying otherwise.
+
+Two consuming projects measured what that costs, from opposite directions.
+
+**#128 — the launch is the bill.** `Muhanad-husn/RLM-Challenge`, a Python CLI pipeline at
+the end of its eleventh slice, Windows 11, Python 3.13, 292 tests of which 70 are marked
+`acceptance`:
+
+| Reading | |
+|---|---|
+| Full suite, serial (`pytest -q`) | 292 passed in **764 s** |
+| Acceptance tier alone | 70 passed in **449 s** |
+| Unit tier alone | 217 passed in **8–20 s** |
+
+The acceptance tier was 98% of the wall clock and 24% of the tests. Then the decisive pair:
+one acceptance test parsing an eight-document fixture room took **4.24 s**, and a bare
+`python -c "import pipeline.cli"` took **4.25 s**. The work under test was free. `-X
+importtime` attributed the cost to module-scope imports — `openpyxl` 1.21 s, the PDF readers
+1.20 s, `dateparser` 0.46 s. Adding `pytest-xdist` and `-n auto` took the full suite to
+**266 s**, a 2.9x improvement with no test changed: one dependency and one flag that nothing
+in the harness suggested.
+
+**#127 — the fan-out starves what it is timing.** A project with ~7,000 tests, under 100 of
+which launch real subprocesses under a 180-second cap. Same commit, no code change between
+runs:
+
+| run | wall clock | outcome |
+|---|---|---|
+| 1 | 16 m 24 s | 1 failed |
+| 2 | 20 m 33 s | 1 failed, 1 error — a different pair, both `TimeoutExpired` |
+
+At full fan-out the CPU-bound population saturates the cores while the subprocess a cap is
+timing gets a fraction of one. With one declared command the only remedies were raising the
+cap, which moves the flake, or not running the suite, which defeats the gates. A flaky gate
+teaches people to re-run rather than read — the same dynamic the sentinel design already
+warns about for a guard nobody can clear.
+
+**Decision.**
+
+1. **`aeo-tests.json` carries two keys.** `test` is the cheap tier the loop runs; `test_full`
+   is the exhaustive tier CI runs and `safe-pr` cites. `test_full` **absent falls back to
+   `test`**, so every record written before the key existed is unaffected. `test_full`
+   present and malformed is a block naming the key, the same direction as every other bad
+   field there since [D10](#d10--the-project-records-its-test-command-and-the-gate-runs-it).
+2. **`stack.mjs` resolves both**, and `sandbox-guard` recognises either tier as the project's
+   suite, so L-02's refusal covers the tier most likely to launch real runs.
+3. **`test-strategy.md` gains §9, the harness's first rule about cost.** Time one launch of
+   the system under test during detection; above roughly a second, install the stack's
+   parallel runner and put it in the record. Keep tests that shell out under a timeout out of
+   a full fan-out. Allow several acceptance assertions to read one session-scoped run through
+   the real boundary, where they are about the produced artefact rather than about the
+   invocation. Report a fast tier that has stopped being fast.
+4. **The lanes point at the right tier.** `red-green-refactor` step 3 measures and step 14
+   names `test`; `fix` and `builder.md` name `test`; `safe-pr` and `tdd-ci` name `test_full`,
+   with [D24](#d24--a-tier-ci-has-already-run-on-a-commit-is-cited-never-re-run-locally)'s
+   citation as the default where CI has already gone green on the SHA.
+
+**Why the doctrine and not only the schema.** Three correct rules produced this with no
+fourth rule about cost: the outer loop must drive the real external endpoint
+(`test-strategy.md`, `red-green-refactor`), every vertical slice adds an acceptance scenario
+(`tdd-plan`), and the tests should be run constantly and more when surprised (the philosophy
+reference). None of the three is wrong, and none is being weakened. A project cannot notice
+the problem at slice 01, when three acceptance tests run in twenty seconds; it notices at
+slice eleven, when the loop is twelve minutes and the harness has already trained the agent
+to run it on every green step. The handbook's own rule is to measure rather than speculate.
+This applies that rule to the harness instead of only to the product.
+
+**Expected impact.** The inner loop stops paying for the acceptance tree. A project whose
+launch cost is above a second gets its parallel runner at setup rather than at slice eleven.
+A project with a subprocess population gets a lane for it rather than a raised timeout.
+Nothing changes for a project that declares one command.
+
+**What it does not license.** Mocking the boundary, reaching into internal code, or skipping
+the fast tier before a commit. Sharing one setup across assertions that are about the
+invocation itself. A new project splitting the tiers on day one — a scaffold's suite has
+nothing to split, and `new-project`'s seed still writes one key.
+
+**What it costs, with its name on it.** A second key someone can get wrong, and a reading
+someone can skip. The first is why a malformed `test_full` blocks with a message naming the
+key rather than falling back silently. The second is why the measurement sits in
+`red-green-refactor`'s step 3, in the procedure, rather than only in a reference nobody opens
+twice.
+
+
 ## 2026-08-14 — One decision: delete the local checks GitHub already refuses (#121)
 
 ### D30 — The commit gate is deleted, and block-merge stops re-deriving branch protection

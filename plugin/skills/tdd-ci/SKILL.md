@@ -34,7 +34,14 @@ than trusting a remembered one.
    `red-green-refactor`'s `test-strategy.md` detection, and read the plan's
    *project directory* field: a subfolder app needs the workflow to run
    there. The project's own scripts (`package.json`, `Makefile`) are the
-   source of truth for how tests are invoked.
+   source of truth for how tests are invoked. **CI runs the full tier** —
+   `aeo-tests.json`'s `test_full`, falling back to `test` where a project
+   declares one command ([D31](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). That is
+   the point of the split: the exhaustive run happens on a machine nobody is
+   waiting at. Where the project has tests that launch real processes under a
+   timeout, give them their own job at reduced parallelism rather than folding
+   them into the fan-out — workers competing with the processes being timed is
+   how a gate goes flaky (`test-strategy.md` §9.2).
 2. Choose a template from `assets/workflows/`: `node-ci.yml` (or the
    template matching the detected stack) for the unit job, and — only for a
    web slice — `playwright-e2e.yml` for the e2e job, which installs

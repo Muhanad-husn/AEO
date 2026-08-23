@@ -88,7 +88,12 @@ Bundled resource:
    name so it can refuse running it over a live long job
    ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). One key, `test`, holding a
    command line rather than a list — a project that needs two suites writes
-   `npm test && pytest`. There is no directory field, because the record
+   `npm test && pytest`. A second, optional key, `test_full`, names the
+   exhaustive tier CI runs; absent, it falls back to `test`
+   ([D31](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). A new project writes one key
+   and is right to — a scaffold's suite has nothing to split yet, and the
+   tiers separate later, when `test-strategy.md` §9's measurement says they
+   have diverged. There is no directory field, because the record
    belongs where it sits; a mono-repo puts one record in each project
    directory and the nearest one above a changed file is the one that
    resolves. It is tracked in git and it is deliberately not under `.claude/`,

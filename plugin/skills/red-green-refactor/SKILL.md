@@ -33,7 +33,10 @@ exactly one slice; never batch slices.
 3. Detect the unit runner and whether the outer loop is a browser e2e suite
    or a CLI/API/service integration test (`test-strategy.md`). If either is
    missing, set it up now — a walking-skeleton slice exists precisely for
-   this. Note the plan's *project directory*: a subfolder app runs
+   this. Time one bare launch of the system under test while you are there
+   and record the reading; above about a second it decides whether the
+   project's command carries a parallel runner (`test-strategy.md` §9).
+   Note the plan's *project directory*: a subfolder app runs
    install/test/build from there.
 
 ## The OUTER loop — are we done
@@ -79,10 +82,14 @@ Repeat 6–11 until the acceptance test can pass.
     Re-run after each change.
 14. Commit in small, green-only Conventional commits:
     `feat(<slug>): <goal> [slice NN]`. Run the project's fast tier yourself
-    before each one — no local gate runs it for you ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md));
-    the full acceptance tree is CI's job, not a step to repeat here. One test
-    may stay red in the *uncommitted* working tree as a cross-session resume
-    marker.
+    before each one — that is `aeo-tests.json`'s `test` key and nothing
+    heavier ([D31](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)); no local gate runs it
+    for you ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)), and the full
+    acceptance tree is CI's job, not a step to repeat here. If that tier has
+    stopped being fast — roughly thirty seconds, judgement applies — say so in
+    the status log and the PR body and split the record's two tiers. It is a
+    finding, not a delay to absorb. One test may stay red in the *uncommitted*
+    working tree as a cross-session resume marker.
 15. Update the plan's Definition-of-Done boxes.
 
 ## Invariants
