@@ -97,8 +97,7 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    body left over from an earlier slice is the failure to catch here, not a
    missing placeholder. Fill the remaining `<placeholders>`: description,
    what changed, how to review, the unit summary, risk notes, the plan path.
-   Be honest about anything partial. `PR_BODY.md` is git-ignored — it isn't
-   committed.
+   Be honest about anything partial.
 6. Dispatch the reviewer on every PR — an unconditional step now, not a branch
    of the risk rubric. Run `${CLAUDE_PLUGIN_ROOT}/skills/review/SKILL.md`, which
    stages the packet (the claim, the diff, the issue and relevant spec section,

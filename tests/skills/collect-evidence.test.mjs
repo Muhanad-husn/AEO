@@ -278,38 +278,6 @@ describe('the declaration', () => {
 // Both cases below matter: a fix that never creates the folder at all would pass a test
 // that only checked the refused run.
 
-describe('a stale --out target (issue #131)', () => {
-  // The reported failure: slice 03's run left PR_BODY.md behind (it is git-ignored, so it
-  // survives across slices). Slice 04's --body-only run used to redirect to
-  // PR_BODY.generated.md rather than touch the existing file, so the file at the expected
-  // name — the one an agent reads before publishing — kept slice 03's stale content while
-  // the terminal SUMMARY correctly named slice 04. --body-only must always overwrite --out.
-
-  const TEMPLATE = path.resolve(import.meta.dirname, '../../plugin/skills/safe-pr/assets/pr-body-template.md');
-
-  test('--body-only overwrites a pre-existing --out file with the current run\'s body', () => {
-    const { repo, live } = world();
-    const source = path.join(tempDir(), 'test-run.txt');
-    writeFileSync(source, 'ok 1 - the current slice suite passed\n');
-    const copyResult = collect(['--transcript', source, '--copy-only'], { cwd: repo, env: { [LIVE]: live } });
-    assertCollected(copyResult, 'copy-only before the body run');
-
-    const outPath = path.join(repo, 'PR_BODY.md');
-    writeFileSync(outPath, '## Summary\n\nSTALE CONTENT FROM A PREVIOUS SLICE — must not survive.\n', 'utf8');
-
-    const bodyResult = collect(
-      ['--body-only', '--template', TEMPLATE, '--out', outPath],
-      { cwd: repo, env: { [LIVE]: live } },
-    );
-    assertCollected(bodyResult, 'body-only with a stale --out file already present');
-
-    const written = readFileSync(outPath, 'utf8');
-    assert.ok(!written.includes('STALE CONTENT FROM A PREVIOUS SLICE'), `the stale body survived at ${outPath}:\n${written}`);
-    assert.ok(written.includes('the current slice suite passed'), `the current run's evidence is missing from ${outPath}:\n${written}`);
-    assert.ok(!existsSync(path.join(repo, 'PR_BODY.generated.md')), 'the current run must not be shunted off to a name nobody reads');
-  });
-});
-
 describe('the evidence folder itself', () => {
   test('a refused run leaves no directory behind that did not exist before it started', () => {
     const { repo, live } = world();
@@ -333,5 +301,41 @@ describe('the evidence folder itself', () => {
     const result = collect(['--transcript', source, '--copy-only'], { cwd: repo, env: { [LIVE]: live } });
     assertCollected(result, 'a run with nothing to refuse');
     assert.ok(existsSync(evidenceDir(repo)), 'a non-refused run must still create the evidence folder');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a stale --out target (issue #131)
+// ---------------------------------------------------------------------------
+//
+// The reported failure: slice 03's run left PR_BODY.md behind (it is git-ignored, so it
+// survives across slices). Slice 04's --body-only run used to redirect to
+// PR_BODY.generated.md rather than touch the existing file, so the file at the expected
+// name — the one an agent reads before publishing — kept slice 03's stale content while
+// the terminal SUMMARY correctly named slice 04. --body-only must always overwrite --out.
+
+describe('a stale --out target (issue #131)', () => {
+  const TEMPLATE = path.resolve(import.meta.dirname, '../../plugin/skills/safe-pr/assets/pr-body-template.md');
+
+  test('--body-only overwrites a pre-existing --out file with the current run\'s body', () => {
+    const { repo, live } = world();
+    const source = path.join(tempDir(), 'test-run.txt');
+    writeFileSync(source, 'ok 1 - the current slice suite passed\n');
+    const copyResult = collect(['--transcript', source, '--copy-only'], { cwd: repo, env: { [LIVE]: live } });
+    assertCollected(copyResult, 'copy-only before the body run');
+
+    const outPath = path.join(repo, 'PR_BODY.md');
+    writeFileSync(outPath, '## Summary\n\nSTALE CONTENT FROM A PREVIOUS SLICE — must not survive.\n', 'utf8');
+
+    const bodyResult = collect(
+      ['--body-only', '--template', TEMPLATE, '--out', outPath],
+      { cwd: repo, env: { [LIVE]: live } },
+    );
+    assertCollected(bodyResult, 'body-only with a stale --out file already present');
+
+    const written = readFileSync(outPath, 'utf8');
+    assert.ok(!written.includes('STALE CONTENT FROM A PREVIOUS SLICE'), `the stale body survived at ${outPath}:\n${written}`);
+    assert.ok(written.includes('the current slice suite passed'), `the current run's evidence is missing from ${outPath}:\n${written}`);
+    assert.ok(!existsSync(path.join(repo, 'PR_BODY.generated.md')), 'the current run must not be shunted off to a name nobody reads');
   });
 });

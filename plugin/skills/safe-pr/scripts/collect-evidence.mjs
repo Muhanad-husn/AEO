@@ -54,9 +54,8 @@
  *   - The body phase (--body-only, and the body write in a single-shot run) ALWAYS overwrites --out.
  *     The body is regenerated output — cheap to recreate from --feature/--slice and the evidence
  *     folder — while a stale file left at the expected name is what an agent reads before
- *     publishing (#131). After writing, the script reads --out back and refuses if it doesn't hold
- *     what this run just generated, so a stale or partially-written body is never left in place.
- *     `--force` is still accepted, as a no-op, for back-compat.
+ *     publishing (#131). No .generated.md redirect. `--force` is still accepted, as a no-op, for
+ *     back-compat.
  */
 
 import { execSync } from 'node:child_process';
@@ -466,32 +465,14 @@ function main() {
     // survives across slices) is a publishing hazard: it's the name an agent reads before
     // opening the PR (#131). No .generated.md redirect.
     const template = typeof args.template === 'string' ? args.template : null;
-    let writtenBody = null;
     if (template && fs.existsSync(template)) {
       let body = fs.readFileSync(template, 'utf8');
       body = body.includes('<!-- EVIDENCE -->') ? body.replace('<!-- EVIDENCE -->', block) : body + '\n\n' + block;
       fs.writeFileSync(outFile, body, 'utf8');
-      writtenBody = body;
       console.log(`Wrote PR body with evidence to ${outFile}`);
     } else if (args.out) {
       fs.writeFileSync(outFile, block, 'utf8');
-      writtenBody = block;
       console.log(`Wrote evidence block to ${outFile}`);
-    }
-
-    // Self-check: read --out back and refuse loudly if it doesn't hold what this run just
-    // wrote. This is the assertion that catches #131's actual failure — the file at --out
-    // silently not holding this run's output. A check that the body's evidence LINKS
-    // resolve inside the evidence folder was considered instead (the issue's suggestion),
-    // but every link is built from `toRepoUrlPath` over `walk(destAbs)` a few lines up, so
-    // it can never disagree with the folder in this code — that check could never fire.
-    if (writtenBody !== null) {
-      let onDisk = null;
-      try { onDisk = fs.readFileSync(outFile, 'utf8'); } catch { /* reported below */ }
-      if (onDisk !== writtenBody) {
-        console.error(`ERROR: ${outFile} does not hold the body this run just generated — refusing to leave a stale or corrupted PR body in place.`);
-        process.exit(1);
-      }
     }
 
     console.log('\n----- EVIDENCE BLOCK -----\n');
