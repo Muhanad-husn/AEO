@@ -1351,6 +1351,39 @@ describe('tokenising and matching', () => {
     });
   });
 
+  // #136: reviewer finding on #134's fix. Keeping every surviving path-shaped token,
+  // unconditionally, made a path ARGUMENT part of the declared identity too, so a
+  // declared command with a directory target stopped matching its own plain invocations.
+  // The seam between "an interpreter's script" and "the suite's own target" is not
+  // decidable from shape — both are a plain program followed by a path-shaped token — so
+  // it is read off GENERIC_INTERPRETERS, a fixed set, rather than guessed at.
+  describe('a declared command with a path target, not an interpreter (#136)', () => {
+    test('a directory argument does not become part of the suite\'s identity', () => {
+      const declared = [['pytest', 'tests/']];
+      assert.equal(invokesDeclaredSuite('pytest', declared), 'pytest tests/');
+      assert.equal(invokesDeclaredSuite('pytest -k x', declared), 'pytest tests/');
+      assert.equal(invokesDeclaredSuite('pytest tests/unit/test_api.py', declared), 'pytest tests/');
+    });
+
+    test('a package path argument does not become part of the suite\'s identity', () => {
+      assert.equal(invokesDeclaredSuite('go test ./pkg', [['go', 'test', 'pkg/...']]), 'go test pkg/...');
+    });
+  });
+
+  // F3: reducing every invoked token to its basename, rather than only the ones that
+  // follow a generic interpreter, made a path ARGUMENT to an unrelated program match a
+  // single-token declared suite by basename alone. Pinned allowed, not accepted as a
+  // trade-off: `tools/pytest` here is `git add`'s and `cat`'s argument, not an
+  // interpreter's script, and interpreterScriptToken does not reduce it.
+  describe('an unrelated command naming a path that merely ends in the suite\'s name (#136)', () => {
+    const declared = [['pytest']];
+
+    test('the path stays an argument to its own command, not the declared suite', () => {
+      assert.equal(invokesDeclaredSuite('git add tools/pytest', declared), null);
+      assert.equal(invokesDeclaredSuite('cat .venv/bin/pytest', declared), null);
+    });
+  });
+
   // One seam per command on the line, in the order the shell runs them.
   const seams = (command, env) =>
     resolveRoots({ command, env, platform: 'win32' }).seams.map((s) => s.data.root);
