@@ -183,17 +183,31 @@ export function pathCandidates(tokens) {
 }
 
 /**
+ * A path-shaped token reduced to its basename; anything else passes through unchanged.
+ * The declared command and the invoked one are both put through this before they are
+ * compared, so `scripts/check.sh` on either side lines up with `check.sh` on the other.
+ */
+function identityToken(t) {
+  return /[\\/]/.test(t) ? path.basename(t) : t;
+}
+
+/**
  * The declared command reduced to the tokens worth matching on.
  *
  * Flags, glob arguments and relative path arguments are dropped: `go test ./...` is the
  * same invocation as `go test ./pkg`, and a gate keyed on `./...` would miss the second.
- * When nothing survives, a path-shaped program keeps its basename, so
- * `vendor/bin/phpunit` still matches a bare `phpunit`.
+ *
+ * Every surviving path-shaped token keeps only its basename: `bash scripts/check.sh`
+ * becomes `['bash', 'check.sh']`. Reducing to basename ONLY WHEN NOTHING PLAIN SURVIVED
+ * (the previous rule) meant a generic interpreter's script argument was dropped whenever
+ * the interpreter itself was a plain token, so `bash scripts/check.sh` collapsed to just
+ * `bash` and any `bash <anything>` matched it — including a supervisor's own `status` and
+ * `stop` commands, unreachable for the life of a run (#134). `vendor/bin/phpunit` alone
+ * still reduces to `['phpunit']`, the same as before.
  */
 function significantTokens(command) {
   const kept = command.filter((t) => !t.startsWith('-') && !/^\.{1,2}[\\/]/.test(t) && !t.includes('*'));
-  const plain = kept.filter((t) => !/[\\/]/.test(t));
-  return plain.length > 0 ? plain : kept.map((t) => path.basename(t));
+  return kept.map(identityToken);
 }
 
 function isOrderedSubsequence(tokens, wanted) {
@@ -208,10 +222,13 @@ function isOrderedSubsequence(tokens, wanted) {
 /**
  * The declared test command this Bash command invokes, or null.
  *
- * Two forms match, both whole-token (V-12). The full declared sequence in order, which
- * catches `npm test` and `uv run pytest`. Or its final program token IN PROGRAM
- * POSITION, which catches a bare `pytest -k x` in a project whose declared command wraps
- * it, and `cd sub && pytest` with it.
+ * Two forms match, both whole-token (V-12), and both compare basename-normalised tokens
+ * so a path-shaped token lines up with itself on either side (#134; see identityToken and
+ * significantTokens). The full declared sequence in order, which catches `npm test`,
+ * `uv run pytest` and `bash scripts/check.sh`. Or its final token IN PROGRAM POSITION,
+ * which catches a bare `pytest -k x` in a project whose declared command wraps it,
+ * `cd sub && pytest` with it, and a script run directly as `./scripts/check.sh`, whose
+ * basename is the program.
  *
  * The second form used to accept that token anywhere in the command. Because flags and
  * globs are dropped, the final declared token is the literal `test` for Node, Go, Rust
@@ -226,10 +243,16 @@ function isOrderedSubsequence(tokens, wanted) {
  * live run a hand-typed `node --test` is not held by anything (D30): nothing runs a
  * suite as a side effect of a commit any more, so there is no second check downstream of
  * this one to catch what it misses.
+ *
+ * A SECOND KNOWN MISS, of the same shape (#134): a different interpreter running the same
+ * script, as in `sh scripts/check.sh` against a declared `bash scripts/check.sh`. The
+ * script's basename is an ARGUMENT to `sh` there, not the program in program position, so
+ * neither form catches it — catching it would mean treating `sh` and `bash` as
+ * equivalent, a table this function does not carry and should not grow one for.
  */
 export function invokesDeclaredSuite(command, declared) {
-  const tokens = shellTokens(command);
-  const programs = commandSegments(command).segments.map((s) => s.program);
+  const tokens = shellTokens(command).map(identityToken);
+  const programs = commandSegments(command).segments.map((s) => (s.program === null ? null : identityToken(s.program)));
   for (const candidate of declared) {
     const wanted = significantTokens(candidate);
     if (wanted.length === 0) continue;

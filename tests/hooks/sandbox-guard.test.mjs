@@ -976,6 +976,27 @@ describe('the sentinel', () => {
     }
   });
 
+  // #134: the live repro. A declared suite of `bash scripts/check.sh` used to collapse to
+  // just `bash`, so a supervisor's own `status` and `stop` commands were refused for the
+  // life of a run — `stop` being unreachable is what pushed an operator toward killing the
+  // process tree by hand, the exact failure this gate exists to prevent.
+  test('a live sentinel does not block a supervisor script that merely shares the suite\'s interpreter', () => {
+    const repo = makeRepo({ base: { 'aeo-tests.json': JSON.stringify({ test: 'bash scripts/check.sh' }) } });
+    raise(repo);
+    for (const command of [
+      'bash scripts/run_876_supervisor.sh status --run-id x',
+      'bash scripts/run_876_supervisor.sh stop --run-id x',
+      'bash scripts/deploy.sh',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, repo) }), command);
+    }
+    assertBlockedBecause(
+      guard({ payload: bash('bash scripts/check.sh', repo) }),
+      LIVE_RUN,
+      'the declared suite itself still blocks',
+    );
+  });
+
   test('a live sentinel blocks the declared suite\'s program wherever a command runs it', () => {
     const repo = makeRepo({ base: { 'aeo-tests.json': JSON.stringify({ test: 'pytest' }) } });
     raise(repo);
@@ -1294,6 +1315,40 @@ describe('tokenising and matching', () => {
     assert.equal(invokesDeclaredSuite('cd sub && pytest', py), 'uv run pytest');
     assert.equal(invokesDeclaredSuite('AEO_DATA_ROOT=/tmp/s pytest', py), 'uv run pytest');
     assert.equal(invokesDeclaredSuite('ls pytest', py), null);
+  });
+
+  // #134: a declared command whose distinguishing token is path-shaped and whose
+  // interpreter is generic (`bash scripts/check.sh`) used to collapse to just the
+  // interpreter, because the script argument was the only slashed token and got dropped
+  // whenever a plain token survived. The declared suite became `bash`, so any `bash
+  // <anything>` matched — a supervisor's own `status` and `stop` commands included,
+  // unreachable for the life of a run.
+  describe('a path-shaped declared token (#134)', () => {
+    const declared = [['bash', 'scripts/check.sh']];
+
+    test('still recognised: the interpreter and the script, in the shapes that are honestly reachable', () => {
+      assert.equal(invokesDeclaredSuite('bash scripts/check.sh', declared), 'bash scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('bash scripts/check.sh --full', declared), 'bash scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('cd sub && bash scripts/check.sh', declared), 'bash scripts/check.sh');
+      // The script run directly: its basename is the program, the same mechanism that
+      // already matches a bare `phpunit` against a declared `vendor/bin/phpunit`.
+      assert.equal(invokesDeclaredSuite('./scripts/check.sh', declared), 'bash scripts/check.sh');
+    });
+
+    // A different interpreter for the same script is a known miss, not a regression.
+    // `scripts/check.sh` is an ARGUMENT to `sh` there, not the program in program
+    // position, so the second matching form does not reach it either — matching it would
+    // mean treating `sh` and `bash` as equivalent, the same kind of table this function
+    // already declines to carry for `node --test`.
+    test('a different interpreter for the same script is a known miss, not a block', () => {
+      assert.equal(invokesDeclaredSuite('sh scripts/check.sh', declared), null);
+    });
+
+    test('a bare interpreter invocation of anything else is no longer treated as the declared suite', () => {
+      assert.equal(invokesDeclaredSuite('bash scripts/run_876_supervisor.sh status --run-id x', declared), null);
+      assert.equal(invokesDeclaredSuite('bash scripts/run_876_supervisor.sh stop --run-id x', declared), null);
+      assert.equal(invokesDeclaredSuite('bash scripts/deploy.sh', declared), null);
+    });
   });
 
   // One seam per command on the line, in the order the shell runs them.
