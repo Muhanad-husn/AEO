@@ -92,9 +92,12 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    node "${CLAUDE_PLUGIN_ROOT}/skills/safe-pr/scripts/collect-evidence.mjs" --feature <feature-slug> --slice <NN-slice-slug> [--type cli] --body-only --template "${CLAUDE_PLUGIN_ROOT}/skills/safe-pr/assets/pr-body-template.md" --out PR_BODY.md
    ```
 
-   Fill the remaining `<placeholders>`: description, what changed, how to
-   review, the unit summary, risk notes, the plan path. Be honest about
-   anything partial. `PR_BODY.md` is git-ignored — it isn't committed.
+   Read the generated `PR_BODY.md` prose, not just its `<placeholders>` — the
+   file is git-ignored, so it survives across slices, and a plausible-looking
+   body left over from an earlier slice is the failure to catch here, not a
+   missing placeholder. Fill the remaining `<placeholders>`: description,
+   what changed, how to review, the unit summary, risk notes, the plan path.
+   Be honest about anything partial.
 6. Dispatch the reviewer on every PR — an unconditional step now, not a branch
    of the risk rubric. Run `${CLAUDE_PLUGIN_ROOT}/skills/review/SKILL.md`, which
    stages the packet (the claim, the diff, the issue and relevant spec section,
