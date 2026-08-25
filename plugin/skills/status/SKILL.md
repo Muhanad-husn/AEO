@@ -1,6 +1,6 @@
 ---
 name: status
-description: Render the project's current state — open issues triaged into open, in flight and blocked, open PR status with check state, and the Decision Log — as a generated view, never a hand-maintained one. Use when asked for project status, "where are we", or at the start of a session that needs ground truth instead of a memory file's word for it.
+description: Render the project's current state — open issues triaged into open, in flight and blocked, open PR status with check state, the Decision Log, and (when this repo has one) its planned-vs-built slice chains — as a generated view, never a hand-maintained one. Use when asked for project status, "where are we", "what's next", or at the start of a session that needs ground truth instead of a memory file's word for it.
 disable-model-invocation: true
 ---
 
@@ -22,7 +22,7 @@ verbatim — nothing here is summarized or filtered before display:
 node "${CLAUDE_PLUGIN_ROOT}/skills/status/scripts/render-status.mjs"
 ```
 
-The script does three things, every run, from the record itself, and
+The script does four things, every run, from the record itself, and
 nothing else:
 
 - **Issues.** Every open issue, triaged into **open** (plain backlog),
@@ -36,9 +36,25 @@ nothing else:
   founder's expense.
 - **The Decision Log.** One line per decision, by identifier, read from
   whichever of `docs/DECISIONS.md`, `DECISIONS.md`, `docs/decisions.md`
-  or `decisions.md` exists in this repo — detected, not assumed. If none
-  of them exist, the render says so by name and still shows Issues and
-  PRs; a missing source is reported, never silently dropped.
+  or `decisions.md` exists in the **project** repo — detected, not
+  assumed. A project that installs this plugin inherits its own
+  `DECISIONS.md` rather than keeping a copy, so when none of the four
+  project candidates exist the render falls back to the plugin's own
+  log instead (resolved from `CLAUDE_PLUGIN_ROOT`) and says plainly
+  that the project keeps none of its own. Only when neither the
+  project nor the plugin has one does it report "not found," naming
+  every path it looked at (issue #132).
+- **Slice chains.** For every `plans/<feature>/` directory `tdd-plan`
+  wrote, the slices planned against the slices with an evidence
+  directory under `docs/tdd-evidence/<feature>/` (`red-green-refactor`
+  / `safe-pr`'s own output — issue #132), and whether the plan's
+  README records the chain as closed. Both paths are written by this
+  plugin's own lanes, so counting them is generated, not
+  hand-maintained (D5 still holds). This section is
+  silent — not a header, not a zero — in a repo with no `plans/`
+  directory at all, and its own render always names its limit: an
+  evidence directory is staged when a slice's PR opens, not when it
+  merges, so it is a proxy for "built," never proof.
 
 `plugin/hooks/session-status.mjs` renders the same issues-and-PRs answer
 at SessionStart, through the same shared code
@@ -51,9 +67,14 @@ skill does not.
 ## What this skill does not do
 
 Nothing is written, cached, or hand-maintained — re-run it and it
-re-reads git and GitHub. It does not report the project's current phase:
-there is no generated source for that without hand-maintaining a second
-record, which is exactly what [D5](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)
-exists to prevent. It does not run tests, gate health checks, or the
-production-data-root check — those belong to `session-status.mjs`, not
-to this skill's stated contract.
+re-reads git and GitHub. It still does not report a single "project
+phase" field: [D5](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md) rules out
+hand-maintaining a second record, and nothing forces `plans/` or
+`docs/tdd-evidence/` to exist or to be current in every repo. Slice
+chains is as far as that gets pushed honestly — it counts what
+`tdd-plan` and `red-green-refactor`/`safe-pr` actually wrote, re-derived
+every run, and it says nothing at all in a repo neither has touched
+(issue #132). A feature with no `plans/` entry is invisible to it
+either way, same as a spec written by hand. It does not run tests, gate
+health checks, or the production-data-root check — those belong to
+`session-status.mjs`, not to this skill's stated contract.

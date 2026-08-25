@@ -68,7 +68,11 @@ function buildEnv(overrides = {}) {
   // Claude Code session exports it, so leaving it set would resolve these cases against
   // this repository's own checkout instead of the temp repo each case builds.
   env.CLAUDE_PROJECT_DIR = '';
-  for (const key of ['AEO_GH_COMMAND', 'AEO_GH_PREFIX_ARGS', 'AEO_FAKE_GH_MODE', 'AEO_GH_TIMEOUT_MS']) {
+  // CLAUDE_PLUGIN_ROOT is cleared the same way session-status.test.mjs clears it: every
+  // Claude Code session exports it, and the Decision Log fallback (issue #132) reads it,
+  // so leaving a founder's real plugin install path set here would make the "no plugin
+  // root available" cases below depend on which machine ran the suite.
+  for (const key of ['AEO_GH_COMMAND', 'AEO_GH_PREFIX_ARGS', 'AEO_FAKE_GH_MODE', 'AEO_GH_TIMEOUT_MS', 'CLAUDE_PLUGIN_ROOT']) {
     delete env[key];
   }
   for (const [key, value] of Object.entries(overrides)) {
@@ -98,6 +102,35 @@ function writeDecisionLog(repo, relPath, body) {
   const abs = path.join(repo, relPath);
   mkdirSync(path.dirname(abs), { recursive: true });
   writeFileSync(abs, body);
+}
+
+/** A scratch plugin root holding only DECISIONS.md (or nothing, if body is omitted). */
+function makePluginRoot(decisionsBody) {
+  const root = tempDir('aeo-p132-plugin-');
+  if (decisionsBody !== undefined) writeFileSync(path.join(root, 'DECISIONS.md'), decisionsBody);
+  return root;
+}
+
+/**
+ * A `plans/<feature>/` directory the way tdd-plan writes one: a README.md carrying the
+ * feature-level `**Status:**` field, and one `NN-<slug>.md` per slice named. Slice body
+ * content is irrelevant to the renderer -- only the file's existence and name matter.
+ */
+function writePlanChain(repo, feature, { slices = [], status = 'in-progress' } = {}) {
+  const dir = path.join(repo, 'plans', feature);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    path.join(dir, 'README.md'),
+    [`# Feature: ${feature}`, '', `**Status:** ${status}`, ''].join('\n'),
+  );
+  for (const slice of slices) {
+    writeFileSync(path.join(dir, `${slice}.md`), `# Slice ${slice}\n`);
+  }
+}
+
+/** `docs/tdd-evidence/<feature>/<slice>/`, the way collect-evidence.mjs creates one. */
+function writeEvidenceDir(repo, feature, slice) {
+  mkdirSync(path.join(repo, 'docs', 'tdd-evidence', feature, slice), { recursive: true });
 }
 
 const FIXTURE_DECISIONS = [
@@ -176,7 +209,11 @@ describe('render against fixture inputs', () => {
 // ---------------------------------------------------------------------------
 
 describe('missing Decision Log', () => {
-  test('names the absence and every candidate name looked for, and still renders issues and PRs', () => {
+  // Issue #132: a project with no decision log of its own now falls back to the
+  // plugin's, resolved from CLAUDE_PLUGIN_ROOT -- so "not found" only survives when
+  // NEITHER exists, which is what this case now deliberately pins down (CLAUDE_PLUGIN_ROOT
+  // is cleared by buildEnv/fakeGhEnv, so there is nowhere left to fall back to).
+  test('names the absence and every candidate name looked for, and still renders issues and PRs, when no plugin root is available either', () => {
     const repo = makeRepo(); // no docs/DECISIONS.md, DECISIONS.md, docs/decisions.md, or decisions.md
     const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'status-fixture' }) });
     assert.equal(r.status, 0, r.stderr);
@@ -193,6 +230,15 @@ describe('missing Decision Log', () => {
     assert.match(r.stdout, /\*\*Open PRs \(4\):\*\*/);
   });
 
+  test('when CLAUDE_PLUGIN_ROOT is set but has no DECISIONS.md either, "not found" names that it looked there too', () => {
+    const repo = makeRepo();
+    const pluginRoot = makePluginRoot(); // plugin root with no DECISIONS.md at all
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty', CLAUDE_PLUGIN_ROOT: pluginRoot }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /\*\*Decision Log:\*\* not found\. Looked for /);
+    assert.match(r.stdout, /the plugin's own DECISIONS\.md/);
+  });
+
   test('a file present under a candidate name with no matching heading is reported distinctly from "not found"', () => {
     const repo = makeRepo();
     writeDecisionLog(repo, path.join('docs', 'DECISIONS.md'), '# Decisions\n\nNothing here matches the heading pattern yet.\n');
@@ -201,6 +247,56 @@ describe('missing Decision Log', () => {
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /\*\*Decision Log\*\* \(`docs\/DECISIONS\.md`\): present, but no/);
     assert.doesNotMatch(r.stdout, /not found/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Decision Log fallback to the plugin's own log (issue #132, Part A). A consuming
+// project inherits this plugin's DECISIONS.md; it does not keep a copy of its own
+// unless it chooses to. Reporting "not found" against four paths that were never going
+// to exist in that project reads as a defect in their repo and is not one.
+// ---------------------------------------------------------------------------
+
+describe('Decision Log falls back to the plugin\'s own log (issue #132)', () => {
+  test('a project with no decision log of its own shows the plugin\'s, named as a fallback rather than the project\'s own', () => {
+    const repo = makeRepo();
+    const pluginRoot = makePluginRoot('### D9 — Some plugin decision\n\nbody\n');
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty', CLAUDE_PLUGIN_ROOT: pluginRoot }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /this project keeps none of its own/);
+    assert.match(r.stdout, /- D9 — Some plugin decision/);
+    assert.doesNotMatch(r.stdout, /not found/);
+  });
+
+  test('an empty plugin Decision Log (present but no heading matched) is reported distinctly, still as a fallback', () => {
+    const repo = makeRepo();
+    const pluginRoot = makePluginRoot('# Decisions\n\nNothing here matches the heading pattern yet.\n');
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty', CLAUDE_PLUGIN_ROOT: pluginRoot }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /this project keeps none of its own.*present, but no/);
+    assert.doesNotMatch(r.stdout, /not found/);
+  });
+
+  test('a project\'s own decision log wins over the plugin\'s even when both exist', () => {
+    const repo = makeRepo();
+    writeDecisionLog(repo, path.join('docs', 'DECISIONS.md'), FIXTURE_DECISIONS);
+    const pluginRoot = makePluginRoot('### D9 — Some plugin decision\n\nbody\n');
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty', CLAUDE_PLUGIN_ROOT: pluginRoot }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /\*\*Decision Log\*\* \(`docs\/DECISIONS\.md`, 2\):/);
+    assert.doesNotMatch(r.stdout, /D9 — Some plugin decision/);
+    assert.doesNotMatch(r.stdout, /keeps none of its own/);
+  });
+
+  test('this repository\'s own docs/DECISIONS.md still resolves unchanged when run from this checkout', () => {
+    // The plugin's real DECISIONS.md lives inside THIS repo too (plugin/DECISIONS.md),
+    // so this pins down that the project's own candidate always wins first -- the fix
+    // must not make this repository's status render regress to the plugin's copy.
+    const realRepoRoot = path.resolve(import.meta.dirname, '../..');
+    const realPluginRoot = path.join(realRepoRoot, 'plugin');
+    const r = runScript({ cwd: realRepoRoot, env: fakeGhEnv({ mode: 'empty', CLAUDE_PLUGIN_ROOT: realPluginRoot }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /\*\*Decision Log\*\* \(`docs\/DECISIONS\.md`/);
   });
 });
 
@@ -240,5 +336,86 @@ describe('unknown versus zero', () => {
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /\*\*Issues:\*\* none open\./);
     assert.match(r.stdout, /\*\*Open PRs:\*\* none\./);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice chains (issue #132, Part B): plans/<feature>/ counted against
+// docs/tdd-evidence/<feature>/<slice>/ -- directory presence, nothing read from
+// specs/ or PR titles (neither is an AEO contract, see status-render.mjs's header).
+// ---------------------------------------------------------------------------
+
+describe('Slice chains', () => {
+  test('a repo with no plans/ directory renders no Slice chains section at all -- silence, not a zero', () => {
+    const repo = makeRepo();
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty' }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stdout, /Slice chains/);
+  });
+
+  test('a fully-built, closed chain reports N\\/N built and chain closed', () => {
+    const repo = makeRepo();
+    writePlanChain(repo, 'stage-a1-parse', { slices: ['01-tokenize', '02-normalize'], status: 'done' });
+    writeEvidenceDir(repo, 'stage-a1-parse', '01-tokenize');
+    writeEvidenceDir(repo, 'stage-a1-parse', '02-normalize');
+
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty' }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /\*\*Slice chains \(1\):\*\*/);
+    assert.match(r.stdout, /- stage-a1-parse\s+2\/2 built, chain closed/);
+    assert.match(r.stdout, /No chain has unbuilt slices\./);
+  });
+
+  test('a partially-built chain names the lowest-numbered unbuilt slice and does not claim it is closed', () => {
+    const repo = makeRepo();
+    writePlanChain(repo, 'stage-a3-typegen', {
+      slices: ['01-scan', '02-emit', '03-validate'],
+      status: 'in-progress',
+    });
+    writeEvidenceDir(repo, 'stage-a3-typegen', '01-scan');
+
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty' }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /- stage-a3-typegen\s+1\/3 built, next unbuilt: 02-emit/);
+    assert.doesNotMatch(r.stdout, /stage-a3-typegen.*chain closed/);
+    assert.doesNotMatch(r.stdout, /No chain has unbuilt slices\./);
+  });
+
+  test('the render names evidence-directory presence as a proxy for "built", not proof', () => {
+    const repo = makeRepo();
+    writePlanChain(repo, 'stage-a1-parse', { slices: ['01-tokenize'], status: 'done' });
+    writeEvidenceDir(repo, 'stage-a1-parse', '01-tokenize');
+
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty' }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /proxy for "built"/);
+    assert.match(r.stdout, /PR closed unmerged would still count/);
+  });
+
+  test('multiple chains render sorted by feature name, each counted independently', () => {
+    const repo = makeRepo();
+    writePlanChain(repo, 'stage-a2-typing', { slices: ['01-a', '02-b', '03-c', '04-d'], status: 'done' });
+    for (const s of ['01-a', '02-b', '03-c', '04-d']) writeEvidenceDir(repo, 'stage-a2-typing', s);
+    writePlanChain(repo, 'stage-a1-parse', { slices: ['01-a'], status: 'in-progress' });
+
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty' }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /\*\*Slice chains \(2\):\*\*/);
+    const a1Index = r.stdout.indexOf('stage-a1-parse');
+    const a2Index = r.stdout.indexOf('stage-a2-typing');
+    assert.ok(a1Index >= 0 && a2Index >= 0);
+    assert.ok(a1Index < a2Index, 'stage-a1-parse sorts before stage-a2-typing');
+    assert.match(r.stdout, /- stage-a2-typing\s+4\/4 built, chain closed/);
+    assert.match(r.stdout, /- stage-a1-parse\s+0\/1 built, next unbuilt: 01-a/);
+  });
+
+  test('a plan directory with a README but no slice files yet is named as nothing planned yet, not 0\\/0 built', () => {
+    const repo = makeRepo();
+    writePlanChain(repo, 'stage-a4-empty', { slices: [], status: 'planning' });
+
+    const r = runScript({ cwd: repo, env: fakeGhEnv({ mode: 'empty' }) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /- stage-a4-empty\s+0 slices planned yet/);
+    assert.doesNotMatch(r.stdout, /0\/0 built/);
   });
 });

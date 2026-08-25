@@ -24,7 +24,7 @@
 // file on every call and returns text -- never a stored value.
 
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
@@ -239,11 +239,36 @@ export const DECISION_LOG_CANDIDATES = ['docs/DECISIONS.md', 'DECISIONS.md', 'do
 // immediately by a digit.
 const DECISION_HEADING = /^#{1,6}\s+(D\d+)\s*(?:[—–-]+)\s*(.+?)\s*$/gm;
 
-/** The first candidate that exists under `root`, or null. */
-export function findDecisionLog(root, candidates = DECISION_LOG_CANDIDATES) {
+/**
+ * The plugin's own Decision Log (`plugin/DECISIONS.md`), resolved from
+ * CLAUDE_PLUGIN_ROOT -- the same env var every other plugin-root lookup in this
+ * codebase already reads (lib.mjs's `preflight`, session-status.mjs's
+ * `readWiredGates`), rather than a second way of finding "where the plugin lives".
+ * Returns null when the env var is unset, which happens outside a Claude Code session
+ * (e.g. a script run by hand) and is not itself an error.
+ */
+function pluginDecisionLogPath(pluginRoot = process.env.CLAUDE_PLUGIN_ROOT) {
+  return pluginRoot ? path.join(pluginRoot, 'DECISIONS.md') : null;
+}
+
+/**
+ * The first project candidate that exists under `root`, or -- when the project keeps
+ * none of its own -- the plugin's own Decision Log (issue #132). A project that
+ * installs this plugin inherits its DECISIONS.md; it does not get a copy in its own
+ * tree, so the four project-local candidates were never going to exist there and
+ * reporting "not found" against them every run reads as a defect in that project's
+ * repo. `source` tells the caller which happened: a project's own log is authoritative
+ * for that project, the plugin's is a fallback and has to be named as one, never
+ * presented as if the project kept it.
+ */
+export function findDecisionLog(root, candidates = DECISION_LOG_CANDIDATES, pluginRoot = process.env.CLAUDE_PLUGIN_ROOT) {
   for (const rel of candidates) {
     const abs = path.join(root, rel);
-    if (existsSync(abs)) return { rel, abs };
+    if (existsSync(abs)) return { rel, abs, source: 'project' };
+  }
+  const pluginAbs = pluginDecisionLogPath(pluginRoot);
+  if (pluginAbs && existsSync(pluginAbs)) {
+    return { rel: pluginAbs, abs: pluginAbs, source: 'plugin' };
   }
   return null;
 }
@@ -259,15 +284,19 @@ export function parseDecisionLog(text) {
 }
 
 /**
- * The Decision Log, one line per decision. Three outcomes, none silent (L-08's rule
+ * The Decision Log, one line per decision. Four outcomes, none silent (L-08's rule
  * against an omitted section reading as "nothing there" applies here as much as it does
- * to a gh answer): not found (names every candidate looked for), found but unparseable
- * (names the file and the pattern that found nothing), or found and rendered.
+ * to a gh answer): not found anywhere (names every project candidate looked for, plus
+ * the plugin's own log if a plugin root was even available to check), found but
+ * unparseable (names the file and the pattern that found nothing), found as the
+ * project's own and rendered, or found only as the plugin's fallback and rendered --
+ * labelled as a fallback, never presented as the project's own (issue #132).
  */
-export function renderDecisionLog(root, candidates = DECISION_LOG_CANDIDATES) {
-  const found = findDecisionLog(root, candidates);
+export function renderDecisionLog(root, candidates = DECISION_LOG_CANDIDATES, pluginRoot = process.env.CLAUDE_PLUGIN_ROOT) {
+  const found = findDecisionLog(root, candidates, pluginRoot);
   if (!found) {
-    return [`**Decision Log:** not found. Looked for ${candidates.join(', ')}.`, ''];
+    const pluginSuffix = pluginDecisionLogPath(pluginRoot) ? ", or the plugin's own DECISIONS.md" : '';
+    return [`**Decision Log:** not found. Looked for ${candidates.join(', ')}${pluginSuffix}.`, ''];
   }
   let text;
   try {
@@ -276,6 +305,15 @@ export function renderDecisionLog(root, candidates = DECISION_LOG_CANDIDATES) {
     return [`**Decision Log:** found \`${found.rel}\` but could not read it (${err.message}).`, ''];
   }
   const decisions = parseDecisionLog(text);
+
+  if (found.source === 'plugin') {
+    const label = `**Decision Log** (this project keeps none of its own; showing the plugin's \`DECISIONS.md\` instead`;
+    if (decisions.length === 0) {
+      return [`${label}): present, but no ` + '`### D<n> — <title>`' + ' heading matched.', ''];
+    }
+    return [`${label}, ${decisions.length}):`, ...decisions.map((d) => `- ${d.id} — ${d.title}`), ''];
+  }
+
   if (decisions.length === 0) {
     return [`**Decision Log** (\`${found.rel}\`): present, but no `+ '`### D<n> — <title>`' + ' heading matched.', ''];
   }
@@ -283,10 +321,140 @@ export function renderDecisionLog(root, candidates = DECISION_LOG_CANDIDATES) {
 }
 
 // ---------------------------------------------------------------------------
-// The status skill's own render (issue #81) -- Issues, PRs, Decision Log. Nothing more:
-// the SKILL.md stub's contract is exactly these three, and the render stays inside it
-// (an addition beyond what the stub promised is a founder scope question, not something
-// to add quietly here).
+// Slice chains (issue #132, Part B) -- what tdd-plan planned in plans/<feature>/
+// against what red-green-refactor/safe-pr staged evidence for in
+// docs/tdd-evidence/<feature>/<slice>/. Both are AEO's own written paths
+// (tdd-plan/SKILL.md, collect-evidence.mjs), re-derived by counting directories on
+// every run and stored nowhere -- the same "generated, not hand-maintained" shape D5
+// already requires of everything else here.
+//
+// specs/<feature>.md and PR titles are deliberately NOT read: the plugin scaffolds an
+// empty specs/ for builder territory but no skill ever writes a per-feature file there,
+// and safe-pr builds a `[slice NN]` PR title but nothing validates it -- neither is an
+// AEO contract this renderer can trust.
+//
+// Skill-only, by design: this function is called from renderStatusView below and
+// nowhere else. session-status.mjs (SessionStart) has its own stated latency budget
+// and does not import this.
+// ---------------------------------------------------------------------------
+
+const PLANS_DIR = 'plans';
+const EVIDENCE_DIR = path.join('docs', 'tdd-evidence');
+
+/** The feature-level `**Status:** planning | in-progress | done` field from a plan's own README.md text. */
+function readChainStatus(readmeText) {
+  const m = readmeText.match(/\*\*Status:\*\*\s*(planning|in-progress|done)/);
+  return m ? m[1] : null;
+}
+
+/**
+ * One feature chain read from `plans/<feature>/`: every `NN-<slug>.md` slice plan
+ * tdd-plan wrote (README.md excluded), each checked for whether
+ * `docs/tdd-evidence/<feature>/NN-<slug>/` exists for it -- directory presence only,
+ * the proxy this section's own render names as one. Returns null when `feature` is not
+ * a plans/ subdirectory at all (a stray file alongside the feature directories).
+ */
+function readChain(root, feature) {
+  const dir = path.join(root, PLANS_DIR, feature);
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  const sliceNames = entries
+    .filter((e) => e.isFile() && /^\d+-.+\.md$/.test(e.name) && e.name.toLowerCase() !== 'readme.md')
+    .map((e) => e.name.replace(/\.md$/i, ''))
+    .sort();
+
+  let status = null;
+  const readmePath = path.join(dir, 'README.md');
+  if (existsSync(readmePath)) {
+    try {
+      status = readChainStatus(readFileSync(readmePath, 'utf8'));
+    } catch {
+      status = null;
+    }
+  }
+
+  const slices = sliceNames.map((name) => ({
+    name,
+    built: existsSync(path.join(root, EVIDENCE_DIR, feature, name)),
+  }));
+
+  return { feature, slices, closed: status === 'done' };
+}
+
+/**
+ * Every `plans/<feature>/` directory under `root`, each read through `readChain`.
+ * Returns null when `plans/` itself does not exist -- the caller renders that as
+ * complete silence, never a zero (issue #132's constraint: a repo with nothing planned
+ * is not a repo this signal computed a zero for, it is a repo it has nothing to say
+ * about).
+ */
+function readAllChains(root) {
+  let entries;
+  try {
+    entries = readdirSync(path.join(root, PLANS_DIR), { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  return entries
+    .filter((e) => e.isDirectory())
+    .map((e) => readChain(root, e.name))
+    .filter((chain) => chain !== null)
+    .sort((a, b) => a.feature.localeCompare(b.feature));
+}
+
+/**
+ * The Slice chains section: for each feature chain, slices planned against slices with
+ * an evidence directory, and whether the plan's own README records the chain as
+ * closed. Renders nothing at all (not a header, not a zero) when this repo has no
+ * `plans/` directory -- constraint (a). Always names the proxy this counts (constraint
+ * (b)): an evidence directory is staged when a slice's PR opens, not when it merges, so
+ * a slice whose PR closed unmerged would still count here as built.
+ */
+export function renderSliceChains(root) {
+  const chains = readAllChains(root);
+  if (!chains || chains.length === 0) return [];
+
+  const lines = [`**Slice chains (${chains.length}):**`];
+  let anyIncomplete = false;
+  let anyCounted = false;
+  for (const chain of chains) {
+    const total = chain.slices.length;
+    if (total === 0) {
+      lines.push(`- ${chain.feature}   0 slices planned yet`);
+      continue;
+    }
+    anyCounted = true;
+    const built = chain.slices.filter((s) => s.built).length;
+    const firstUnbuilt = chain.slices.find((s) => !s.built);
+    let detail;
+    if (!firstUnbuilt) detail = chain.closed ? 'chain closed' : 'not recorded as closed';
+    else detail = `next unbuilt: ${firstUnbuilt.name}`;
+    if (firstUnbuilt) anyIncomplete = true;
+    lines.push(`- ${chain.feature}   ${built}/${total} built, ${detail}`);
+  }
+  lines.push('');
+  if (anyCounted && !anyIncomplete) {
+    lines.push('No chain has unbuilt slices.', '');
+  }
+  lines.push(
+    'Evidence-directory presence is a proxy for "built", not proof a slice merged: a',
+    'slice whose PR closed unmerged would still count here.',
+    '',
+  );
+  return lines;
+}
+
+// ---------------------------------------------------------------------------
+// The status skill's own render (issue #81) -- Issues, PRs, Decision Log, and Slice
+// chains (issue #132). The SKILL.md stub's original contract was exactly the first
+// three; Slice chains is the one addition, and only over paths AEO's own lanes write
+// (an addition beyond that is a founder scope question, not something to add quietly
+// here).
 // ---------------------------------------------------------------------------
 
 /**
@@ -312,6 +480,7 @@ export async function renderStatusView(root) {
   lines.push(...renderIssueTriage(issues));
   lines.push(...renderOpenPrsWithChecks(prs));
   lines.push(...renderDecisionLog(root));
+  lines.push(...renderSliceChains(root));
 
   return lines.join('\n');
 }
