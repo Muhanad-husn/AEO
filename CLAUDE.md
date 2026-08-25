@@ -63,19 +63,44 @@ it is not this one. Read it before running any lane end to end.
 
 ## Current stage
 
-**Shipped. `v0.1.0` is cut, the backlog is empty, and the migration is closed.** Nothing
-is in flight and nothing is deferred. The next change to this repository is whatever a
-consuming project's use of the plugin turns up — file it as an issue against AEO rather
-than fixing it locally.
+**Shipped. `v0.2.0` is the current release, the post-`v0.1.0` work is merged, and the
+backlog is empty again.** Nothing is in flight and nothing is deferred.
 
-Three things the release decided, all in [D27](docs/DECISIONS.md): the number is `0.1.0`
+`v0.1.0` closed the migration and predicted the loop that produced this release: the next
+change would be whatever a consuming project's use of the plugin turned up, filed as an
+issue against AEO rather than fixed locally. That is what happened. About ten issues came
+back from real use and seventeen commits closed them. The reviewer now reads every pull
+request, the sandbox guard reads its declaration from the settings file rather than the
+environment, the declared suite grew a second tier, and `safe-pr` and `sprint-start` each
+lost a batch of defects. Keep filing that way.
+
+**What moves the version is [D34](docs/DECISIONS.md).** This release is `0.2.0` rather than
+`0.1.1` because it removes cover a consumer had. Patch for a fix that needs nothing from
+the consumer; minor for anything that removes cover, renames a skill or a command, or
+changes the hook contract; `1.0.0` waits on the skill names, the command names and the hook
+contract going a release without moving, which this release does not. The founder judges the
+bump per release rather than computing it from commit prefixes.
+
+**`v0.2.0` takes two things away.** `commit-gate.mjs` is deleted, and `block-merge.mjs` no
+longer resolves a push's destination against the repository's default branch. Both
+re-derived a check GitHub's own branch protection already makes server-side, and getting
+that re-derivation's directory resolution wrong cost two defects (#119, #121).
+[D30](docs/DECISIONS.md) has the boundary rule, the table of what was removed against the
+GitHub setting that covers it, and what a project now has to configure branch protection to
+get instead of a local gate. The second removal is [D33](docs/DECISIONS.md): the sandbox
+guard reads its declaration from `.claude/settings.json`, and a blank value there disarms the
+guard and beats an exported one. The scaffolder writes that key blank, so a guard armed by
+exporting `AEO_LIVE_DATA_ROOT` is off until the path moves into the settings file. Either
+removal on its own makes the release a minor bump.
+
+Three things `v0.1.0` decided, all in [D27](docs/DECISIONS.md): the number is `0.1.0`
 because one dry run is not evidence for a stability promise; the tag **documents and does
 not pin**, because `marketplace add` reads the default branch and never resolves a tag; and
 the version lives in `plugin/.claude-plugin/plugin.json` and nowhere else, with a test that
 fails if `package.json` takes a copy back. There is no `CHANGELOG.md` on purpose — the
 release notes are the record, and a second one would drift.
 
-[D28](docs/DECISIONS.md) answers the one question the release could not:
+[D28](docs/DECISIONS.md) answers the one question that release could not:
 [docs/MEASUREMENT.md](docs/MEASUREMENT.md) designs how a project that *depends* on AEO
 would find out whether AEO helped it. Nothing is built. It is deliberately not shipped in
 the plugin, its signals come from GitHub rather than from AEO's own logs, and it is a
@@ -166,14 +191,6 @@ miss and expensive to discover late:
 - Commands have been merged into skills, so new plugins ship `skills/` only (C-03).
 - The gates are **Node**, not Python — `python3` on this machine is a Microsoft Store
   alias stub, and a hook that cannot start fails *open* ([D8](docs/DECISIONS.md)).
-
-**One post-ship subtraction, not a phase.** `commit-gate.mjs` is deleted, and
-`block-merge.mjs` no longer resolves a push's destination against the repository's
-default branch. Both re-derived a check GitHub's own branch protection already makes
-server-side, and getting that re-derivation's directory resolution wrong cost two
-defects (#119, #121). [D30](docs/DECISIONS.md) has the boundary rule, the table of what
-was removed against the GitHub setting that covers it, and what a project now has to
-configure branch protection to get instead of a local gate.
 
 ## How the work is done
 
