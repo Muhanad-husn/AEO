@@ -114,8 +114,8 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    existing job — deciding whether the separate `verify` lane also runs on top
    of the review that already happened, never whether review itself happens.
    On a row that asks for verification, run `verify` too and attach its
-   findings as advisory as well. Then show the founder the title, body, and
-   branch, and get explicit confirmation — this is outward-facing. Then push:
+   findings as advisory as well. Then push — the branch is a proposal, not a
+   change to anything, and it cannot reach the default branch:
 
    ```
    git push -u origin feat/<feature-slug>/<NN-slice-slug>
@@ -139,7 +139,11 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
 
 ## Safety rules
 
-- Confirm before any push or `gh pr create` — both are outward-facing.
+- A feature-branch push and `gh pr create` need no approval — a branch and a
+  PR are proposals, reversible and inert until someone merges them. Only the
+  merge waits for the founder ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)),
+  and `block-merge.mjs` stopped refusing pushes for the same reason: branch
+  protection refuses the dangerous case server-side.
 - Never force-push, never rewrite shared history, never push to the default
   branch directly.
 - Base is always the repo's default branch, unless the founder says
