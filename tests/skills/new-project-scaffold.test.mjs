@@ -29,7 +29,16 @@
 // testbed (D21).
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
@@ -93,6 +102,44 @@ function materialize(step, seed) {
 }
 
 /**
+ * Step 3's opening rule (issue #124), run before the plan's `steps` array is walked at
+ * all: file the founder's own Markdown documents — a PRD, a spec, a research note — out
+ * of the project root and into `founderDocs.destination`, skipping the fixed exclude
+ * list. Returns what moved and what could not move because the destination already held
+ * a file of that name, which is what the Stage-0 report names as a conflict rather than
+ * silently overwriting.
+ */
+function discoverFounderDocs(root, founderPlan) {
+  const rule = founderPlan.founderDocs;
+  assert.ok(rule, 'scaffold-plan.json declares no founderDocs rule');
+  const exclude = new Set(rule.excludeAtRoot.map((n) => n.toLowerCase()));
+  const destDir = path.join(root, ...rule.destination.split('/'));
+
+  const moved = [];
+  const conflicts = [];
+
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.toLowerCase().endsWith('.md')) continue;
+    if (exclude.has(entry.name.toLowerCase())) continue;
+
+    const from = path.join(root, entry.name);
+    const to = path.join(destDir, entry.name);
+
+    if (existsSync(to)) {
+      conflicts.push({ path: entry.name, reason: `${rule.destination}/${entry.name} already exists` });
+      continue;
+    }
+
+    mkdirSync(destDir, { recursive: true });
+    renameSync(from, to);
+    moved.push({ from: entry.name, to: `${rule.destination}/${entry.name}` });
+  }
+
+  return { moved, conflicts };
+}
+
+/**
  * Walk the shipped plan's stage-0 steps in array order and write the tree, exactly as
  * Stage 0 step 3 instructs. Returns the write log and the observability observations
  * made during the walk, both of which the ordering assertions read.
@@ -100,6 +147,8 @@ function materialize(step, seed) {
 function scaffoldStage0(root, stackId) {
   const seed = plan.seeds[stackId];
   assert.ok(seed, `scaffold-plan.json seeds no "${stackId}" stack`);
+
+  const founderDocs = discoverFounderDocs(root, plan);
 
   const writeLog = [];
   const productWritesWithoutLogs = [];
@@ -120,7 +169,7 @@ function scaffoldStage0(root, stackId) {
     writeLog.push({ path: rel, role: step.role });
   }
 
-  return { writeLog, productWritesWithoutLogs };
+  return { writeLog, productWritesWithoutLogs, founderDocs };
 }
 
 function git(root, args) {
@@ -271,6 +320,139 @@ describe('the emitted tree has the declared shape', () => {
       ['test'],
       'aeo-tests.json carries a key beyond the recorded command; that is the config file D10 refuses',
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// issue #124 — the founder's own documents are filed under docs/, before the first commit
+// ---------------------------------------------------------------------------
+//
+// Triage's correction to the issue as filed: new-project never read a founder's PRD and
+// "left it where it found it" — Stage 0 step 2 only ever branches on empty-directory vs.
+// existing-project, and nothing scanned the root at all, which is why a PRD dropped there
+// survived untouched. This is the feature that scan never was, not a bug fix to one that
+// existed. Checkpoint 6's live run only ever exercised the empty-directory case, which is
+// why nobody noticed.
+//
+// Seeds a temp root with founder-written documents before scaffoldStage0 runs, the way a
+// founder actually encounters this: they write a PRD, then start the skill.
+
+function seedFile(root, rel, content) {
+  const full = path.join(root, ...rel.split('/'));
+  mkdirSync(path.dirname(full), { recursive: true });
+  writeFileSync(full, content, 'utf8');
+}
+
+/** Same shape as world(), but the root already holds founder documents before step 3 runs. */
+function worldWithFounderDocs(rootFiles, preExistingDocsFiles = []) {
+  const root = tempDir('aeo-124-');
+
+  for (const [rel, content] of Object.entries(preExistingDocsFiles)) {
+    seedFile(root, `docs/${rel}`, content);
+  }
+  for (const [rel, content] of Object.entries(rootFiles)) {
+    seedFile(root, rel, content);
+  }
+
+  const emitted = scaffoldStage0(root, 'node');
+
+  git(root, ['init', '-b', 'main']);
+  git(root, ['add', '-A']);
+  git(root, [
+    '-c', 'user.name=AEO Test',
+    '-c', 'user.email=aeo@example.invalid',
+    '-c', 'commit.gpgsign=false',
+    'commit', '-m', 'chore: scaffold the project',
+  ]);
+
+  return { root, ...emitted };
+}
+
+describe('founder documents already in the root move under docs/ before the first commit', () => {
+  test('a PRD and a research note move to docs/, keeping their content', () => {
+    const w = worldWithFounderDocs({
+      'PRD.md': '# Product Requirements\n',
+      'research-notes.md': '# Notes\n',
+    });
+
+    assert.deepEqual(
+      w.founderDocs.conflicts,
+      [],
+      `unexpected conflicts: ${JSON.stringify(w.founderDocs.conflicts)}`,
+    );
+    assert.deepEqual(
+      w.founderDocs.moved.map((m) => m.to).sort(),
+      ['docs/PRD.md', 'docs/research-notes.md'],
+    );
+
+    for (const name of ['PRD.md', 'research-notes.md']) {
+      assert.equal(existsSync(path.join(w.root, name)), false, `${name} still sits at the root`);
+      assert.ok(existsSync(path.join(w.root, 'docs', name)), `docs/${name} was not created`);
+    }
+    assert.equal(
+      readFileSync(path.join(w.root, 'docs', 'PRD.md'), 'utf8'),
+      '# Product Requirements\n',
+      'the moved PRD lost or changed its content',
+    );
+
+    const tracked = git(w.root, ['ls-files']).split(/\r?\n/);
+    assert.ok(tracked.includes('docs/PRD.md'), 'docs/PRD.md is not in the first commit');
+    assert.ok(tracked.includes('docs/research-notes.md'), 'docs/research-notes.md is not in the first commit');
+    assert.ok(!tracked.includes('PRD.md'), 'PRD.md is still tracked at the root');
+
+    // Before the commit, not after: nothing at the root path ever appears in the tree
+    // this repository's history holds, so there is no confusing move-after-the-fact.
+    const rootHistory = git(w.root, ['log', '--follow', '--name-only', '--pretty=format:', '--', 'PRD.md']);
+    assert.equal(rootHistory, '', 'PRD.md appears in history at the root; the move happened after the commit');
+  });
+
+  test('README.md, CLAUDE.md, and the tooling-reserved root names are left alone', () => {
+    const w = worldWithFounderDocs({
+      'LICENSE.md': '# MIT\n',
+      'CONTRIBUTING.md': '# Contributing\n',
+    });
+
+    assert.deepEqual(w.founderDocs.moved, [], 'an excluded root name was moved');
+    assert.ok(existsSync(path.join(w.root, 'LICENSE.md')), 'LICENSE.md was moved off the root');
+    assert.ok(existsSync(path.join(w.root, 'CONTRIBUTING.md')), 'CONTRIBUTING.md was moved off the root');
+    assert.equal(existsSync(path.join(w.root, 'docs', 'LICENSE.md')), false);
+    assert.equal(existsSync(path.join(w.root, 'docs', 'CONTRIBUTING.md')), false);
+  });
+
+  test('a non-Markdown file at the root is left where it is', () => {
+    const w = worldWithFounderDocs({ 'diagram.png': 'not really a png, just bytes\n' });
+
+    assert.deepEqual(w.founderDocs.moved, []);
+    assert.ok(existsSync(path.join(w.root, 'diagram.png')), 'a non-Markdown founder file was moved');
+  });
+
+  test('a name collision with an existing docs/ file is left at the root and reported, not overwritten', () => {
+    const w = worldWithFounderDocs(
+      { 'PRD.md': 'the founder’s new draft\n' },
+      { 'PRD.md': 'an existing docs/PRD.md this project already had\n' },
+    );
+
+    assert.equal(w.founderDocs.moved.length, 0, 'the colliding file should not have been moved');
+    assert.equal(w.founderDocs.conflicts.length, 1, 'the collision was not reported');
+    assert.equal(w.founderDocs.conflicts[0].path, 'PRD.md');
+
+    assert.equal(
+      readFileSync(path.join(w.root, 'PRD.md'), 'utf8'),
+      'the founder’s new draft\n',
+      'the founder’s file at the root should be untouched',
+    );
+    assert.equal(
+      readFileSync(path.join(w.root, 'docs', 'PRD.md'), 'utf8'),
+      'an existing docs/PRD.md this project already had\n',
+      'the pre-existing docs/PRD.md was overwritten instead of being left alone',
+    );
+  });
+
+  test('a scaffold with no founder documents at all reports nothing moved and no conflicts', () => {
+    // scaffolded is the plain empty-directory world already built above; asserting on it
+    // here is what proves the new rule is a no-op for the ordinary case, not just quiet
+    // when nobody looked.
+    assert.deepEqual(scaffolded.founderDocs, { moved: [], conflicts: [] });
   });
 });
 

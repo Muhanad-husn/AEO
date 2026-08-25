@@ -63,9 +63,32 @@ Bundled resource:
    recognise this project's suite by name, so it can refuse running that suite
    over a live long job.
 
-3. **Write the tree, in the plan's order.** Walk `scaffold-plan.json`'s `steps`
-   array from the top, taking every step whose `stage` is 0, and create each path
-   as you reach it.
+3. **File the founder's own documents under `docs/`, then write the tree in the
+   plan's order.**
+
+   Before touching anything in `steps`, tidy what the founder already put in the
+   project root. A PRD, a spec, a research note, a sketch — founder-written
+   material that exists before scaffolding starts. The scaffolder never reads it;
+   it is the input this skill starts from, not something it produces, and it does
+   not belong at the root once scaffolding is done (issue #124).
+
+   Look at the root only, not recursively, for Markdown files (`*.md`,
+   case-insensitive). Move every one to `founderDocs.destination` (`docs/` in the
+   shipped plan), except the names `founderDocs.excludeAtRoot` lists —
+   `README.md`, `CLAUDE.md`, and the small set of files GitHub's own tooling
+   reads specifically from a repository root (`LICENSE.md`, `CONTRIBUTING.md`,
+   `CODE_OF_CONDUCT.md`, `SECURITY.md`). That is a fixed list of names, never a
+   pattern match on a filename like `PRD` — a founder document keeps whatever
+   name it already had.
+
+   If `docs/<name>` already holds a file with that name — an existing project's
+   `docs/` already had one there, or two founder documents share a name — do not
+   overwrite it. Leave the conflicting file at the root and name the conflict in
+   the Stage-0 report; resolving a naming collision in the founder's own material
+   is the founder's call, not yours to guess.
+
+   Then walk `scaffold-plan.json`'s `steps` array from the top, taking every step
+   whose `stage` is 0, and create each path as you reach it.
 
    `logs/` is first and that is not cosmetic. It is where every run record this
    plugin writes will land, and a project that gets its observability after its
@@ -201,9 +224,11 @@ Bundled resource:
      actually facing.
 
    Then report: the tree, the recorded test command, the green baseline, the one
-   commit, whether protection is on, and that `.claude/settings.json` declares
+   commit, whether protection is on, that `.claude/settings.json` declares
    `AEO_LIVE_DATA_ROOT` and `AEO_DATA_ROOT` blank for the founder to fill in
-   whenever this project has production data to protect.
+   whenever this project has production data to protect, and every founder
+   document step 3 moved — its original root path and where it landed under
+   `docs/` — plus any naming conflict step 3 left at the root instead of moving.
 
 ## Stage 1 — the project handbook
 
