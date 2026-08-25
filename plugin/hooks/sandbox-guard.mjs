@@ -202,23 +202,39 @@ export function pathCandidates(tokens) {
 const GENERIC_INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'dash', 'node', 'python', 'python3', 'ruby', 'perl']);
 
 /**
+ * `tokens[i]`, reduced to its basename when it is path-shaped and a generic interpreter
+ * appears earlier in the same command, skipping over any flags in between (#136). Shared
+ * by both sides of the match: the declared command's own tokens, when deciding what
+ * identifies the suite, and the invoked command's tokens, when recognising that identity
+ * again. `bash scripts/check.sh` reduces to `['bash', 'check.sh']` on either side, and
+ * `node --experimental-vm-modules node_modules/.bin/jest` reduces to `['node', 'jest']`,
+ * the flag between interpreter and script skipped on both sides the same way.
+ */
+function reduceInterpreterScript(tokens, i) {
+  const t = tokens[i];
+  if (!/[\\/]/.test(t)) return t;
+  let j = i - 1;
+  while (j >= 0 && tokens[j].startsWith('-')) j -= 1;
+  return j >= 0 && GENERIC_INTERPRETERS.has(tokens[j]) ? path.basename(t) : t;
+}
+
+/**
  * The declared command reduced to the tokens worth matching on.
  *
- * A flag or a glob argument never identifies the suite and is dropped outright: `go test
- * ./...` is the same invocation as `go test ./pkg`.
+ * A flag never identifies the suite and is dropped outright: `pytest -k x` is the same
+ * invocation as bare `pytest`. So does a glob argument: `rm -rf build/*.log` names no
+ * particular file.
  *
  * A path-shaped token is kept, reduced to its basename, ONLY when it is a generic
- * interpreter's own script argument — the token immediately after the interpreter, with
- * no flag in between. `bash scripts/check.sh` becomes `['bash', 'check.sh']`, whatever
- * relative prefix that script carries: `bash ./scripts/check.sh` reduces the same way,
- * because dropping it as a relative argument the way `./...` is dropped would reopen
- * #134 for every script path written the ordinary way, with a leading `./` (#136). A flag
- * between the interpreter and a path means the path belongs to the FLAG, not the
- * interpreter — `node --test tests/` becomes `['node']` alone, because `tests/` is
- * `--test`'s own target, the same role `tests/` plays in `pytest tests/` (#136). Any
- * other path-shaped token — relative or not, adjacent to a flag or to nothing — is
- * dropped the same way: it is a target the suite runs over, not part of what identifies
- * it, which is what lets a bare `pytest` still match `pytest tests/unit/test_api.py`.
+ * interpreter's own script argument — reachable from the interpreter by walking back
+ * over any flags in between (see reduceInterpreterScript). `bash scripts/check.sh`
+ * becomes `['bash', 'check.sh']`, whatever relative prefix that script carries:
+ * `bash ./scripts/check.sh` reduces the same way, because dropping it as a relative
+ * argument the way `go test ./...` is dropped would reopen #134 for every script path
+ * written the ordinary way, with a leading `./` (#136). Any other path-shaped token —
+ * relative or not, adjacent to a flag or to nothing — is dropped the same way: it is a
+ * target the suite runs over, not part of what identifies it, which is what lets a bare
+ * `pytest` still match `pytest tests/unit/test_api.py`.
  *
  * Two earlier versions of this rule got it wrong in opposite directions. Keeping every
  * path-shaped token once anything plain survived made a declared command with a
@@ -226,10 +242,14 @@ const GENERIC_INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'dash', 'node', 'pyth
  * matched a bare `pytest` (#136). Dropping every path-shaped token whenever a plain one
  * survived, before that, made `bash scripts/check.sh` collapse to just `bash`, so any
  * `bash <anything>` matched it, including a supervisor's own `status` and `stop`
- * commands, unreachable for the life of a run (#134).
+ * commands, unreachable for the life of a run (#134). A third version required strict,
+ * un-walked adjacency on this side while the invoked side walked back over flags — that
+ * asymmetry is gone; both sides now read a flag-skipping predecessor the same way.
  *
- * When nothing survives — no plain token and no interpreter+script pair — a path-shaped
- * program keeps its basename, so `vendor/bin/phpunit` still matches a bare `phpunit`.
+ * When nothing survives — no plain token and no interpreter+script pair — the first kept
+ * token (flags and globs still excluded) keeps its basename, so `vendor/bin/phpunit`
+ * still matches a bare `phpunit`, and `vendor/bin/phpunit tests/` still reduces to
+ * `['phpunit']` rather than folding `tests/` into the suite's identity by accident (#136).
  */
 function significantTokens(command) {
   const wanted = [];
@@ -237,33 +257,15 @@ function significantTokens(command) {
     const t = command[i];
     if (t.startsWith('-') || t.includes('*')) continue;
     if (/[\\/]/.test(t)) {
-      if (i > 0 && GENERIC_INTERPRETERS.has(command[i - 1])) wanted.push(path.basename(t));
+      const reduced = reduceInterpreterScript(command, i);
+      if (reduced !== t) wanted.push(reduced);
       continue;
     }
     wanted.push(t);
   }
   if (wanted.length > 0) return wanted;
-  const kept = command.filter((t) => !t.startsWith('-') && !/^\.{1,2}[\\/]/.test(t) && !t.includes('*'));
-  return kept.map((t) => path.basename(t));
-}
-
-/**
- * `tokens[i]`, reduced to its basename when it is path-shaped and a generic interpreter
- * appears earlier in the same command, skipping over any flags in between (#136). This is
- * for the INVOKED side only, and is deliberately more permissive than the declared side's
- * own rule above: an extra flag a user types between an interpreter and the script it
- * already runs (`bash -x scripts/check.sh`) must not stop that script from being
- * recognised, where on the declared side a flag in that position changes what the
- * trailing path even means (see `significantTokens` on `node --test tests/`). The two
- * sides are asymmetric on purpose — one decides what identifies the suite, the other only
- * has to recognise that identity again, flags and all.
- */
-function reduceInvokedToken(tokens, i) {
-  const t = tokens[i];
-  if (!/[\\/]/.test(t)) return t;
-  let j = i - 1;
-  while (j >= 0 && tokens[j].startsWith('-')) j -= 1;
-  return j >= 0 && GENERIC_INTERPRETERS.has(tokens[j]) ? path.basename(t) : t;
+  const kept = command.filter((t) => !t.startsWith('-') && !t.includes('*'));
+  return kept.length > 0 ? [path.basename(kept[0])] : [];
 }
 
 function isOrderedSubsequence(tokens, wanted) {
@@ -284,8 +286,9 @@ function isOrderedSubsequence(tokens, wanted) {
  * declared command wraps it, `cd sub && pytest` with it, and a script run directly as
  * `./scripts/check.sh`, whose basename is the program.
  *
- * The first form reads the invoked command's own tokens through reduceInvokedToken before
- * comparing, so an interpreter's script survives flags typed between them (#136). The
+ * The first form reads the invoked command's own tokens through reduceInterpreterScript
+ * before comparing, the same reduction significantTokens applies to the declared side, so
+ * an interpreter's script survives flags typed between them on either side (#136). The
  * second form reduces a segment's program to a plain basename unconditionally: a program
  * IS the thing invoked, not an argument to something else, so there is no interpreter to
  * require there. Both are deliberately narrower than reducing every path-shaped invoked
@@ -306,7 +309,12 @@ function isOrderedSubsequence(tokens, wanted) {
  * expands to is the package manager's business, not this function's to guess. During a
  * live run a hand-typed `node --test` is not held by anything (D30): nothing runs a
  * suite as a side effect of a commit any more, so there is no second check downstream of
- * this one to catch what it misses.
+ * this one to catch what it misses. The same miss now also covers a project that declares
+ * its suite with a target, `node --test tests/`: the bare `node --test` a developer
+ * actually types omits `tests/`, so it no longer carries the token the declared command's
+ * identity needs — accepted, because reading identity off flag-skipped adjacency both
+ * ways is what lets that declared command recognise its own full invocation and the
+ * `node --experimental-vm-modules node_modules/.bin/jest`-shaped ones like it (#136).
  *
  * A SECOND KNOWN MISS, of the same shape (#134): a different interpreter running the same
  * script, as in `sh scripts/check.sh` against a declared `bash scripts/check.sh`. The
@@ -328,7 +336,7 @@ function isOrderedSubsequence(tokens, wanted) {
  */
 export function invokesDeclaredSuite(command, declared) {
   const rawTokens = shellTokens(command);
-  const tokens = rawTokens.map((t, i) => reduceInvokedToken(rawTokens, i));
+  const tokens = rawTokens.map((t, i) => reduceInterpreterScript(rawTokens, i));
   const programs = commandSegments(command).segments.map((s) =>
     s.program === null ? null : /[\\/]/.test(s.program) ? path.basename(s.program) : s.program,
   );

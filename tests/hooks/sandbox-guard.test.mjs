@@ -1374,7 +1374,7 @@ describe('tokenising and matching', () => {
   // follow a generic interpreter, made a path ARGUMENT to an unrelated program match a
   // single-token declared suite by basename alone. Pinned allowed, not accepted as a
   // trade-off: `tools/pytest` here is `git add`'s and `cat`'s argument, not an
-  // interpreter's script, and reduceInvokedToken does not reduce it.
+  // interpreter's script, and reduceInterpreterScript does not reduce it.
   describe('an unrelated command naming a path that merely ends in the suite\'s name (#136)', () => {
     const declared = [['pytest']];
 
@@ -1388,23 +1388,46 @@ describe('tokenising and matching', () => {
   // adjacency across a flag — significantTokens computed it AFTER filtering flags out of
   // the declared tokens, invokesDeclaredSuite computed it over the raw invoked tokens with
   // no flag skipping at all. A flag typed between an interpreter and its script defeated
-  // recognition on the invoked side (`bash -x scripts/check.sh`), and a flag between an
-  // interpreter and its own FLAG's target was silently treated as adjacency on the
-  // declared side, producing an identity nothing could ever satisfy twice consistently.
+  // recognition on the invoked side (`bash -x scripts/check.sh`).
+  //
+  // The fix reads adjacency the same way on both sides: walk back past any flags to find
+  // the nearest real predecessor, on the declared tokens as well as the invoked ones
+  // (reduceInterpreterScript, shared). That is what lets `node --experimental-vm-modules
+  // node_modules/.bin/jest` — the standard way to declare an ESM Jest suite — keep `jest`
+  // as part of its identity instead of collapsing to `node` alone, which would have
+  // reopened #134 for every project shaped this way: any `node <anything>` would have
+  // matched, refusing a supervisor's own status checks during a run exactly like #134 did
+  // for a bare `bash`.
   describe('a flag between an interpreter and a path (#136)', () => {
     test('an extra flag at invocation time does not defeat a script the declared side has no flag before', () => {
       const declared = [['bash', 'scripts/check.sh']];
       assert.equal(invokesDeclaredSuite('bash -x scripts/check.sh', declared), 'bash scripts/check.sh');
     });
 
-    // `node --test tests/`: `--test` sits between `node` and `tests/`, so `tests/` is
-    // `--test`'s own target, not `node`'s script — the same role a path plays in `pytest
-    // tests/`. The declared suite's identity is `node` alone, so a bare `node --test`,
-    // with no target at all, still names it.
-    test('a flag between the interpreter and a path makes the path the flag\'s target, not the interpreter\'s script', () => {
+    // `node --test tests/`: reading the same flag-skipping adjacency on the declared side
+    // means `tests/` is `node`'s own script argument too, the same as `scripts/check.sh`
+    // is `bash`'s, so the declared suite's identity is `['node', 'tests']` and the
+    // command's own full invocation blocks. The accepted cost: a bare `node --test`, with
+    // no target at all, no longer carries the `tests` token the identity needs, so it
+    // becomes a miss of the same shape the KNOWN MISS paragraph already documents for
+    // `node --test` against a declared `npm test` — extended there rather than repeated
+    // here.
+    test('a flag between the interpreter and a path is part of the interpreter\'s script on both sides', () => {
       const declared = [['node', '--test', 'tests/']];
       assert.equal(invokesDeclaredSuite('node --test tests/', declared), 'node --test tests/');
-      assert.equal(invokesDeclaredSuite('node --test', declared), 'node --test tests/');
+      assert.equal(invokesDeclaredSuite('node --test', declared), null);
+    });
+
+    // The standard way to declare an ESM Jest suite: a flag between the interpreter and
+    // the script it runs. `jest` stays part of the identity, so a supervisor's unrelated
+    // `node` invocation during a run is not held by it.
+    test('a flag before the script keeps the script in the suite\'s identity (ESM Jest)', () => {
+      const declared = [['node', '--experimental-vm-modules', 'node_modules/.bin/jest']];
+      assert.equal(
+        invokesDeclaredSuite('node --experimental-vm-modules node_modules/.bin/jest', declared),
+        'node --experimental-vm-modules node_modules/.bin/jest',
+      );
+      assert.equal(invokesDeclaredSuite('node scripts/supervisor.mjs status', declared), null);
     });
   });
 
@@ -1419,6 +1442,30 @@ describe('tokenising and matching', () => {
       assert.equal(invokesDeclaredSuite('bash scripts/check.sh', declared), 'bash ./scripts/check.sh');
       assert.equal(invokesDeclaredSuite('bash deploy.sh', declared), null);
       assert.equal(invokesDeclaredSuite('bash scripts/deploy.sh', declared), null);
+    });
+  });
+
+  // R1: the empty-fallback branch used to run BEFORE the primary loop existed to give
+  // path arguments their own treatment, and it went stale once that loop owned the
+  // interpreter+script case. Two defects followed. A declared script with no interpreter
+  // at all, `./scripts/check.sh`, has no predecessor for the primary loop to check, so it
+  // fell through to the fallback — which then dropped it AGAIN as a relative argument,
+  // leaving the declaration matching nothing. And the fallback basenamed every kept
+  // token, not just the first, so a declared `vendor/bin/phpunit tests/` reduced to
+  // `['phpunit', 'tests']` instead of `['phpunit']`, reopening F1's defect (a path
+  // argument silently required, so the bare form of the suite stopped matching) inside
+  // the one branch meant to be its fallback.
+  describe('the fallback keeps only the first token\'s basename (#136)', () => {
+    test('a bare script with no interpreter still identifies the suite', () => {
+      const declared = [['./scripts/check.sh']];
+      assert.equal(invokesDeclaredSuite('./scripts/check.sh', declared), './scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('bash scripts/check.sh', declared), './scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('git add scripts/check.sh', declared), null);
+    });
+
+    test('a path argument after a bare program does not become part of the suite\'s identity', () => {
+      const declared = [['vendor/bin/phpunit', 'tests/']];
+      assert.equal(invokesDeclaredSuite('phpunit', declared), 'vendor/bin/phpunit tests/');
     });
   });
 
