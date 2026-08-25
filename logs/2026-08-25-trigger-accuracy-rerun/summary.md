@@ -164,6 +164,20 @@ absorb a small regression without falling below a stated floor. At 100.0% there 
 any movement from here is downward, and any edit is measurable against a clean baseline
 with nothing to hide behind.
 
+**100.0% is a measurement of this eight-skill roster as a set, not of any one description
+in isolation.** P6.5 found the mechanism that makes this true and it is the reason the
+warning above is not a slogan:
+[`logs/2026-08-13-p6.5-tuning-pass/summary.md`](../2026-08-13-p6.5-tuning-pass/summary.md)
+recorded `safe-cleanup` falling from 15/15 to 8/15 on case `sc-n2` without its own
+description changing a byte, because five of its neighbours roughly doubled in length and
+the judge sees the whole roster in one prompt — a longer neighbour dilutes the attention a
+borderline case needs. P6.5's 96.8% is retired as a *number*; this finding is not retired
+as a *lesson*. It means this 100.0% baseline is not safe to read as eight independent
+scores. Adding a ninth roster skill, or lengthening any one of the eight descriptions —
+including one that has nothing to do with the case in question — can re-roll a result on
+a skill nobody touched, and `sc-n2` is the specific case most likely to be the one that
+moves.
+
 ## What a reader should do next
 
 - To quote a trigger-accuracy number anywhere in this repo, quote **100.0%**, protocol

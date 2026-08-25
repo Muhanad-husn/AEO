@@ -167,23 +167,19 @@ source for one — inventing a phase field would mean hand-maintaining the secon
 [D5](docs/DECISIONS.md) exists to kill.
 
 Trigger accuracy is now **measured, not asserted**. `evals/trigger-eval.mjs` scores the
-eight description-triggered skills against an authored case set. The current, shipped
-number is **100.0% overall accuracy, 0.0 pp spread, 0 of 40 cases unstable**, from three
-independent 15-repeat runs (`--repeats 5 --model sonnet`, three times, matching P6.5's own
-protocol) taken 2026-08-25 against the tree at `b3b0ce4`. Read
-[logs/2026-08-25-trigger-accuracy-rerun/summary.md](logs/2026-08-25-trigger-accuracy-rerun/summary.md)
-before quoting any trigger-accuracy figure or editing any `description:` line.
-
-P6.5's older **96.8%** is not the same measurement and is not comparable to the 100.0%
-above: it scored a case set retired on 2026-08-13, when `wd-n2` was re-framed (#104)
-because its original form demanded the judge decline in favour of a lane it structurally
-cannot see. The eight `description:` lines themselves have not moved since PR #114's
-100.0% re-run — only the case set changed. A 0.0 pp spread over 15 repeats is not a proof
-the harness is deterministic, only the absence of observed instability across 600 calls;
-one case (`sc-n2`) is still known-borderline and has re-rolled in three prior
-measurements. At 100.0% there is no headroom left — an unmeasured edit to any
-`description:` line can only move the number down, and any movement is now measurable
-against a clean baseline.
+eight description-triggered skills against an authored case set. The shipped number is
+**100.0% overall accuracy, 0.0 pp spread, 0 of 40 cases unstable** — three 15-repeat
+runs (`--repeats 5 --model sonnet`, P6.5's protocol) against `b3b0ce4`, 2026-08-25:
+[logs/2026-08-25-trigger-accuracy-rerun/summary.md](logs/2026-08-25-trigger-accuracy-rerun/summary.md).
+P6.5's **96.8%** is not comparable: its case set was retired when `wd-n2` was re-framed
+(#104) because no description could satisfy the original prompt, and the descriptions
+have not moved since. P6.5's mechanism still holds: `safe-cleanup` fell 15/15 to 8/15
+with its own description untouched, because a longer neighbour diluted the judge's
+shared attention
+([logs/2026-08-13-p6.5-tuning-pass/summary.md](logs/2026-08-13-p6.5-tuning-pass/summary.md)
+— retired number, live lesson). No headroom remains at 100.0%: `sc-n2` is still
+borderline, and any description edit, even a neighbour's, now only moves the number
+down.
 
 The plan's "six description-triggered skills" was wrong for three phases; the real split
 is seven operator lanes against eight description-triggered skills, of fifteen. The
