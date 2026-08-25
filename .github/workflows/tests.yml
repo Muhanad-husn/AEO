@@ -1,16 +1,12 @@
-# The full battery, both tiers (D17).
-#
+# This workflow is the only place both tiers are enforced (D17, as amended by D30).
 # D30 deleted the commit gate, so nothing local runs either tier before a commit any
-# more; a builder runs the fast tier by convention (builder.md), not because a gate
-# makes it. This workflow is the only place both tiers are enforced. That is L-06's
-# cost, accepted with its name on it in D17: a gate regression is discovered in CI
-# rather than at commit time. It is a required status check on the default branch
-# (`battery`), which is what makes a red suite here block a merge — D30 leans on this
-# check rather than restoring the local one.
+# more. That is L-06's cost, accepted with its name on it in D17: a gate regression is
+# discovered in CI rather than at commit time. Only a required status check on the
+# default branch makes a red suite here block a merge — D30 leans on that check rather
+# than restoring the local one.
 #
 # Runs on ubuntu-latest. The suites spawn `git`, `node` and `sh`, all of which the
-# runner has; green here across many pull requests and pushes to main since the first
-# run.
+# runner has; observed green on the runner.
 
 name: tests
 

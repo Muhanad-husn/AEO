@@ -275,7 +275,7 @@ harness had no rule about its own cost — different axis, and neither one impli
 
 ### D31 — The record names two tiers, and the doctrine says what a suite may cost
 
-**Problem.** [D17](#d17--two-test-tiers-the-fast-tier-is-the-commit-gates-the-full-tier-is-cis)
+**Problem.** [D17](#d17--two-test-tiers-in-process-is-the-commit-gates-process-level-is-cis)
 split this repository's own battery into a fast tier and a full one, and every shipped skill
 has said "run the fast tier" ever since — `red-green-refactor` step 14, `safe-pr`'s
 preconditions, `tdd-ci`'s, `sprint-start` step 6, `builder.md`. The shipped record had one
