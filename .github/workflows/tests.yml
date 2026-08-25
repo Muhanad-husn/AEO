@@ -1,13 +1,12 @@
-# The full battery, both tiers (D17).
+# This workflow is the only place both tiers are enforced (D17, as amended by D30).
+# D30 deleted the commit gate, so nothing local runs either tier before a commit any
+# more. That is L-06's cost, accepted with its name on it in D17: a gate regression is
+# discovered in CI rather than at commit time. Only a required status check on the
+# default branch makes a red suite here block a merge — D30 leans on that check rather
+# than restoring the local one.
 #
-# The commit gate runs `npm test`, which is the fast tier only, so the process-level
-# gate suites are enforced here or nowhere. That is L-06's cost, accepted with its name
-# on it in D17: a gate regression is discovered in CI rather than at commit time. Make
-# this a required check on the default branch, or the trade is not paid for.
-#
-# Not yet observed green on Linux. Everything in this repo has run on Windows under
-# Git Bash; the suites spawn `git`, `node` and `sh`, all of which a GitHub runner has,
-# but the first run of this workflow is also its first evidence.
+# Runs on ubuntu-latest. The suites spawn `git`, `node` and `sh`, all of which the
+# runner has; observed green on the runner.
 
 name: tests
 
