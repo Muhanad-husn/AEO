@@ -167,15 +167,21 @@ source for one — inventing a phase field would mean hand-maintaining the secon
 [D5](docs/DECISIONS.md) exists to kill.
 
 Trigger accuracy is now **measured, not asserted**. `evals/trigger-eval.mjs` scores the
-eight description-triggered skills against an authored case set, and P6.5's tuning moved
-overall accuracy from **90.2% to 96.8%** against a **5.0 pp** noise floor — three
-descriptions that never fired on their own case now fire 15 times out of 15. The pass also
-**cost** something and says so: `safe-cleanup` fell from 15/15 to 8/15 on one case without
-its description changing a byte, because its neighbours grew. One defect is still open at
-3/15. Read
-[logs/2026-08-13-p6.5-tuning-pass/summary.md](logs/2026-08-13-p6.5-tuning-pass/summary.md)
-before editing any `description:` line — an unmeasured edit re-rolls a number that cost
-hours of live evaluation to take.
+eight description-triggered skills against an authored case set. The shipped number is
+**100.0% overall accuracy, 0.0 pp observed spread, 0 of 40 cases unstable** — three runs
+of five repeats, 15 in total (`--repeats 5 --model sonnet`, P6.5's protocol) against
+`b3b0ce4`, 2026-08-25:
+[logs/2026-08-25-trigger-accuracy-rerun/summary.md](logs/2026-08-25-trigger-accuracy-rerun/summary.md).
+P6.5's **96.8%** is not comparable: its case set was retired when `wd-n2` was re-framed
+(#104) because no description could satisfy the original prompt, and the descriptions
+have not moved since #114 measured them. P6.5's mechanism still holds: `safe-cleanup`
+fell 15/15 to 8/15 with its own description untouched, because a longer neighbour
+diluted the judge's shared attention
+([logs/2026-08-13-p6.5-tuning-pass/summary.md](logs/2026-08-13-p6.5-tuning-pass/summary.md)
+— retired number, live lesson). No headroom remains at 100.0%: `sc-n2` is still
+borderline, and any description edit, even a neighbour's, can only move the number down.
+Re-run this log's protocol before quoting this figure, editing any `description:` line,
+or changing `evals/trigger-cases.json`.
 
 The plan's "six description-triggered skills" was wrong for three phases; the real split
 is seven operator lanes against eight description-triggered skills, of fifteen. The

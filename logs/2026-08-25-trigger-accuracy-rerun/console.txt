@@ -1,0 +1,90 @@
+=== RUN 1 ===
+repeat 1/5 done
+repeat 2/5 done
+repeat 3/5 done
+repeat 4/5 done
+repeat 5/5 done
+Trigger eval — 8 description-triggered skills, 40 cases, 5 repeats, judge sonnet
+
+NOISE FLOOR (read this before any score)
+  overall accuracy across repeats: 100.0%, 100.0%, 100.0%, 100.0%, 100.0%
+  spread 0.0% (min 100.0%, max 100.0%, stdev 0.0%)
+  cases whose verdict re-rolled: 0/40 (0.0%)
+
+PER SKILL
+  skill               n  recall (spread)        false fires (spread)
+  monitor-design      3  100.0% (±  0.0%)    0.0 (±0.0)
+  new-project         4  100.0% (±  0.0%)    0.0 (±0.0)
+  red-green-refactor  5  100.0% (±  0.0%)    0.0 (±0.0)
+  safe-cleanup        3  100.0% (±  0.0%)    0.0 (±0.0)
+  safe-pr             3  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-ci              4  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-plan            4  100.0% (±  0.0%)    0.0 (±0.0)
+  worker-dispatch     3  100.0% (±  0.0%)    0.0 (±0.0)
+
+FIRED WHERE IT SHOULD NOT — the P6.5 work order, first half
+  none
+
+DID NOT FIRE WHERE IT SHOULD — the second half
+  none
+=== RUN 2 ===
+repeat 1/5 done
+repeat 2/5 done
+repeat 3/5 done
+repeat 4/5 done
+repeat 5/5 done
+Trigger eval — 8 description-triggered skills, 40 cases, 5 repeats, judge sonnet
+
+NOISE FLOOR (read this before any score)
+  overall accuracy across repeats: 100.0%, 100.0%, 100.0%, 100.0%, 100.0%
+  spread 0.0% (min 100.0%, max 100.0%, stdev 0.0%)
+  cases whose verdict re-rolled: 0/40 (0.0%)
+
+PER SKILL
+  skill               n  recall (spread)        false fires (spread)
+  monitor-design      3  100.0% (±  0.0%)    0.0 (±0.0)
+  new-project         4  100.0% (±  0.0%)    0.0 (±0.0)
+  red-green-refactor  5  100.0% (±  0.0%)    0.0 (±0.0)
+  safe-cleanup        3  100.0% (±  0.0%)    0.0 (±0.0)
+  safe-pr             3  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-ci              4  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-plan            4  100.0% (±  0.0%)    0.0 (±0.0)
+  worker-dispatch     3  100.0% (±  0.0%)    0.0 (±0.0)
+
+FIRED WHERE IT SHOULD NOT — the P6.5 work order, first half
+  none
+
+DID NOT FIRE WHERE IT SHOULD — the second half
+  none
+=== RUN 3 ===
+repeat 1/5 done
+repeat 2/5 done
+repeat 3/5 done
+repeat 4/5 done
+repeat 5/5 done
+Trigger eval — 8 description-triggered skills, 40 cases, 5 repeats, judge sonnet
+
+NOISE FLOOR (read this before any score)
+  overall accuracy across repeats: 100.0%, 100.0%, 100.0%, 100.0%, 100.0%
+  spread 0.0% (min 100.0%, max 100.0%, stdev 0.0%)
+  cases whose verdict re-rolled: 0/40 (0.0%)
+
+PER SKILL
+  skill               n  recall (spread)        false fires (spread)
+  monitor-design      3  100.0% (±  0.0%)    0.0 (±0.0)
+  new-project         4  100.0% (±  0.0%)    0.0 (±0.0)
+  red-green-refactor  5  100.0% (±  0.0%)    0.0 (±0.0)
+  safe-cleanup        3  100.0% (±  0.0%)    0.0 (±0.0)
+  safe-pr             3  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-ci              4  100.0% (±  0.0%)    0.0 (±0.0)
+  tdd-plan            4  100.0% (±  0.0%)    0.0 (±0.0)
+  worker-dispatch     3  100.0% (±  0.0%)    0.0 (±0.0)
+
+FIRED WHERE IT SHOULD NOT — the P6.5 work order, first half
+  none
+
+DID NOT FIRE WHERE IT SHOULD — the second half
+  none
+ALL RUNS DONE
+
+[exited with code 0]
