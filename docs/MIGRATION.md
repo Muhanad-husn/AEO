@@ -83,7 +83,7 @@ measurement `evals/evals.json` used to feed now exists as `evals/trigger-eval.mj
 
 | Path | Disposition | Plugin equivalent |
 | --- | --- | --- |
-| `hooks/commit-gate.ps1` | Superseded | `plugin/hooks/commit-gate.mjs`, running the command the project records in `aeo-tests.json` instead of a hard-coded one |
+| `hooks/commit-gate.ps1` | **Dropped, no equivalent** | Ported, then deleted by [D30](DECISIONS.md). GitHub's required status checks refuse a merge over a red suite, and branch protection refuses a commit pushed to the protected branch, so the local gate re-derived a server-side rule from shell text — which cost two defects and bought nothing |
 | `hooks/block-merge.ps1` | Superseded | `plugin/hooks/block-merge.mjs` |
 | `hooks/path-guard.ps1` | Superseded | `plugin/hooks/path-guard.mjs` |
 | `hooks/session-status.ps1` | Superseded | `plugin/hooks/session-status.mjs` |
@@ -159,8 +159,8 @@ What is not running:
 
 | Gate | What it enforced | Since 2026-08-12 |
 | --- | --- | --- |
-| `commit-gate.ps1` | Suite green and lint clean before any commit; no code commits on `main` | Not running |
-| `block-merge.ps1` | Subagents never merge, never push to `main`, never delete a branch | Not running |
+| `commit-gate.ps1` | Suite green and lint clean before any commit; no code commits on `main` | Not running, and **not replaced** — see [D30](DECISIONS.md) |
+| `block-merge.ps1` | Subagents never merge, never push to `main`, never delete a branch | Not running. The merge and branch-delete halves are replaced; the push-to-`main` half is not, and is left to branch protection ([D30](DECISIONS.md)) |
 | `path-guard.ps1` | Role subagents cannot write into `.claude/` | Not running |
 | `session-status.ps1` | Live branch, issue and PR state injected at session start | Not running |
 | `seal-packet.ps1` | The peer reviewer reaches nothing but its packet | Not running |

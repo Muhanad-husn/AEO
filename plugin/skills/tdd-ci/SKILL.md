@@ -65,8 +65,8 @@ than trusting a remembered one.
 5. Validate — the YAML parses, and the commands match how the tests
    actually run locally.
 6. Commit: `ci: add GitHub Actions workflow running unit + e2e tests [slice
-   NN]`. Confirm before pushing — `safe-pr` pushes as part of opening the
-   PR, so it's fine to leave this commit local and hand off.
+   NN]`. `safe-pr` pushes as part of opening the PR, so it's fine to leave
+   this commit local and hand off.
 7. Once the workflow has a green run, propose making it a required status
    check on the default branch. Changing repo settings needs explicit
    founder approval — present the `gh api` command from the guide and wait.

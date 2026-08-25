@@ -42,7 +42,7 @@ const SCRIPT = path.resolve(
 // Importing the script is only safe because it guards `main()` behind an
 // invoked-as-a-script check. Without that guard this import would classify branches in
 // whatever repository the runner is sitting in — which is this one.
-const { mergedAtRecordedHead, worktreeSuffix } = await import(pathToFileURL(SCRIPT).href);
+const { mergedAtRecordedHead, strandedRemoteBranches, worktreeSuffix } = await import(pathToFileURL(SCRIPT).href);
 
 const scratch = [];
 after(() => {
@@ -596,5 +596,107 @@ describe('a refused delete names the resolved worktree path exactly once', () =>
       1,
       `the worktree path must appear exactly once:\n${failedLine}`,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #125 — remote branches a merged PR left behind
+// ---------------------------------------------------------------------------
+//
+// `gh pr merge --delete-branch` deletes the local branch first and returns on that
+// failure, so it never reaches the remote delete. A worktree holds its branch checked
+// out and `sprint-start` gives every actor one, so the local delete failed every time,
+// the merge had already gone through, and the branch stayed on `origin` unmentioned.
+// This skill stays local-only; it reports these and the founder retires them.
+//
+// The classification is a pure function over PR records for the same reason
+// `mergedAtRecordedHead` is: gh cannot be shimmed on Windows, so records are handed to
+// it directly rather than faked onto PATH.
+
+const MERGED = (number, headRefName, mergedAt = '2026-08-14T10:00:00Z') =>
+  ({ number, headRefName, state: 'MERGED', mergedAt });
+const OPEN = (number, headRefName) => ({ number, headRefName, state: 'OPEN', mergedAt: null });
+const CLOSED = (number, headRefName) => ({ number, headRefName, state: 'CLOSED', mergedAt: null });
+
+const byBranch = (...prs) => {
+  const map = {};
+  for (const pr of prs) (map[pr.headRefName] ||= []).push(pr);
+  return map;
+};
+
+describe('strandedRemoteBranches — merged PRs whose remote branch is still there (#125)', () => {
+  test('a remote branch whose PR merged is reported', () => {
+    const rows = strandedRemoteBranches(
+      ['main', 'fix/spec-drift/er-stage3-inert'],
+      byBranch(MERGED(899, 'fix/spec-drift/er-stage3-inert')),
+      new Set(['main']),
+    );
+    assert.deepEqual(rows, [
+      { name: 'fix/spec-drift/er-stage3-inert', pr: 899, mergedAt: '2026-08-14T10:00:00Z' },
+    ]);
+  });
+
+  test('an open PR wins over a merged one on the same branch — that is active work', () => {
+    // A reused branch name with a merged PR behind it and an open PR in front of it is
+    // the case that must never be reported as leftover. Same rule the local
+    // classification already applies, and for the same reason.
+    const rows = strandedRemoteBranches(
+      ['feat/reused'],
+      byBranch(OPEN(902, 'feat/reused'), MERGED(880, 'feat/reused')),
+      new Set(['main']),
+    );
+    assert.deepEqual(rows, []);
+  });
+
+  test('a protected name is never reported, however its PRs read', () => {
+    const rows = strandedRemoteBranches(
+      ['main', 'develop'],
+      byBranch(MERGED(1, 'main'), MERGED(2, 'develop')),
+      new Set(['main', 'develop']),
+    );
+    assert.deepEqual(rows, []);
+  });
+
+  test('a branch with no merged PR is not guessed at', () => {
+    // No PR record at all, and a closed-unmerged PR, are both "not this defect". A
+    // closed-unmerged branch may still hold work the founder wants; reporting it here
+    // would put it in a list headed "already merged".
+    const rows = strandedRemoteBranches(
+      ['feat/no-pr', 'feat/closed'],
+      byBranch(CLOSED(903, 'feat/closed')),
+      new Set(['main']),
+    );
+    assert.deepEqual(rows, []);
+  });
+
+  test('a listing that failed is null, not an empty result', () => {
+    // L-08: `git ls-remote` returning nothing because it could not run means "not
+    // measured". An empty array would render as "none stranded", which is the one claim
+    // that data cannot support.
+    assert.equal(strandedRemoteBranches(null, {}, new Set()), null);
+    assert.equal(strandedRemoteBranches(undefined, {}, new Set()), null);
+    assert.deepEqual(strandedRemoteBranches([], {}, new Set()), []);
+  });
+
+  test('a protected list given as an array works the same as a Set', () => {
+    const rows = strandedRemoteBranches(['main'], byBranch(MERGED(1, 'main')), ['main']);
+    assert.deepEqual(rows, []);
+  });
+});
+
+describe('the REMOTE block says why it could not look, rather than printing an empty list', () => {
+  test('no remote configured is stated as not checked', () => {
+    const r = run(makeRepo({ branches: [{ name: 'feat/a' }, { name: 'feat/wip', ahead: true }] }));
+    assert.match(r.stdout, /REMOTE: not checked — no remote configured\./);
+    assert.doesNotMatch(r.stdout, /----- REMOTE on/, 'no remote means no report block at all');
+  });
+
+  test('a remote with no usable PR data is missing data, never an all-clear', () => {
+    // gh removed from PATH, so PR state is unavailable for every branch. The block must
+    // not render empty: "none stranded" is exactly what cannot be concluded here.
+    const r = run(makeRepo({ branches: [{ name: 'feat/a' }, { name: 'feat/wip', ahead: true }], remote: true }));
+    assert.match(r.stdout, /REMOTE: not checked/);
+    assert.match(r.stdout, /Missing data, not an all-clear\./);
+    assert.doesNotMatch(r.stdout, /none — /, 'an unknown answer must not render as "none"');
   });
 });

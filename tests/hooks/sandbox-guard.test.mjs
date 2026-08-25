@@ -976,6 +976,27 @@ describe('the sentinel', () => {
     }
   });
 
+  // #134: the live repro. A declared suite of `bash scripts/check.sh` used to collapse to
+  // just `bash`, so a supervisor's own `status` and `stop` commands were refused for the
+  // life of a run — `stop` being unreachable is what pushed an operator toward killing the
+  // process tree by hand, the exact failure this gate exists to prevent.
+  test('a live sentinel does not block a supervisor script that merely shares the suite\'s interpreter', () => {
+    const repo = makeRepo({ base: { 'aeo-tests.json': JSON.stringify({ test: 'bash scripts/check.sh' }) } });
+    raise(repo);
+    for (const command of [
+      'bash scripts/run_876_supervisor.sh status --run-id x',
+      'bash scripts/run_876_supervisor.sh stop --run-id x',
+      'bash scripts/deploy.sh',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, repo) }), command);
+    }
+    assertBlockedBecause(
+      guard({ payload: bash('bash scripts/check.sh', repo) }),
+      LIVE_RUN,
+      'the declared suite itself still blocks',
+    );
+  });
+
   test('a live sentinel blocks the declared suite\'s program wherever a command runs it', () => {
     const repo = makeRepo({ base: { 'aeo-tests.json': JSON.stringify({ test: 'pytest' }) } });
     raise(repo);
@@ -1307,6 +1328,158 @@ describe('tokenising and matching', () => {
     assert.equal(invokesDeclaredSuite('cd sub && pytest', py), 'uv run pytest');
     assert.equal(invokesDeclaredSuite('AEO_DATA_ROOT=/tmp/s pytest', py), 'uv run pytest');
     assert.equal(invokesDeclaredSuite('ls pytest', py), null);
+  });
+
+  // #134: a declared command whose distinguishing token is path-shaped and whose
+  // interpreter is generic (`bash scripts/check.sh`) used to collapse to just the
+  // interpreter, because the script argument was the only slashed token and got dropped
+  // whenever a plain token survived. The declared suite became `bash`, so any `bash
+  // <anything>` matched — a supervisor's own `status` and `stop` commands included,
+  // unreachable for the life of a run.
+  describe('a path-shaped declared token (#134)', () => {
+    const declared = [['bash', 'scripts/check.sh']];
+
+    test('still recognised: the interpreter and the script, in the shapes that are honestly reachable', () => {
+      assert.equal(invokesDeclaredSuite('bash scripts/check.sh', declared), 'bash scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('bash scripts/check.sh --full', declared), 'bash scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('cd sub && bash scripts/check.sh', declared), 'bash scripts/check.sh');
+      // The script run directly: its basename is the program, the same mechanism that
+      // already matches a bare `phpunit` against a declared `vendor/bin/phpunit`.
+      assert.equal(invokesDeclaredSuite('./scripts/check.sh', declared), 'bash scripts/check.sh');
+    });
+
+    // A different interpreter for the same script is a known miss, not a regression.
+    // `scripts/check.sh` is an ARGUMENT to `sh` there, not the program in program
+    // position, so the second matching form does not reach it either — matching it would
+    // mean treating `sh` and `bash` as equivalent, the same kind of table this function
+    // already declines to carry for `node --test`.
+    test('a different interpreter for the same script is a known miss, not a block', () => {
+      assert.equal(invokesDeclaredSuite('sh scripts/check.sh', declared), null);
+    });
+
+    test('a bare interpreter invocation of anything else is no longer treated as the declared suite', () => {
+      assert.equal(invokesDeclaredSuite('bash scripts/run_876_supervisor.sh status --run-id x', declared), null);
+      assert.equal(invokesDeclaredSuite('bash scripts/run_876_supervisor.sh stop --run-id x', declared), null);
+      assert.equal(invokesDeclaredSuite('bash scripts/deploy.sh', declared), null);
+    });
+  });
+
+  // #136: reviewer finding on #134's fix. Keeping every surviving path-shaped token,
+  // unconditionally, made a path ARGUMENT part of the declared identity too, so a
+  // declared command with a directory target stopped matching its own plain invocations.
+  // The seam between "an interpreter's script" and "the suite's own target" is not
+  // decidable from shape — both are a plain program followed by a path-shaped token — so
+  // it is read off GENERIC_INTERPRETERS, a fixed set, rather than guessed at.
+  describe('a declared command with a path target, not an interpreter (#136)', () => {
+    test('a directory argument does not become part of the suite\'s identity', () => {
+      const declared = [['pytest', 'tests/']];
+      assert.equal(invokesDeclaredSuite('pytest', declared), 'pytest tests/');
+      assert.equal(invokesDeclaredSuite('pytest -k x', declared), 'pytest tests/');
+      assert.equal(invokesDeclaredSuite('pytest tests/unit/test_api.py', declared), 'pytest tests/');
+    });
+
+    test('a package path argument does not become part of the suite\'s identity', () => {
+      assert.equal(invokesDeclaredSuite('go test ./pkg', [['go', 'test', 'pkg/...']]), 'go test pkg/...');
+    });
+  });
+
+  // F3: reducing every invoked token to its basename, rather than only the ones that
+  // follow a generic interpreter, made a path ARGUMENT to an unrelated program match a
+  // single-token declared suite by basename alone. Pinned allowed, not accepted as a
+  // trade-off: `tools/pytest` here is `git add`'s and `cat`'s argument, not an
+  // interpreter's script, and reduceInterpreterScript does not reduce it.
+  describe('an unrelated command naming a path that merely ends in the suite\'s name (#136)', () => {
+    const declared = [['pytest']];
+
+    test('the path stays an argument to its own command, not the declared suite', () => {
+      assert.equal(invokesDeclaredSuite('git add tools/pytest', declared), null);
+      assert.equal(invokesDeclaredSuite('cat .venv/bin/pytest', declared), null);
+    });
+  });
+
+  // N1: reviewer finding on #136's fix. The declared and invoked sides disagreed about
+  // adjacency across a flag — significantTokens computed it AFTER filtering flags out of
+  // the declared tokens, invokesDeclaredSuite computed it over the raw invoked tokens with
+  // no flag skipping at all. A flag typed between an interpreter and its script defeated
+  // recognition on the invoked side (`bash -x scripts/check.sh`).
+  //
+  // The fix reads adjacency the same way on both sides: walk back past any flags to find
+  // the nearest real predecessor, on the declared tokens as well as the invoked ones
+  // (reduceInterpreterScript, shared). That is what lets `node --experimental-vm-modules
+  // node_modules/.bin/jest` — the standard way to declare an ESM Jest suite — keep `jest`
+  // as part of its identity instead of collapsing to `node` alone, which would have
+  // reopened #134 for every project shaped this way: any `node <anything>` would have
+  // matched, refusing a supervisor's own status checks during a run exactly like #134 did
+  // for a bare `bash`.
+  describe('a flag between an interpreter and a path (#136)', () => {
+    test('an extra flag at invocation time does not defeat a script the declared side has no flag before', () => {
+      const declared = [['bash', 'scripts/check.sh']];
+      assert.equal(invokesDeclaredSuite('bash -x scripts/check.sh', declared), 'bash scripts/check.sh');
+    });
+
+    // `node --test tests/`: reading the same flag-skipping adjacency on the declared side
+    // means `tests/` is `node`'s own script argument too, the same as `scripts/check.sh`
+    // is `bash`'s, so the declared suite's identity is `['node', 'tests']` and the
+    // command's own full invocation blocks. The accepted cost: a bare `node --test`, with
+    // no target at all, no longer carries the `tests` token the identity needs, so it
+    // becomes a miss of the same shape the KNOWN MISS paragraph already documents for
+    // `node --test` against a declared `npm test` — extended there rather than repeated
+    // here.
+    test('a flag between the interpreter and a path is part of the interpreter\'s script on both sides', () => {
+      const declared = [['node', '--test', 'tests/']];
+      assert.equal(invokesDeclaredSuite('node --test tests/', declared), 'node --test tests/');
+      assert.equal(invokesDeclaredSuite('node --test', declared), null);
+    });
+
+    // The standard way to declare an ESM Jest suite: a flag between the interpreter and
+    // the script it runs. `jest` stays part of the identity, so a supervisor's unrelated
+    // `node` invocation during a run is not held by it.
+    test('a flag before the script keeps the script in the suite\'s identity (ESM Jest)', () => {
+      const declared = [['node', '--experimental-vm-modules', 'node_modules/.bin/jest']];
+      assert.equal(
+        invokesDeclaredSuite('node --experimental-vm-modules node_modules/.bin/jest', declared),
+        'node --experimental-vm-modules node_modules/.bin/jest',
+      );
+      assert.equal(invokesDeclaredSuite('node scripts/supervisor.mjs status', declared), null);
+    });
+  });
+
+  // N2: reviewer finding on #136's fix. The relative-path pre-filter ran before the
+  // interpreter rule, so a script written the ordinary way, with a leading `./`, lost its
+  // own identity: `bash ./scripts/check.sh` collapsed to `['bash']` and reopened #134 for
+  // every project that writes its declared script path that way.
+  describe('an interpreter\'s script keeps its identity whatever prefix it carries (#136)', () => {
+    const declared = [['bash', './scripts/check.sh']];
+
+    test('a leading ./ on the declared script does not drop it from the suite\'s identity', () => {
+      assert.equal(invokesDeclaredSuite('bash scripts/check.sh', declared), 'bash ./scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('bash deploy.sh', declared), null);
+      assert.equal(invokesDeclaredSuite('bash scripts/deploy.sh', declared), null);
+    });
+  });
+
+  // R1: the empty-fallback branch used to run BEFORE the primary loop existed to give
+  // path arguments their own treatment, and it went stale once that loop owned the
+  // interpreter+script case. Two defects followed. A declared script with no interpreter
+  // at all, `./scripts/check.sh`, has no predecessor for the primary loop to check, so it
+  // fell through to the fallback — which then dropped it AGAIN as a relative argument,
+  // leaving the declaration matching nothing. And the fallback basenamed every kept
+  // token, not just the first, so a declared `vendor/bin/phpunit tests/` reduced to
+  // `['phpunit', 'tests']` instead of `['phpunit']`, reopening F1's defect (a path
+  // argument silently required, so the bare form of the suite stopped matching) inside
+  // the one branch meant to be its fallback.
+  describe('the fallback keeps only the first token\'s basename (#136)', () => {
+    test('a bare script with no interpreter still identifies the suite', () => {
+      const declared = [['./scripts/check.sh']];
+      assert.equal(invokesDeclaredSuite('./scripts/check.sh', declared), './scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('bash scripts/check.sh', declared), './scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('git add scripts/check.sh', declared), null);
+    });
+
+    test('a path argument after a bare program does not become part of the suite\'s identity', () => {
+      const declared = [['vendor/bin/phpunit', 'tests/']];
+      assert.equal(invokesDeclaredSuite('phpunit', declared), 'vendor/bin/phpunit tests/');
+    });
   });
 
   // One seam per command on the line, in the order the shell runs them.

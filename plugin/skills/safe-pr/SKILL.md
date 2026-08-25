@@ -99,9 +99,12 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    node "${CLAUDE_PLUGIN_ROOT}/skills/safe-pr/scripts/collect-evidence.mjs" --feature <feature-slug> --slice <NN-slice-slug> [--type cli] --body-only --template "${CLAUDE_PLUGIN_ROOT}/skills/safe-pr/assets/pr-body-template.md" --out PR_BODY.md
    ```
 
-   Fill the remaining `<placeholders>`: description, what changed, how to
-   review, the unit summary, risk notes, the plan path. Be honest about
-   anything partial. `PR_BODY.md` is git-ignored — it isn't committed.
+   Read the generated `PR_BODY.md` prose, not just its `<placeholders>` — the
+   file is git-ignored, so it survives across slices, and a plausible-looking
+   body left over from an earlier slice is the failure to catch here, not a
+   missing placeholder. Fill the remaining `<placeholders>`: description,
+   what changed, how to review, the unit summary, risk notes, the plan path.
+   Be honest about anything partial.
 6. Dispatch the reviewer on every PR — an unconditional step now, not a branch
    of the risk rubric. Run `${CLAUDE_PLUGIN_ROOT}/skills/review/SKILL.md`, which
    stages the packet (the claim, the diff, the issue and relevant spec section,
@@ -118,8 +121,8 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
    existing job — deciding whether the separate `verify` lane also runs on top
    of the review that already happened, never whether review itself happens.
    On a row that asks for verification, run `verify` too and attach its
-   findings as advisory as well. Then show the founder the title, body, and
-   branch, and get explicit confirmation — this is outward-facing. Then push:
+   findings as advisory as well. Then push — the branch is a proposal, not a
+   change to anything, and it cannot reach the default branch:
 
    ```
    git push -u origin feat/<feature-slug>/<NN-slice-slug>
@@ -143,7 +146,11 @@ Requires `gh` authenticated and a GitHub remote — confirm both early
 
 ## Safety rules
 
-- Confirm before any push or `gh pr create` — both are outward-facing.
+- A feature-branch push and `gh pr create` need no approval — a branch and a
+  PR are proposals, reversible and inert until someone merges them. Only the
+  merge waits for the founder ([D30](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)),
+  and `block-merge.mjs` stopped refusing pushes for the same reason: branch
+  protection refuses the dangerous case server-side.
 - Never force-push, never rewrite shared history, never push to the default
   branch directly.
 - Base is always the repo's default branch, unless the founder says
