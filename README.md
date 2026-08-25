@@ -42,9 +42,9 @@ collaborator access is involved.
 
 The current release is **v0.2.0**. `0.x` rather than `1.0.0` on purpose: the
 gates and lanes work and the install path is proven, but the skill names,
-command names and hook contract have been exercised by one project, which is
-not enough evidence for a stability promise. The minor moved, not the patch,
-because v0.2.0 removes the local commit gate that v0.1.0 shipped ([D30](docs/DECISIONS.md)):
+command names and hook contract have been exercised by two projects, which
+is still not enough evidence for a stability promise. The minor moved, not
+the patch, because v0.2.0 removes the local commit gate that v0.1.0 shipped ([D30](docs/DECISIONS.md)):
 a project upgrading now has to configure GitHub branch protection to replace
 what that gate used to check locally.
 
@@ -201,7 +201,7 @@ Five agent charters back these lanes: `builder`, `reviewer`, `triage`,
 
 ## The gates
 
-Six hooks are wired through `hooks/hooks.json`. Five refuse specific
+Six gate scripts are wired through `hooks/hooks.json`. Five refuse specific
 actions; the sixth never blocks anything — it reports. A local commit gate
 used to sit here too; it duplicated a check GitHub's own branch protection
 already makes server-side, and it is deleted (see "Who merges" below).

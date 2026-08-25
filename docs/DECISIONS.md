@@ -31,11 +31,17 @@ same question from the beginning.
 took something away.** `v0.1.0` shipped a local commit gate: a check that refused a commit on
 the protected branch, and refused one while the project's recorded suite was red. `v0.2.0`
 deletes it and tells the project to configure GitHub branch protection and a required status
-check instead. Every other change in this release is a fix or an addition a consumer can
-ignore. That one is not. A project that upgrades and does nothing has less cover than it had,
-and getting back to level is work on the consumer's side. Under `0.x` that is a minor bump.
-A patch release promises the consumer nothing to do, and this release cannot make that
-promise.
+check instead. That is the larger removal and it alone settles the number, but two changes
+met the bar, not one.
+[D33](#d33--a-blank-declaration-in-settingsjson-disarms-the-guard-and-beats-an-exported-one)
+moves the sandbox guard's declaration out of the environment and into
+`.claude/settings.json`, where a blank value explicitly disarms the guard and beats an
+exported `AEO_LIVE_DATA_ROOT`. AEO's own scaffolder writes that key blank, so a consumer who
+armed the guard by exporting the variable in their shell finds it off after upgrading, and
+has to move the path into the settings file to get back to level. A project that upgrades and
+does nothing has less cover than it had, and getting back to level is work on the consumer's
+side. Under `0.x` that is a minor bump. A patch release promises the consumer nothing to do,
+and this release cannot make that promise.
 
 **The rule, from here.**
 
@@ -44,14 +50,19 @@ promise.
 - **Minor** for a change that removes cover, renames a skill or a command, or changes the
   hook contract. An addition a consumer has to configure before it does anything belongs
   here too.
-- **`1.0.0`** still waits on exactly what D27 said it waits on: a second project's evidence
-  that the skill names, the command names and the hook contract are stable. Two releases
-  from one project is not that evidence.
+- **`1.0.0`** waits on the skill names, the command names and the hook contract going a
+  release without moving. This release plainly fails that test: D30 changed the gate
+  contract and D33 changed how the guard arms. A project count was
+  [D27](#d27--v010-ships-the-tag-documents-rather-than-pins-and-the-version-has-one-copy)'s
+  proxy for the same thing, written when only one project had ever run the plugin. Two have
+  now fed evidence back
+  ([D31](#d31--the-record-names-two-tiers-and-the-doctrine-says-what-a-suite-may-cost) cites
+  both), so the proxy is replaced by the thing it stood for.
 
 **Judged per release by the founder, not computed.** The bump is read off the merged work,
 not off commit prefixes, because `feat:` and `fix:` describe what the change is and this
-rule is about what the change costs the consumer. D30 landed under `refactor:` and is the
-whole reason this release is a minor.
+rule is about what the change costs the consumer. D30 landed under `refactor:` and D33 under
+`fix:`, and both are reasons this release is a minor.
 
 **Nothing here pins anything.** D27's honesty clause stands untouched. `marketplace add`
 reads the default branch and never resolves a tag, so the number is documentation: it says

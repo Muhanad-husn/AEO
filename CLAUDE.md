@@ -77,16 +77,21 @@ lost a batch of defects. Keep filing that way.
 **What moves the version is [D34](docs/DECISIONS.md).** This release is `0.2.0` rather than
 `0.1.1` because it removes cover a consumer had. Patch for a fix that needs nothing from
 the consumer; minor for anything that removes cover, renames a skill or a command, or
-changes the hook contract; `1.0.0` still waits on a second project's evidence. The founder
-judges the bump per release rather than computing it from commit prefixes.
+changes the hook contract; `1.0.0` waits on the skill names, the command names and the hook
+contract going a release without moving, which this release does not. The founder judges the
+bump per release rather than computing it from commit prefixes.
 
-**`v0.2.0`'s one subtraction.** `commit-gate.mjs` is deleted, and `block-merge.mjs` no
+**`v0.2.0` takes two things away.** `commit-gate.mjs` is deleted, and `block-merge.mjs` no
 longer resolves a push's destination against the repository's default branch. Both
 re-derived a check GitHub's own branch protection already makes server-side, and getting
 that re-derivation's directory resolution wrong cost two defects (#119, #121).
 [D30](docs/DECISIONS.md) has the boundary rule, the table of what was removed against the
 GitHub setting that covers it, and what a project now has to configure branch protection to
-get instead of a local gate. This is the removal that makes the release a minor bump.
+get instead of a local gate. The second removal is [D33](docs/DECISIONS.md): the sandbox
+guard reads its declaration from `.claude/settings.json`, and a blank value there disarms the
+guard and beats an exported one. The scaffolder writes that key blank, so a guard armed by
+exporting `AEO_LIVE_DATA_ROOT` is off until the path moves into the settings file. Either
+removal on its own makes the release a minor bump.
 
 Three things `v0.1.0` decided, all in [D27](docs/DECISIONS.md): the number is `0.1.0`
 because one dry run is not evidence for a stability promise; the tag **documents and does
