@@ -167,15 +167,23 @@ source for one — inventing a phase field would mean hand-maintaining the secon
 [D5](docs/DECISIONS.md) exists to kill.
 
 Trigger accuracy is now **measured, not asserted**. `evals/trigger-eval.mjs` scores the
-eight description-triggered skills against an authored case set, and P6.5's tuning moved
-overall accuracy from **90.2% to 96.8%** against a **5.0 pp** noise floor — three
-descriptions that never fired on their own case now fire 15 times out of 15. The pass also
-**cost** something and says so: `safe-cleanup` fell from 15/15 to 8/15 on one case without
-its description changing a byte, because its neighbours grew. One defect is still open at
-3/15. Read
-[logs/2026-08-13-p6.5-tuning-pass/summary.md](logs/2026-08-13-p6.5-tuning-pass/summary.md)
-before editing any `description:` line — an unmeasured edit re-rolls a number that cost
-hours of live evaluation to take.
+eight description-triggered skills against an authored case set. The current, shipped
+number is **100.0% overall accuracy, 0.0 pp spread, 0 of 40 cases unstable**, from three
+independent 15-repeat runs (`--repeats 5 --model sonnet`, three times, matching P6.5's own
+protocol) taken 2026-08-25 against the tree at `b3b0ce4`. Read
+[logs/2026-08-25-trigger-accuracy-rerun/summary.md](logs/2026-08-25-trigger-accuracy-rerun/summary.md)
+before quoting any trigger-accuracy figure or editing any `description:` line.
+
+P6.5's older **96.8%** is not the same measurement and is not comparable to the 100.0%
+above: it scored a case set retired on 2026-08-13, when `wd-n2` was re-framed (#104)
+because its original form demanded the judge decline in favour of a lane it structurally
+cannot see. The eight `description:` lines themselves have not moved since PR #114's
+100.0% re-run — only the case set changed. A 0.0 pp spread over 15 repeats is not a proof
+the harness is deterministic, only the absence of observed instability across 600 calls;
+one case (`sc-n2`) is still known-borderline and has re-rolled in three prior
+measurements. At 100.0% there is no headroom left — an unmeasured edit to any
+`description:` line can only move the number down, and any movement is now measurable
+against a clean baseline.
 
 The plan's "six description-triggered skills" was wrong for three phases; the real split
 is seven operator lanes against eight description-triggered skills, of fifteen. The
