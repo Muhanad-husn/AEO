@@ -42,8 +42,9 @@ collaborator access is involved.
 
 The current release is **v0.2.0**. `0.x` rather than `1.0.0` on purpose: the
 gates and lanes work and the install path is proven, but the skill names,
-command names and hook contract have been exercised by two projects, which
-is still not enough evidence for a stability promise. The minor moved, not
+command names and hook contract have been exercised by three projects
+([D35](docs/DECISIONS.md)), which is still not enough evidence for a
+stability promise. The minor moved, not
 the patch, because v0.2.0 removes the local commit gate that v0.1.0 shipped ([D30](docs/DECISIONS.md)):
 a project upgrading now has to configure GitHub branch protection to replace
 what that gate used to check locally.
