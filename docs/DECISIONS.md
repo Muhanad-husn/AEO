@@ -15,6 +15,57 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-25 — One decision: what moves the version number
+
+### D34 — `0.2.0`, not `0.1.1`, because the release removes cover a consumer had
+
+**Problem.** [D27](#d27--v010-ships-the-tag-documents-rather-than-pins-and-the-version-has-one-copy)
+fixed the number and the single file it lives in, and never said what moves it. That cost
+nothing at the first release, where the number was already on disk and cutting it changed no
+file. It costs something at the second. `0.2.0` and `0.1.1` are both defensible readings of
+the work merged since `v0.1.0`, and with no rule written down every release re-argues the
+same question from the beginning.
+
+**The number is `0.2.0` because
+[D30](#d30--the-commit-gate-is-deleted-and-block-merge-stops-re-deriving-branch-protection)
+took something away.** `v0.1.0` shipped a local commit gate: a check that refused a commit on
+the protected branch, and refused one while the project's recorded suite was red. `v0.2.0`
+deletes it and tells the project to configure GitHub branch protection and a required status
+check instead. Every other change in this release is a fix or an addition a consumer can
+ignore. That one is not. A project that upgrades and does nothing has less cover than it had,
+and getting back to level is work on the consumer's side. Under `0.x` that is a minor bump.
+A patch release promises the consumer nothing to do, and this release cannot make that
+promise.
+
+**The rule, from here.**
+
+- **Patch** for a change a consumer inherits by upgrading and never has to act on: defect
+  fixes, sharper skill descriptions, documentation.
+- **Minor** for a change that removes cover, renames a skill or a command, or changes the
+  hook contract. An addition a consumer has to configure before it does anything belongs
+  here too.
+- **`1.0.0`** still waits on exactly what D27 said it waits on: a second project's evidence
+  that the skill names, the command names and the hook contract are stable. Two releases
+  from one project is not that evidence.
+
+**Judged per release by the founder, not computed.** The bump is read off the merged work,
+not off commit prefixes, because `feat:` and `fix:` describe what the change is and this
+rule is about what the change costs the consumer. D30 landed under `refactor:` and is the
+whole reason this release is a minor.
+
+**Nothing here pins anything.** D27's honesty clause stands untouched. `marketplace add`
+reads the default branch and never resolves a tag, so the number is documentation: it says
+what a release did, and an installer still gets `main` as it stood the moment they ran the
+command. This rule gives the number a meaning; it does not make it selectable.
+
+**Impact.** The second release's number is defended in one place instead of in a discussion.
+No checklist, no `CHANGELOG.md` — D27 refuses one and that refusal stands — and no
+automation. The cost is that a judged rule can be applied wrong and no test catches it,
+which is accepted: the alternative is a computed bump derived from prefixes that describe
+the wrong thing.
+
+---
+
 ## 2026-08-25 — One decision: the guard's declaration lives in the file, not the environment (#133)
 
 ### D33 — A blank declaration in `settings.json` disarms the guard, and beats an exported one

@@ -40,10 +40,13 @@ collaborator access is involved.
 
 ### Versions: the tag documents, `main` ships
 
-The current release is **v0.1.0**. `0.1.0` rather than `1.0.0` on purpose: the
+The current release is **v0.2.0**. `0.x` rather than `1.0.0` on purpose: the
 gates and lanes work and the install path is proven, but the skill names,
 command names and hook contract have been exercised by one project, which is
-not enough evidence for a stability promise.
+not enough evidence for a stability promise. The minor moved, not the patch,
+because v0.2.0 removes the local commit gate that v0.1.0 shipped ([D30](docs/DECISIONS.md)):
+a project upgrading now has to configure GitHub branch protection to replace
+what that gate used to check locally.
 
 **The tag does not pin your install.** `marketplace add` clones this
 repository and reads `.claude-plugin/marketplace.json` from the **default
@@ -77,7 +80,7 @@ into whichever repository you happen to be working in.
 
 ### What that installs
 
-Fifteen skills, five agent charters, and five gate scripts wired to two hook
+Fifteen skills, five agent charters, and six gate scripts wired to two hook
 events — `SessionStart` and `PreToolUse`.
 
 **Seven of the fifteen skills are operator-invoked only.** They run when you
@@ -198,21 +201,22 @@ Five agent charters back these lanes: `builder`, `reviewer`, `triage`,
 
 ## The gates
 
-Five hooks are wired through `hooks/hooks.json`. Four refuse specific
-actions; the fifth never blocks anything — it reports. A local commit gate
+Six hooks are wired through `hooks/hooks.json`. Five refuse specific
+actions; the sixth never blocks anything — it reports. A local commit gate
 used to sit here too; it duplicated a check GitHub's own branch protection
 already makes server-side, and it is deleted (see "Who merges" below).
 
 | Hook | What it refuses |
 | --- | --- |
 | `sandbox-guard` | Any command or file read/write that would reach declared production data, and running the suite over a job that's still live. |
+| `redirect-guard` | A role subagent writing into `.claude/` through a shell redirect or command (`>`, `tee`, `cp`, `sed -i`, and PowerShell equivalents) — the route around `path-guard` below, which only sees the file-edit tools. |
 | `block-merge` | A subagent, or the GitHub forge tool, merging, or deleting a branch. |
 | `path-guard` | A role subagent editing the harness's own `.claude/` configuration. |
 | `review-jail` | The reviewer or verifier role calling any tool but a `Read` of its own staged evidence packet. |
 | `session-status` | Nothing — it never blocks. It reports which of the above are actually wired and the project's live state, at the start of every session. |
 
 `claude plugin details` reports **2 hooks** — that counts the event types
-these scripts are wired to (`SessionStart`, `PreToolUse`), not the five
+these scripts are wired to (`SessionStart`, `PreToolUse`), not the six
 scripts themselves. Both numbers are correct; they're counting different
 things.
 
