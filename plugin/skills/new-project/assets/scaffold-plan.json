@@ -33,7 +33,14 @@
     "AEO_DATA_ROOT both blank. sandbox-guard.mjs reads an empty string as not-set and stays",
     "inert until both are filled in, so a blank pair is the safe default rather than an",
     "accidentally-enabled one. It is Claude Code's own settings file, not the project config",
-    "file D10 forbids, and it is tracked in git: .gitignore excludes only settings.local.json."
+    "file D10 forbids, and it is tracked in git: .gitignore excludes only settings.local.json.",
+    "",
+    "founderDocs (issue #124) is not a step; it is the rule SKILL.md's step 3 applies before",
+    "it starts walking the steps array. A founder who writes a PRD, a spec, a research note",
+    "or a sketch into the project root before scaffolding gets it filed under destination",
+    "rather than left at the root once the scaffold finishes. excludeAtRoot is a fixed list",
+    "of names tooling actually reads from a repository root, never a pattern match on a name",
+    "like \"PRD\" — a founder document keeps whatever name it already had."
   ],
   "version": 1,
   "steps": [
@@ -108,6 +115,17 @@
       "authored": true
     }
   ],
+  "founderDocs": {
+    "destination": "docs",
+    "excludeAtRoot": [
+      "README.md",
+      "CLAUDE.md",
+      "LICENSE.md",
+      "CONTRIBUTING.md",
+      "CODE_OF_CONDUCT.md",
+      "SECURITY.md"
+    ]
+  },
   "seeds": {
     "node": {
       "manifest": {

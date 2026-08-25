@@ -84,3 +84,42 @@ describe('the declared step order puts logs/ before every product-code step (EN-
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// issue #124 — the founder-documents rule the scaffolder applies before step 3's
+// steps array is walked at all
+// ---------------------------------------------------------------------------
+//
+// The integration test (new-project-scaffold.test.mjs) exercises the actual move: it
+// seeds a root with founder documents, runs the walk, and checks the resulting tree and
+// commit. This file stays in the fast tier the same way the rest of it does — it asserts
+// only what the manifest declares, not what a filesystem walk produces.
+
+describe('the founderDocs rule is declared, not left to a filename pattern (issue #124)', () => {
+  const plan = JSON.parse(raw);
+
+  test('founderDocs names a destination directory and a non-empty exclude list', () => {
+    assert.ok(plan.founderDocs, 'scaffold-plan.json declares no founderDocs rule');
+    assert.equal(
+      typeof plan.founderDocs.destination === 'string' && plan.founderDocs.destination.length > 0,
+      true,
+      'founderDocs.destination is missing or empty',
+    );
+    assert.ok(
+      Array.isArray(plan.founderDocs.excludeAtRoot) && plan.founderDocs.excludeAtRoot.length > 0,
+      'founderDocs.excludeAtRoot is missing or empty',
+    );
+  });
+
+  test('the exclude list keeps README.md and CLAUDE.md, the two files step 3 always writes', () => {
+    const excludeLower = plan.founderDocs.excludeAtRoot.map((n) => n.toLowerCase());
+    assert.ok(excludeLower.includes('readme.md'), 'README.md is not in founderDocs.excludeAtRoot');
+    assert.ok(excludeLower.includes('claude.md'), 'CLAUDE.md is not in founderDocs.excludeAtRoot');
+  });
+
+  test('the destination is docs/, the directory stage 0 already creates for tdd-evidence', () => {
+    // Not a new directory the founder has to learn — scaffold-plan.json already writes
+    // docs/tdd-evidence/.gitkeep in stage 0, so docs/ is not new territory.
+    assert.equal(plan.founderDocs.destination, 'docs');
+  });
+});
