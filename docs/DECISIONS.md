@@ -15,6 +15,165 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-23 — One decision: a red gets a budget, and only one kind of red spends it (#130)
+
+### D32 — A harness red gets a couple of minutes; a logic red gets whatever it needs
+
+**Problem.** `test-strategy.md` §6 has always split a red into two kinds. It then gave one of
+them an unbounded instruction:
+
+> A **bad** red: a compile error, missing import, wrong selector, or harness misconfiguration.
+> Fix the test/harness until it fails for the *intended* reason, then proceed.
+
+*Until* was the whole instruction. No budget, no exit, and no rule for the tenth occurrence
+of the same shape. `red-green-refactor` step 11 and its invariants said "on any unexpected
+red, shrink the step" — the same remedy for both kinds, which for a harness red means the
+plumbing problem arrives more often rather than less.
+
+**What it cost.** Reported by the founder from a day of it, and filed as #130: a redesigned
+suite produced dozens of small harness failures "here and there" — fixture paths, imports,
+encodings, timeouts, assertion shapes. Each was individually cheap to chase. Together they
+were a day, and none of them said anything about the product.
+
+**Three fixed principles already decided this, and none was being applied to test code.**
+
+| Principle | What it already says | Why it binds here |
+| --- | --- | --- |
+| Practicality over perfectionism (80/20) | build the smallest thing that meets a strict acceptance bar; polishing past the bar is a process defect | more than a couple of minutes on one harness failure is past the bar |
+| Over-engineering tripwires | "a fix larger than its bug" — stop and simplify, or justify in one line | test plumbing that costs more to debug than the behaviour it covers is precisely that |
+| Measure, don't speculate | this repo has an eval harness; use it | ten occurrences of one shape *is* a measurement, and it names one cause, not ten |
+
+**Decision.**
+
+1. **Classify before fixing.** A **logic red** — the behaviour under test is absent or wrong
+   — is the signal the test exists to produce and carries **no** time budget. A **harness
+   red** — fixture, import, path, encoding, timeout, mock shape, runner flag — proves nothing
+   about the product and gets **a couple of minutes**.
+2. **Name the exit.** Past the budget, stop debugging the plumbing and take the cheapest
+   route back to a test that fails for a logic reason: inline what the fixture provided, drop
+   to a simpler assertion through the same boundary, or delete the test and write a smaller
+   one. **Deleting without replacing is coverage laundering** and stays forbidden.
+3. **The second occurrence of a shape is a cause, not an instance.** Fix the shared defect
+   once — a fixture layer doing too much, a setup coupling tests to each other, a `conftest`
+   with logic in it, a path assembled instead of resolved.
+4. **`red-green-refactor` says which red it means.** Step 5 classifies, step 11 sends only a
+   logic red to "shrink the step", and the invariants carry the budget.
+
+**Expected impact.** The day-shaped failure mode stops being available. An agent that hits
+the same fixture error twice fixes the fixture layer instead of the fixture, which is the
+80/20 move the doctrine never suggested. A logic red is explicitly protected from the budget,
+so the rule cannot be read as licence to make an inconvenient failure go away.
+
+**What it does not license.** Deleting a test that is red for a logic reason, however
+inconvenient — that budget is deliberately unbounded. Mocking the boundary. Skipping the red
+step, which is where the whole discipline lives. Nor is the budget per session: it is per
+red, and a second one of the same shape spends its predecessor's finding rather than a fresh
+allowance.
+
+**What it costs, with its name on it.** "A couple of minutes" is a judgement, not a constant,
+and it is not read by any code — a hard number here would be a hand-tuned constant in a
+heuristic, which is itself a tripwire. The risk it accepts is an agent classifying a logic
+red as a harness red to buy the exit. The countermeasure is the replacement rule: the exit
+always ends at a test that fails for a logic reason, so a misclassification has nowhere to
+land.
+
+**Relation to [D31](#d31--the-record-names-two-tiers-and-the-doctrine-says-what-a-suite-may-cost).**
+D31 bounds **wall clock per run**. D32 bounds **debug minutes per red**. Same principle — the
+harness had no rule about its own cost — different axis, and neither one implies the other.
+
+## 2026-08-23 — One decision: the declared suite grows a second tier, and a cost rule (#127, #128)
+
+### D31 — The record names two tiers, and the doctrine says what a suite may cost
+
+**Problem.** [D17](#d17--two-test-tiers-the-fast-tier-is-the-commit-gates-the-full-tier-is-cis)
+split this repository's own battery into a fast tier and a full one, and every shipped skill
+has said "run the fast tier" ever since — `red-green-refactor` step 14, `safe-pr`'s
+preconditions, `tdd-ci`'s, `sprint-start` step 6, `builder.md`. The shipped record had one
+key. The phrase pointed at nothing. A project following the doctrine exactly ran its entire
+suite on every commit, forever, and the harness had no vocabulary for saying otherwise.
+
+Two consuming projects measured what that costs, from opposite directions.
+
+**#128 — the launch is the bill.** `Muhanad-husn/RLM-Challenge`, a Python CLI pipeline at
+the end of its eleventh slice, Windows 11, Python 3.13, 292 tests of which 70 are marked
+`acceptance`:
+
+| Reading | |
+|---|---|
+| Full suite, serial (`pytest -q`) | 292 passed in **764 s** |
+| Acceptance tier alone | 70 passed in **449 s** |
+| Unit tier alone | 217 passed in **8–20 s** |
+
+The acceptance tier was 98% of the wall clock and 24% of the tests. Then the decisive pair:
+one acceptance test parsing an eight-document fixture room took **4.24 s**, and a bare
+`python -c "import pipeline.cli"` took **4.25 s**. The work under test was free. `-X
+importtime` attributed the cost to module-scope imports — `openpyxl` 1.21 s, the PDF readers
+1.20 s, `dateparser` 0.46 s. Adding `pytest-xdist` and `-n auto` took the full suite to
+**266 s**, a 2.9x improvement with no test changed: one dependency and one flag that nothing
+in the harness suggested.
+
+**#127 — the fan-out starves what it is timing.** A project with ~7,000 tests, under 100 of
+which launch real subprocesses under a 180-second cap. Same commit, no code change between
+runs:
+
+| run | wall clock | outcome |
+|---|---|---|
+| 1 | 16 m 24 s | 1 failed |
+| 2 | 20 m 33 s | 1 failed, 1 error — a different pair, both `TimeoutExpired` |
+
+At full fan-out the CPU-bound population saturates the cores while the subprocess a cap is
+timing gets a fraction of one. With one declared command the only remedies were raising the
+cap, which moves the flake, or not running the suite, which defeats the gates. A flaky gate
+teaches people to re-run rather than read — the same dynamic the sentinel design already
+warns about for a guard nobody can clear.
+
+**Decision.**
+
+1. **`aeo-tests.json` carries two keys.** `test` is the cheap tier the loop runs; `test_full`
+   is the exhaustive tier CI runs and `safe-pr` cites. `test_full` **absent falls back to
+   `test`**, so every record written before the key existed is unaffected. `test_full`
+   present and malformed is a block naming the key, the same direction as every other bad
+   field there since [D10](#d10--the-project-records-its-test-command-and-the-gate-runs-it).
+2. **`stack.mjs` resolves both**, and `sandbox-guard` recognises either tier as the project's
+   suite, so L-02's refusal covers the tier most likely to launch real runs.
+3. **`test-strategy.md` gains §9, the harness's first rule about cost.** Time one launch of
+   the system under test during detection; above roughly a second, install the stack's
+   parallel runner and put it in the record. Keep tests that shell out under a timeout out of
+   a full fan-out. Allow several acceptance assertions to read one session-scoped run through
+   the real boundary, where they are about the produced artefact rather than about the
+   invocation. Report a fast tier that has stopped being fast.
+4. **The lanes point at the right tier.** `red-green-refactor` step 3 measures and step 14
+   names `test`; `fix` and `builder.md` name `test`; `safe-pr` and `tdd-ci` name `test_full`,
+   with [D24](#d24--a-tier-ci-has-already-run-on-a-commit-is-cited-never-re-run-locally)'s
+   citation as the default where CI has already gone green on the SHA.
+
+**Why the doctrine and not only the schema.** Three correct rules produced this with no
+fourth rule about cost: the outer loop must drive the real external endpoint
+(`test-strategy.md`, `red-green-refactor`), every vertical slice adds an acceptance scenario
+(`tdd-plan`), and the tests should be run constantly and more when surprised (the philosophy
+reference). None of the three is wrong, and none is being weakened. A project cannot notice
+the problem at slice 01, when three acceptance tests run in twenty seconds; it notices at
+slice eleven, when the loop is twelve minutes and the harness has already trained the agent
+to run it on every green step. The handbook's own rule is to measure rather than speculate.
+This applies that rule to the harness instead of only to the product.
+
+**Expected impact.** The inner loop stops paying for the acceptance tree. A project whose
+launch cost is above a second gets its parallel runner at setup rather than at slice eleven.
+A project with a subprocess population gets a lane for it rather than a raised timeout.
+Nothing changes for a project that declares one command.
+
+**What it does not license.** Mocking the boundary, reaching into internal code, or skipping
+the fast tier before a commit. Sharing one setup across assertions that are about the
+invocation itself. A new project splitting the tiers on day one — a scaffold's suite has
+nothing to split, and `new-project`'s seed still writes one key.
+
+**What it costs, with its name on it.** A second key someone can get wrong, and a reading
+someone can skip. The first is why a malformed `test_full` blocks with a message naming the
+key rather than falling back silently. The second is why the measurement sits in
+`red-green-refactor`'s step 3, in the procedure, rather than only in a reference nobody opens
+twice.
+
+
 ## 2026-08-14 — One decision: delete the local checks GitHub already refuses (#121)
 
 ### D30 — The commit gate is deleted, and block-merge stops re-deriving branch protection

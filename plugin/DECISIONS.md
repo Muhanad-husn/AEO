@@ -218,3 +218,98 @@ a concern with no server-side equivalent at all.
 **What a project loses.** A repository with **no** branch protection configured has no
 local substitute left for the checks this deletes. Configure branch protection; the
 scaffolder (`new-project`) already does, at project creation.
+
+## D31 — The record names two tiers, and the doctrine says what a suite may cost
+
+**Rule.** `aeo-tests.json` carries two keys. `test` is the cheap tier — what the inner
+loop runs on every green step and a builder runs before every commit. `test_full` is the
+exhaustive tier — what CI runs and what `safe-pr` cites. **`test_full` absent falls back
+to `test`**, so every record written before the key existed keeps meaning what it meant.
+`test_full` present and malformed is a block, in the same direction as every other bad
+field in that record.
+
+Alongside the key, `test-strategy.md` §9 gives the harness its first rule about cost:
+time one launch of the system under test during detection, install the stack's parallel
+runner where that reading is above roughly a second, keep tests that shell out under a
+timeout out of a full fan-out, allow several acceptance assertions to read one
+session-scoped run through the real boundary, and report a fast tier that has stopped
+being fast rather than absorbing it.
+
+**Why.** [D17](#d17--two-test-tiers-the-fast-tier-is-the-commit-gates-the-full-tier-is-cis)
+split this repository's own battery into two tiers and every skill has said "the fast
+tier" ever since. The shipped record had one key, so the phrase pointed at nothing: a
+project reading the doctrine correctly ran its whole suite on every commit, forever.
+
+Two consuming projects measured what that costs, from opposite directions. In one
+(issue #128), a Python CLI at its eleventh slice ran 292 tests in 764 s, of which 449 s
+was 70 acceptance tests — and a single acceptance test parsing an eight-document fixture
+room took 4.24 s against a bare `python -c "import pipeline.cli"` at 4.25 s. The work
+under test was free; the interpreter start was the whole bill, multiplied by a test count
+that only goes up. Adding `pytest-xdist` and `-n auto` took the suite to 266 s with no
+test changed — one dependency and one flag that nothing in the harness suggested.
+
+In the other (issue #127), 7,000 tests of which under 100 launch real subprocesses under
+a 180-second cap ran, on the same commit with no code change, at 16 m 24 s failing one
+test and 20 m 33 s failing a different pair — every failure a `TimeoutExpired` caused by
+the fan-out starving the very processes being timed. With one declared command the only
+remedies were raising the cap, which moves the flake, or not running the suite, which
+defeats the gates.
+
+**Why the doctrine and not just the schema.** Three correct rules produced this with no
+fourth rule about cost: the outer loop must drive the real external endpoint, every
+vertical slice adds an acceptance scenario, and the tests should be run constantly. None
+of the three is wrong. A project cannot notice at slice 01, when the suite takes twenty
+seconds; it notices at slice eleven, when the loop is twelve minutes and the habit is set.
+The handbook already says to measure rather than speculate. This applies that rule to the
+harness itself.
+
+**What it does not license.** Mocking the boundary, reaching into internal code, or
+skipping the fast tier before a commit. Sharing one setup across assertions that are about
+the invocation itself rather than about what it produced. Nor a new project splitting the
+tiers on day one — a scaffold's suite has nothing to split, and the second key is added
+when the measurement says the tiers have diverged.
+
+**What it costs.** A second key someone can get wrong, and a reading someone can skip. The
+first is why a malformed `test_full` blocks with a message naming the key rather than
+falling back silently; the second is why the measurement sits in `red-green-refactor`'s
+step 3 rather than only in a reference nobody opens twice.
+
+## D32 — A harness red gets a couple of minutes; a logic red gets whatever it needs
+
+**Rule.** Classify a red before fixing it. A **logic red** — the behaviour under test is
+absent or wrong — is the signal the test exists to produce and carries no time budget. A
+**harness red** — a fixture, an import, a path, an encoding, a timeout, a mock's shape, a
+runner flag — proves nothing about the product and gets **a couple of minutes**. Past that,
+stop debugging the plumbing: inline what the fixture provided, drop to a simpler assertion
+through the same boundary, or delete the test and write a smaller one that fails for a logic
+reason. Deleting without replacing is coverage laundering and is not available.
+
+**The same harness red twice is one defect in the suite, not two in the tests.** Fix the
+shared cause — a fixture layer doing too much, a setup coupling tests, a path assembled
+instead of resolved — rather than the symptom N times.
+
+**Why.** `test-strategy.md` §6 already split good red from bad red, then told the agent to
+"fix the test/harness until it fails for the intended reason". *Until* was the whole
+instruction. Nothing bounded it, nothing said when to stop, and step 11's "on any unexpected
+red, shrink the step" applied the same remedy to both kinds — which for a harness red means
+the plumbing arrives more often, not less.
+
+The cost was measured the expensive way (issue #130): a redesigned suite produced dozens of
+small harness failures, each individually cheap to chase, together a day. None of them said
+anything about the product.
+
+Three fixed principles already decided this and were not being applied to test code. 80/20:
+more than a couple of minutes on one harness failure is past the acceptance bar, so it is a
+process defect. The tripwire "a fix larger than its bug": test plumbing that costs more to
+debug than the behaviour it covers is exactly that. Measure, don't speculate: ten occurrences
+of one shape is a measurement, and it names a single cause.
+
+**What it does not license.** Deleting a test that is red for a logic reason, however
+inconvenient — that budget is deliberately unbounded. Mocking the boundary. Skipping the red
+step, which is where the whole discipline lives. Nor is the budget per session; it is per
+red, and a second one of the same shape spends its predecessor's finding, not a fresh
+allowance.
+
+**Relation to [D31](#d31--the-record-names-two-tiers-and-the-doctrine-says-what-a-suite-may-cost).**
+D31 bounds wall clock per run. This bounds debug minutes per red. Same principle — the
+harness had no rule about its own cost — different axis, and neither implies the other.

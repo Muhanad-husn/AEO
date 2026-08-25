@@ -1,3 +1,4 @@
 {
-  "test": "npm test"
+  "test": "npm test",
+  "test_full": "npm run test:all"
 }
