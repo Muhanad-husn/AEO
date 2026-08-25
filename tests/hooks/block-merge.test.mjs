@@ -359,9 +359,9 @@ describe('identity policy (F5)', () => {
   });
 
   test('a main session run with --agent, under a non-aeo identity, is not enforced against', () => {
-    // agent_type is present here (C-02's exact trap), but it is not one of this
-    // plugin's three roles, so isAnyAeoRole is false and the orchestrator's own
-    // approved merge path stays open.
+    // agent_type is present here (C-02's exact trap), but it does not match any of
+    // this plugin's `aeo:<role>` identities, so isAnyAeoRole is false and the
+    // orchestrator's own approved merge path stays open.
     const r = runHook({
       tool_name: 'Bash',
       tool_input: { command: 'git merge feat/x' },

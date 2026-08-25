@@ -33,10 +33,10 @@
 // `agent_type` non-empty. C-02 forbids that read: a main session launched with
 // `--agent` also carries `agent_type`, so presence-only matching blocks the
 // orchestrator's own founder-approved merge path whenever it runs in that mode. This
-// gate enforces on `isAnyAeoRole` instead, this plugin's own three roles (builder,
-// reviewer, triage), identified by their anchored `aeo:<role>` identity, and nothing
-// else. A `general-purpose` subagent, or a foreign plugin's `other:builder`, passes
-// this check. That narrowing, and why it was accepted, is recorded in the slice log.
+// gate enforces on `isAnyAeoRole` (lib.mjs) instead, which matches every `aeo:<role>`
+// identity this plugin ships, whatever the current role count is, and nothing else. A
+// `general-purpose` subagent, or a foreign plugin's `other:builder`, passes this
+// check. That narrowing, and why it was accepted, is recorded in the slice log.
 
 import { block, isAnyAeoRole, isShellTool, matchesGitSubcommand, runGate } from './lib.mjs';
 
