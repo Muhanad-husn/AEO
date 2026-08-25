@@ -1391,7 +1391,7 @@ describe('tokenising and matching', () => {
   // recognition on the invoked side (`bash -x scripts/check.sh`), and a flag between an
   // interpreter and its own FLAG's target was silently treated as adjacency on the
   // declared side, producing an identity nothing could ever satisfy twice consistently.
-  describe('a flag between an interpreter and a path (#137)', () => {
+  describe('a flag between an interpreter and a path (#136)', () => {
     test('an extra flag at invocation time does not defeat a script the declared side has no flag before', () => {
       const declared = [['bash', 'scripts/check.sh']];
       assert.equal(invokesDeclaredSuite('bash -x scripts/check.sh', declared), 'bash scripts/check.sh');
@@ -1412,7 +1412,7 @@ describe('tokenising and matching', () => {
   // interpreter rule, so a script written the ordinary way, with a leading `./`, lost its
   // own identity: `bash ./scripts/check.sh` collapsed to `['bash']` and reopened #134 for
   // every project that writes its declared script path that way.
-  describe('an interpreter\'s script keeps its identity whatever prefix it carries (#137)', () => {
+  describe('an interpreter\'s script keeps its identity whatever prefix it carries (#136)', () => {
     const declared = [['bash', './scripts/check.sh']];
 
     test('a leading ./ on the declared script does not drop it from the suite\'s identity', () => {

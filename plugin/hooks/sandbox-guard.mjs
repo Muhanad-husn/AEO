@@ -192,7 +192,7 @@ export function pathCandidates(tokens) {
  * those programs is generic; a rule that tried to tell them apart by shape alone gets one
  * of the two wrong.
  *
- * `cmd`, `powershell` and `pwsh` are deliberately absent (#137). Their own flags are
+ * `cmd`, `powershell` and `pwsh` are deliberately absent (#136). Their own flags are
  * path-shaped by the same `/[\\/]/` test a script argument is — `/c` and `-File` both
  * contain a slash or a dash the same way a path does — so `cmd /c scripts\check.cmd`
  * mis-reduces to `['cmd', 'c']`, the flag's own basename, not the script's. No declared
@@ -212,10 +212,10 @@ const GENERIC_INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'dash', 'node', 'pyth
  * no flag in between. `bash scripts/check.sh` becomes `['bash', 'check.sh']`, whatever
  * relative prefix that script carries: `bash ./scripts/check.sh` reduces the same way,
  * because dropping it as a relative argument the way `./...` is dropped would reopen
- * #134 for every script path written the ordinary way, with a leading `./` (#137). A flag
+ * #134 for every script path written the ordinary way, with a leading `./` (#136). A flag
  * between the interpreter and a path means the path belongs to the FLAG, not the
  * interpreter — `node --test tests/` becomes `['node']` alone, because `tests/` is
- * `--test`'s own target, the same role `tests/` plays in `pytest tests/` (#137). Any
+ * `--test`'s own target, the same role `tests/` plays in `pytest tests/` (#136). Any
  * other path-shaped token — relative or not, adjacent to a flag or to nothing — is
  * dropped the same way: it is a target the suite runs over, not part of what identifies
  * it, which is what lets a bare `pytest` still match `pytest tests/unit/test_api.py`.
@@ -249,7 +249,7 @@ function significantTokens(command) {
 
 /**
  * `tokens[i]`, reduced to its basename when it is path-shaped and a generic interpreter
- * appears earlier in the same command, skipping over any flags in between (#137). This is
+ * appears earlier in the same command, skipping over any flags in between (#136). This is
  * for the INVOKED side only, and is deliberately more permissive than the declared side's
  * own rule above: an extra flag a user types between an interpreter and the script it
  * already runs (`bash -x scripts/check.sh`) must not stop that script from being
@@ -285,7 +285,7 @@ function isOrderedSubsequence(tokens, wanted) {
  * `./scripts/check.sh`, whose basename is the program.
  *
  * The first form reads the invoked command's own tokens through reduceInvokedToken before
- * comparing, so an interpreter's script survives flags typed between them (#137). The
+ * comparing, so an interpreter's script survives flags typed between them (#136). The
  * second form reduces a segment's program to a plain basename unconditionally: a program
  * IS the thing invoked, not an argument to something else, so there is no interpreter to
  * require there. Both are deliberately narrower than reducing every path-shaped invoked
@@ -316,7 +316,7 @@ function isOrderedSubsequence(tokens, wanted) {
  * need a script argument at all. GENERIC_INTERPRETERS answers only the second question;
  * it is not an interchangeability table between shells, and does not grow into one.
  *
- * A THIRD KNOWN MISS (#137): a wrapper that runs a script through a sub-command rather
+ * A THIRD KNOWN MISS (#136): a wrapper that runs a script through a sub-command rather
  * than an interpreter — `uv run scripts/check.py`, and the same for `deno`, `bun` or
  * poetry's own `run` — still collapses to `['uv', 'run']`, because `run` is not in
  * GENERIC_INTERPRETERS and the script argument after it is dropped like any other target.
