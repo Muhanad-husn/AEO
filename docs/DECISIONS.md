@@ -15,6 +15,69 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-25 — One decision: how many projects have consumed AEO (#148)
+
+### D35 — Three consuming projects are on the record, not two; #127's project is CIP
+
+**Problem.** [D27](#d27--v010-ships-the-tag-documents-rather-than-pins-and-the-version-has-one-copy)
+counted one consumer at `v0.1.0`. The `v0.2.0` release notes and the README both say "two
+projects", naming the two checkable by name at the time: Phase 7's dry run on a Go product,
+and `Muhanad-husn/RLM-Challenge`. [D31](#d31--the-record-names-two-tiers-and-the-doctrine-says-what-a-suite-may-cost)
+also cites a project for #127's fan-out measurement and leaves it unnamed: "roughly 7,000
+tests, of which the slow population is under 100." Nothing in this repository named it, so a
+reader could not tell whether it was a third consumer, a restatement of one of the first two,
+or `D:\axial`, which is a source tree AEO is built from and never a consumer of it.
+
+**The record names three.**
+
+1. **`envdiff`** (`Muhanad-husn/aeo-dryrun`), a Go CLI. Phase 7's dry run, 2026-08-13, the
+   same day `v0.1.0` was tagged. Loaded with `claude --plugin-dir`, never through a
+   marketplace (`logs/2026-08-13-p7.4-dry-run/summary.md:26-29`). It proved the lanes end to
+   end: a real pull request merged with CI green. It never exercised the marketplace install
+   mechanism, because it never used one. Evidence: D27.
+2. **`Muhanad-husn/RLM-Challenge`**, a Python CLI pipeline, at its eleventh slice when #128
+   was filed (2026-08-22). Its `.claude/settings.json` carries `enabledPlugins:
+   {"aeo@aeo": true}` and `extraKnownMarketplaces.aeo` pointing at `Muhanad-husn/AEO`: a real
+   marketplace install, not a directory load. Supplied the 764s to 266s measurement behind
+   D31. Evidence: #128, D31.
+3. **CIP** (Conflict Intelligence Platform), implementation at `Muhanad-husn/cip`. AEO's own
+   issue #127 names it in its first line: "Filed from a consuming project (CIP), where this
+   cost roughly an hour of wall clock in one session." CIP's `.claude/settings.json`
+   corroborates, carrying `AEO_LIVE_DATA_ROOT: D:/CIP-data` and the same marketplace-install
+   shape as RLM-Challenge's. CIP also filed #130 (the harness-red budget behind D32) and
+   #133. #134 was migrated from `cip#957`, which reads "Surfaced during the #876 run
+   launch." That line does not itself name the project; it corroborates the migration's
+   provenance, not the identification, which #127 already supplies. Evidence: #127, #130,
+   #133, #134, `cip#957`.
+
+**Both marketplace-installed consumers registered after `v0.1.0`.** CIP's
+`.claude/settings.json` first carries the AEO marketplace registration at commit `9f29475`,
+2026-08-20T21:53:31Z ("feat: migrate repo workflow to the AEO plugin"). RLM-Challenge's
+first commit, `409a351`, 2026-08-21T04:28:32Z ("chore: scaffold the project"), already
+carries the identical registration. `v0.1.0` is tag `91f0711`, cut 2026-08-13T22:13:51+02:00.
+Both registrations land seven to eight days after the tag. Each project's
+`extraKnownMarketplaces` also points at this repository's default branch, which D27
+established a marketplace install always tracks rather than a pinned tag.
+
+**What the record does not settle.** Neither install writes down which commit of `main` it
+last synced to after the registration commit dated above. The registration date is settled
+by that commit evidence; a later sync date is not.
+
+**Decision.** The count is **three**. This entry is the one place that states it. The
+README's version paragraph and D31's `#127` description cite this entry instead of
+restating a number.
+
+**Why the `v0.2.0` release notes still say two.** They shipped before anyone had reread
+#127 closely enough to notice its own opening line names CIP. At release time #127 read as
+an unnamed project, so the notes named only what was checkable by name. Release notes are
+not edited after publication; that precedent is D27's own. This entry is where the
+correction lives.
+
+**Impact.** One authoritative count, one place. A future release's "how many" question is
+answered by reading this entry rather than re-deriving it from issue bodies each time.
+
+---
+
 ## 2026-08-25 — One decision: what moves the version number
 
 ### D34 — `0.2.0`, not `0.1.1`, because the release removes cover a consumer had
@@ -219,7 +282,8 @@ preconditions, `tdd-ci`'s, `sprint-start` step 6, `builder.md`. The shipped reco
 key. The phrase pointed at nothing. A project following the doctrine exactly ran its entire
 suite on every commit, forever, and the harness had no vocabulary for saying otherwise.
 
-Two consuming projects measured what that costs, from opposite directions.
+Two consuming projects measured what that costs, from opposite directions. (Which projects
+have consumed AEO at all, and how many, is [D35](#d35--three-consuming-projects-are-on-the-record-not-two-127s-project-is-cip)'s question, not this one's.)
 
 **#128 — the launch is the bill.** `Muhanad-husn/RLM-Challenge`, a Python CLI pipeline at
 the end of its eleventh slice, Windows 11, Python 3.13, 292 tests of which 70 are marked
@@ -239,9 +303,9 @@ importtime` attributed the cost to module-scope imports — `openpyxl` 1.21 s, t
 **266 s**, a 2.9x improvement with no test changed: one dependency and one flag that nothing
 in the harness suggested.
 
-**#127 — the fan-out starves what it is timing.** A project with ~7,000 tests, under 100 of
-which launch real subprocesses under a 180-second cap. Same commit, no code change between
-runs:
+**#127 — the fan-out starves what it is timing.** CIP ([D35](#d35--three-consuming-projects-are-on-the-record-not-two-127s-project-is-cip)),
+~7,000 tests, under 100 of which launch real subprocesses under a 180-second cap. Same
+commit, no code change between runs:
 
 | run | wall clock | outcome |
 |---|---|---|
