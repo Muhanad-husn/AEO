@@ -38,10 +38,24 @@
 // operator use outside Claude Code the two are equal; in a session they must differ, and
 // this gate is what makes "must" mean something.
 //
-// The seam is an environment variable rather than an injected argument because in-process
-// monkeypatching never reaches a subprocess CLI child and integration tests shell out.
-// That is L-03's second requirement, stated in its own words, and an environment variable
-// is the only seam that survives a process boundary unaided.
+// AEO_DATA_ROOT is an environment variable because in-process monkeypatching never
+// reaches a subprocess CLI child and integration tests shell out. That is L-03's second
+// requirement, stated in its own words, and an environment variable is the only seam
+// that survives a process boundary unaided.
+//
+// AEO_LIVE_DATA_ROOT does NOT survive a process boundary the same way -- it is compared
+// in this process, before anything is spawned -- so that justification never applied to
+// it, and reading it from process.env cost a real session a restart (#133). settings.json
+// is a tracked file: a branch checkout can silently revert its content, and grant and
+// revoke turned out not to be symmetric once that happens -- a checkout that reintroduces
+// a real value applies live, one that reintroduces blank does not, because that half looks
+// like nothing changed. A stale declaration then outlived the seam it was declared
+// against, and the guard blocked every Bash call with no way back, including the `git
+// checkout` needed to undo the checkout that caused it. The fix reads the DECLARATION
+// straight from .claude/settings.json's `env` object on every invocation instead, so grant
+// and revoke are both just "what does the file say right now" -- no side that gets stuck.
+// AEO_DATA_ROOT is unaffected: it still has to reach a subprocess, so it stays exactly
+// where it was.
 //
 // WHY THE ENVIRONMENT RULE FIRES ON EVERY COMMAND AND NOT ONLY ON TEST COMMANDS. A gate
 // that had to recognise "this command runs the project's code" would be a classifier
@@ -64,12 +78,12 @@
 // real workflow. A founder-approved run against production data during a live job is not
 // one, and the four kills in L-02 came from concurrent sessions rather than from a role.
 
-import { realpathSync, writeSync } from 'node:fs';
+import { readFileSync, realpathSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { block, commandSegments, isPathInside, normalizeHookPath, operationDirs, runGate, toolFilePath } from './lib.mjs';
-import { projectAnchor, runInProgress } from './sentinel.mjs';
+import { projectAnchor, runInProgress, worktreeAnchor } from './sentinel.mjs';
 import { resolveTestPlan } from './stack.mjs';
 
 /** The project's declaration of where production data is. Absolute, or the guard blocks. */
@@ -367,7 +381,75 @@ function readRoot(value, platform) {
 }
 
 /**
+ * The AEO_LIVE_DATA_ROOT declaration read straight from `<dir>/.claude/settings.json`'s
+ * `env` object, re-read on every call (#133). `undefined` when the file makes no
+ * statement at all -- missing, unreadable, not valid JSON, or the key simply absent --
+ * which is resolveRoots' signal to fall back to the environment exactly as it did before
+ * this existed. A string is returned whenever the key IS present as a string, blank
+ * included: AEO's own scaffold ships the key blank, and a blank value there already means
+ * "declared, and declared as nothing" -- inert, not "keep looking elsewhere."
+ *
+ * AEO_DATA_ROOT is never read here. It has to reach a subprocess, so it stays an
+ * environment variable, read exactly where it always was.
+ */
+function readLiveDeclarationFromFile(dir) {
+  if (typeof dir !== 'string' || dir === '') return undefined;
+  let raw;
+  try {
+    raw = readFileSync(path.join(dir, '.claude', 'settings.json'), 'utf8');
+  } catch {
+    return undefined; // no file, or unreadable: nothing this hook can act on
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return undefined; // malformed: the same treatment as no file, not a block of its own
+  }
+  const value = parsed?.env?.[LIVE_DATA_ROOT_ENV];
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * The directory whose .claude/settings.json holds this session's declaration.
+ *
+ * `payload.cwd` first, not CLAUDE_PROJECT_DIR: it is the Bash tool's own persisted
+ * directory, so it reflects whichever worktree the session is actually sitting in.
+ * CLAUDE_PROJECT_DIR is session-fixed -- set once, at launch, at the main checkout -- and
+ * wrong for a worktree session, the same V-02 lesson lib.mjs's own directory walk is
+ * built around. `process.cwd()` is the same last resort that walk uses.
+ *
+ * worktreeAnchor (sentinel.mjs) then walks up to the checkout that directory sits in,
+ * resolving a LINKED WORKTREE TO ITSELF: every worktree of a project has its own
+ * working-tree copy of a tracked file, so a session in a feature worktree must read that
+ * worktree's own settings.json, not the main checkout's (#133, the case the issue was
+ * filed from). projectAnchor, used below for the sentinel, answers the opposite question
+ * on purpose: sentinels are shared across every worktree of a project, a declaration is
+ * not.
+ *
+ * Spawn-free, for the same reason worktreeAnchor itself is (sentinel.mjs): this runs
+ * before every Bash and file-tool call, and a git subprocess there is a cost paid on
+ * every tool use.
+ */
+export function settingsDeclarationDir(payload, env) {
+  const fromPayload = typeof payload?.cwd === 'string' ? payload.cwd.trim() : '';
+  const fromEnv = typeof env?.CLAUDE_PROJECT_DIR === 'string' ? env.CLAUDE_PROJECT_DIR.trim() : '';
+  const base = fromPayload || fromEnv || process.cwd();
+  return worktreeAnchor(normalizeHookPath(base));
+}
+
+/**
  * Where production data is, and where the data of EACH command on this line will resolve.
+ *
+ * THE LIVE DECLARATION comes from `<dir>/.claude/settings.json` first (#133), re-read on
+ * this call rather than trusted from a previous one, and falls back to
+ * `env[AEO_LIVE_DATA_ROOT]` only when the file makes no statement: missing, unreadable,
+ * malformed, or the key absent. `dir` is the caller's job to resolve
+ * (settingsDeclarationDir, for the gate itself) -- resolveRoots stays a pure function of
+ * what it is handed, which is what keeps it unit-testable with no filesystem at all when
+ * `dir` is omitted. An explicitly exported AEO_LIVE_DATA_ROOT with no settings file (or
+ * no `dir` passed at all) still arms the guard exactly as before: an existing setup that
+ * has never adopted a settings file does not silently disarm.
  *
  * An inline `AEO_DATA_ROOT=...` wins over the inherited value, because that is what the
  * child will see. This is the sanctioned way to redirect one command inside a session: it
@@ -397,8 +479,9 @@ function readRoot(value, platform) {
  *
  * @returns {{live: object, seams: Array<{data: object, dataSource: string}>}}
  */
-export function resolveRoots({ command = '', env = process.env, platform = process.platform } = {}) {
-  const live = readRoot(env?.[LIVE_DATA_ROOT_ENV], platform);
+export function resolveRoots({ command = '', env = process.env, platform = process.platform, dir = null } = {}) {
+  const declared = readLiveDeclarationFromFile(dir);
+  const live = readRoot(declared !== undefined ? declared : env?.[LIVE_DATA_ROOT_ENV], platform);
   const inherited = env?.[DATA_ROOT_ENV];
 
   const seams = [];
@@ -498,8 +581,10 @@ export function sandboxGuard(payload) {
 
   // 2. The seam (L-03). Everything below needs a declared production data root; without
   //    one the project has told the guard nothing to protect, and there is nothing here
-  //    to be ambiguous about.
-  const { live, seams } = resolveRoots({ command, env: process.env });
+  //    to be ambiguous about. The declaration itself is read from .claude/settings.json,
+  //    re-resolved on this call (#133); env is only the fallback resolveRoots takes when
+  //    the file has nothing to say.
+  const { live, seams } = resolveRoots({ command, env: process.env, dir: settingsDeclarationDir(payload, process.env) });
   if (!live.set) return;
 
   if (live.root === null) {

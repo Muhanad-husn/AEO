@@ -573,6 +573,58 @@ describe('production data root', () => {
       assert.equal(r.status, 0, `AEO_LIVE_DATA_ROOT=${JSON.stringify(value)} must not block`);
     }
   });
+
+  // #133: the report has to read the declaration the same way the gate itself does now,
+  // or a session start could tell a founder "declared" for a value the very next Bash
+  // call would refuse to honour.
+  describe('the declaration file (#133)', () => {
+    function writeSettings(repo, { live = '', data = '' } = {}) {
+      const file = path.join(repo, '.claude', 'settings.json');
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, JSON.stringify({ env: { AEO_LIVE_DATA_ROOT: live, AEO_DATA_ROOT: data } }, null, 2));
+      return file;
+    }
+
+    test('a declaration in the file alone is reported, with nothing in the environment', () => {
+      const repo = makeRepo();
+      const live = tempDir('aeo-p17-live-');
+      writeSettings(repo, { live });
+      const r = runHook({
+        payload: { cwd: repo },
+        env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: undefined }),
+      });
+      assert.equal(r.status, 0);
+      assert.match(r.stdout, /Production data root: declared/);
+      assert.ok(r.stdout.includes(live), 'the file-only declaration is not in the report');
+    });
+
+    // The same regression sandbox-guard.mjs's own battery covers: a stale value left in
+    // the environment must not read as an armed guard once the file says otherwise.
+    test('the file overrides a stale declaration left behind in the environment', () => {
+      const repo = makeRepo();
+      writeSettings(repo, { live: '' }); // the file, right now, says: nothing declared
+      const stale = tempDir('aeo-p17-stale-');
+      const r = runHook({
+        payload: { cwd: repo },
+        env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: stale }),
+      });
+      assert.equal(r.status, 0);
+      assert.match(r.stdout, /Production data root: NOT DECLARED/);
+      assert.doesNotMatch(r.stdout, /Production data root: declared/);
+    });
+
+    test('with no settings file at all, the environment is still the report\'s source', () => {
+      const repo = makeRepo(); // no .claude/settings.json
+      const live = tempDir('aeo-p17-live-');
+      const r = runHook({
+        payload: { cwd: repo },
+        env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: live }),
+      });
+      assert.equal(r.status, 0);
+      assert.match(r.stdout, /Production data root: declared/);
+      assert.ok(r.stdout.includes(live), 'the env-only declaration is not in the report');
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

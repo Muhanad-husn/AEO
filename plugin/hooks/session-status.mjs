@@ -29,7 +29,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { currentBranch, git, preflight, resolveWorktree, runReporter } from './lib.mjs';
-import { LIVE_DATA_ROOT_ENV, resolveRoots } from './sandbox-guard.mjs';
+import { LIVE_DATA_ROOT_ENV, resolveRoots, settingsDeclarationDir } from './sandbox-guard.mjs';
 import { ISSUE_LIMIT, OPEN_PR_LIMIT, fetchOpenIssues, fetchOpenPrs, formatPrLine, ghJson, renderSection } from './status-render.mjs';
 
 const RUN_LOG_HEAD_LINES = 8;
@@ -132,9 +132,15 @@ function findNewestRunLog(root) {
  * all-clear -- L-08's rule that an unconfigured threshold is a loud skip, never a quiet
  * pass. A declared root is reported as declared, not as safe; where it points is the
  * declaration's business and this hook does not vouch for it.
+ *
+ * Reads the declaration the same way the gate itself does (#133): from
+ * .claude/settings.json first, via settingsDeclarationDir -- the one place that
+ * directory-resolution decision is made -- falling back to process.env only when the
+ * file has nothing to say. A session start that reports a value the very next Bash call
+ * would refuse to honour is worse than reporting nothing.
  */
-function renderDataRoot() {
-  const { live } = resolveRoots({ command: '', env: process.env });
+function renderDataRoot(payload) {
+  const { live } = resolveRoots({ command: '', env: process.env, dir: settingsDeclarationDir(payload, process.env) });
 
   if (!live.set) {
     return [
@@ -241,7 +247,7 @@ async function run(payload) {
   // whether enforcement is running at all, so they belong above repo state and ahead of
   // the not-a-worktree return below: an undeclared production root is worth saying even
   // in a session that has no git repository to report on.
-  lines.push(...renderDataRoot());
+  lines.push(...renderDataRoot(payload ?? {}));
 
   // Resolved from the session's own cwd via lib.mjs, never CLAUDE_PROJECT_DIR or this
   // script's own location -- both are session-fixed and wrong for a worktree session,

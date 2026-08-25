@@ -395,6 +395,156 @@ describe('the seam', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The declaration file (#133)
+// ---------------------------------------------------------------------------
+//
+// AEO_LIVE_DATA_ROOT is read from .claude/settings.json now, re-resolved on every
+// invocation, instead of trusted from process.env. AEO_DATA_ROOT stays exactly where it
+// was -- these cases prove the two did not converge. The regression that got this filed:
+// a session's environment can carry a stale declaration (settings.json is a tracked
+// file; a branch checkout can revert it while a long session's own env keeps the old
+// value), and the guard has to prefer what the file says NOW over what the environment
+// remembers.
+
+describe('the declaration file (#133)', () => {
+  /** Write `.claude/settings.json` under `repo`, declaring the given env values. */
+  function writeSettings(repo, { live = '', data = '' } = {}) {
+    const file = path.join(repo, '.claude', 'settings.json');
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify({ env: { [LIVE]: live, [DATA]: data } }, null, 2));
+    return file;
+  }
+
+  test('a declaration in the file alone arms the guard, with nothing in the environment', () => {
+    const { live } = roots();
+    const repo = makeRepo();
+    writeSettings(repo, { live });
+    assertBlockedBecause(guard({ payload: bash('npm test', repo), env: {} }), NO_SEAM, 'file-only declaration, no seam');
+  });
+
+  test('the file is re-read on every invocation: a blank rewrite disarms the very next call', () => {
+    const { live } = roots();
+    const repo = makeRepo();
+    const settingsFile = writeSettings(repo, { live });
+    assertBlockedBecause(guard({ payload: bash('npm test', repo), env: {} }), NO_SEAM, 'armed by the file');
+
+    writeFileSync(settingsFile, JSON.stringify({ env: { [LIVE]: '', [DATA]: '' } }, null, 2));
+    assertAllowed(guard({ payload: bash('npm test', repo), env: {} }), 'the same call, after the file was edited back to blank');
+  });
+
+  // The regression the issue was filed from: the environment carries a stale
+  // declaration -- what Claude Code's own settings.json-to-env injection leaves behind
+  // when a value goes back to blank, per the issue's own account -- while the file, read
+  // fresh on this call, says there is nothing declared. The file wins, because it is the
+  // one source that cannot get stuck.
+  test('the file overrides a stale declaration left behind in the environment', () => {
+    const { live } = roots();
+    const repo = makeRepo();
+    writeSettings(repo, { live: '' }); // the file, right now, says: nothing declared
+    const staleEnv = { [LIVE]: live, [DATA]: path.join(live, 'scratch') }; // env still thinks otherwise
+    assertAllowed(guard({ payload: bash('npm test', repo), env: staleEnv }), 'file says blank; the guard must not trust the stale env');
+
+    // Control: with no file at all, the stale env is exactly what the guard used to run
+    // on, so this proves the ALLOW above came from the file and not from something else.
+    const noFile = makeRepo();
+    assertBlockedBecause(guard({ payload: bash('npm test', noFile), env: staleEnv }), SEAM_OVERLAPS, 'no file: env is still honoured');
+  });
+
+  test('a missing or malformed settings.json defers to the environment, not to a block of its own', () => {
+    const { live } = roots();
+    const repo = makeRepo(); // no .claude/settings.json at all
+    assertBlockedBecause(guard({ payload: bash('npm test', repo), env: { [LIVE]: live } }), NO_SEAM, 'no settings file: env still arms it');
+
+    const file = path.join(repo, '.claude', 'settings.json');
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, '{not json');
+    assertBlockedBecause(
+      guard({ payload: bash('npm test', repo), env: { [LIVE]: live } }),
+      NO_SEAM,
+      'malformed settings file: env still arms it',
+    );
+  });
+
+  test('AEO_DATA_ROOT in the file is never read; the seam stays environment-only', () => {
+    const { live, sandbox } = roots();
+    const repo = makeRepo();
+    writeSettings(repo, { live, data: sandbox }); // both declared in the file
+    // No AEO_DATA_ROOT anywhere in the environment or the command: the seam rule still
+    // sees no seam at all, proving the file's AEO_DATA_ROOT was not read.
+    assertBlockedBecause(guard({ payload: bash('npm test', repo), env: {} }), NO_SEAM, 'AEO_DATA_ROOT in the file does nothing');
+  });
+
+  test('payload.cwd outranks CLAUDE_PROJECT_DIR when locating the declaration file', () => {
+    const { live: liveA, sandbox: sandboxA } = roots();
+    const { live: liveB } = roots();
+    const repoA = makeRepo();
+    const repoB = makeRepo();
+    writeSettings(repoA, { live: liveA });
+    writeSettings(repoB, { live: liveB });
+    mkdirSync(path.join(liveA, 'index'), { recursive: true });
+    // AEO_DATA_ROOT stays environment-only by design, so the seam is given here rather
+    // than in either file, disjoint from both declared roots.
+    const env = { CLAUDE_PROJECT_DIR: repoB, [DATA]: sandboxA };
+    // The command names liveA outright. If repoA's own declaration governs (payload.cwd
+    // wins, as it must), this blocks by naming production data. If CLAUDE_PROJECT_DIR's
+    // project (repoB) wrongly governed instead, liveA would be an ordinary, undeclared
+    // directory and this would pass straight through.
+    assertBlockedBecause(
+      guard({ payload: bash(`ls ${path.join(liveA, 'index')}`, repoA), env }),
+      NAMES_LIVE_DATA,
+      "payload.cwd's own repo governs the declaration, not CLAUDE_PROJECT_DIR's",
+    );
+  });
+
+  test('with no payload.cwd, CLAUDE_PROJECT_DIR locates the declaration file', () => {
+    const { live } = roots();
+    const repo = makeRepo();
+    writeSettings(repo, { live });
+    const payload = bash('npm test', repo);
+    delete payload.cwd;
+    assertBlockedBecause(
+      guard({ payload, env: { CLAUDE_PROJECT_DIR: repo } }),
+      NO_SEAM,
+      'CLAUDE_PROJECT_DIR is the only directory offered',
+    );
+  });
+
+  // The case the issue was filed from: a linked worktree must resolve to the same
+  // declaration as the main checkout when their working trees agree, and its own,
+  // independent declaration when they do not -- exactly what git already guarantees for
+  // any other tracked file, since every worktree carries its own copy.
+  test('a linked worktree reads its own settings.json, independent of the main checkout', () => {
+    const { live: liveMain } = roots();
+    const { live: liveWt } = roots();
+    const main = makeRepo();
+    writeSettings(main, { live: liveMain });
+    git(main, 'add', '-A');
+    git(main, 'commit', '-q', '-m', 'declare production data');
+
+    const worktree = path.join(tempDir(), 'wt');
+    git(main, 'worktree', 'add', '-q', '-b', 'feat/declaration-wt', worktree);
+
+    // Freshly created from the same commit: the worktree sees the SAME declaration.
+    const rBefore = guard({ payload: bash('npm test', worktree), env: {} });
+    assertBlockedBecause(rBefore, NO_SEAM, 'worktree, same declaration as main, immediately after creation');
+    assert.ok(rBefore.stderr.includes(liveMain), "a freshly created worktree matches the main checkout's declaration");
+
+    // Editing the worktree's own copy does not touch main's, and vice versa: each
+    // resolves independently, which is the guarantee #133 was filed over.
+    writeSettings(worktree, { live: liveWt });
+    const rWt = guard({ payload: bash('npm test', worktree), env: {} });
+    assertBlockedBecause(rWt, NO_SEAM, 'worktree, its own edited declaration');
+    assert.ok(rWt.stderr.includes(liveWt), "the worktree's block names its own declared root");
+    assert.ok(!rWt.stderr.includes(liveMain), "the worktree's block must not name main's declared root");
+
+    const rMain = guard({ payload: bash('npm test', main), env: {} });
+    assertBlockedBecause(rMain, NO_SEAM, "main checkout is unaffected by the worktree's edit");
+    assert.ok(rMain.stderr.includes(liveMain), "main's block still names its own declared root");
+    assert.ok(!rMain.stderr.includes(liveWt), "main's block must not have picked up the worktree's edit");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A command that names production data outright
 // ---------------------------------------------------------------------------
 
@@ -1511,6 +1661,62 @@ describe('tokenising and matching', () => {
     const roots = resolveRoots({ command: '', env: { [LIVE]: '/d/production', [DATA]: '/d/sandbox' }, platform: 'win32' });
     assert.equal(roots.live.root, 'D:/production');
     assert.equal(roots.seams[0].data.root, 'D:/sandbox');
+  });
+
+  // resolveRoots' own file-reading half (#133), isolated from the guard's directory
+  // resolution: `dir` is handed in directly, so these run in-process with no subprocess
+  // spawn at all.
+  describe('resolveRoots reads the live declaration from a file when dir is given', () => {
+    function settingsDir(content) {
+      const dir = tempDir('aeo-p15-settings-');
+      if (content !== undefined) {
+        mkdirSync(path.join(dir, '.claude'), { recursive: true });
+        writeFileSync(path.join(dir, '.claude', 'settings.json'), content);
+      }
+      return dir;
+    }
+
+    test('no dir passed: behaves exactly as before, straight from env', () => {
+      const r = resolveRoots({ command: '', env: { [LIVE]: 'D:/production' }, platform: 'win32' });
+      assert.equal(r.live.root, 'D:/production');
+    });
+
+    test('a dir with no settings file falls back to env', () => {
+      const dir = settingsDir(); // no .claude/settings.json at all
+      const r = resolveRoots({ command: '', env: { [LIVE]: 'D:/production' }, platform: 'win32', dir });
+      assert.equal(r.live.root, 'D:/production');
+    });
+
+    test('a declared value in the file wins over env', () => {
+      const dir = settingsDir(JSON.stringify({ env: { [LIVE]: 'D:/from-file' } }));
+      const r = resolveRoots({ command: '', env: { [LIVE]: 'D:/from-env' }, platform: 'win32', dir });
+      assert.equal(r.live.root, 'D:/from-file');
+    });
+
+    test('a blank value in the file means not declared, even with a real value in env', () => {
+      const dir = settingsDir(JSON.stringify({ env: { [LIVE]: '' } }));
+      const r = resolveRoots({ command: '', env: { [LIVE]: 'D:/from-env' }, platform: 'win32', dir });
+      assert.equal(r.live.set, false);
+    });
+
+    test('the key absent from the file (but the file itself present) falls back to env', () => {
+      const dir = settingsDir(JSON.stringify({ env: { SOME_OTHER_KEY: 'x' } }));
+      const r = resolveRoots({ command: '', env: { [LIVE]: 'D:/from-env' }, platform: 'win32', dir });
+      assert.equal(r.live.root, 'D:/from-env');
+    });
+
+    test('AEO_DATA_ROOT in the file is never read', () => {
+      const dir = settingsDir(JSON.stringify({ env: { [LIVE]: 'D:/from-file', [DATA]: 'D:/from-file-seam' } }));
+      const r = resolveRoots({ command: '', env: { [LIVE]: 'D:/x', [DATA]: 'D:/from-env-seam' }, platform: 'win32', dir });
+      assert.equal(r.seams[0].data.root, 'D:/from-env-seam');
+    });
+
+    test('malformed JSON falls back to env rather than throwing', () => {
+      const dir = settingsDir('{not json');
+      assert.doesNotThrow(() => resolveRoots({ command: '', env: { [LIVE]: 'D:/from-env' }, platform: 'win32', dir }));
+      const r = resolveRoots({ command: '', env: { [LIVE]: 'D:/from-env' }, platform: 'win32', dir });
+      assert.equal(r.live.root, 'D:/from-env');
+    });
   });
 });
 
