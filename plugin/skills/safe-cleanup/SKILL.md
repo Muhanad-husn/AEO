@@ -9,7 +9,12 @@ The companion to `safe-pr`: once a PR is done, this classifies every local
 branch against the base branch and the PR state, shows the founder the
 table, and deletes only the categories approved. Same posture as `safe-pr` —
 report first, confirm before deleting, keep everything recoverable.
-**Local branches only** — this skill never touches the remote.
+**Local branches only** — this skill never deletes on the remote. It does
+**report** any remote branch whose PR merged, because nothing else in the
+plugin ever would: `gh pr merge --delete-branch` deletes the local branch
+first and stops on that failure, so a branch held by a worktree gets merged,
+loses nothing locally, and stays on `origin` indefinitely (#125). Retiring
+one is `git push origin --delete <branch>`, and it stays the founder's call.
 
 Classification lives in
 `${CLAUDE_PLUGIN_ROOT}/skills/safe-cleanup/scripts/classify-branches.mjs`,
@@ -46,7 +51,10 @@ says so.
    ```
 
    Show the founder the table and the summary (merged / abandoned / kept
-   counts).
+   counts), and the `REMOTE` block under it if there is one — remote
+   branches whose PR merged, listed and never deleted. That block needs
+   both a remote and usable PR data; without them it says so rather than
+   printing an empty list, which would read as "none stranded".
 3. Confirm. Explain the buckets in plain terms: merged branches are safe
    (their work is in the base, or their PR merged); abandoned branches
    carry commits not in the base, so deleting them drops that work,
@@ -96,8 +104,12 @@ says so.
   guarantee cannot be honoured on data that was never retrieved. The
   report distinguishes three states and never collapses them: available,
   failed, and gh-not-installed.
-- Local only — never touch a remote branch from this skill; that's a
-  deliberate, separate action the founder drives themselves.
+- Local only — never delete a remote branch from this skill; that's a
+  deliberate, separate action the founder drives themselves. Reporting one
+  is not deleting it, and the report is read from `git ls-remote`, never
+  from `git branch -r`: remote-tracking refs are a local cache that goes
+  stale in the direction that invents work, listing branches the remote
+  deleted long ago.
 - Never delete the default branch, the current branch, another protected
   branch, or any branch with an open PR.
 - Never force-delete unmerged local work (`local-only` with unique commits)

@@ -170,6 +170,67 @@ export function mergedAtRecordedHead(branchSha, mergedPrs) {
   return mergedPrs.find(p => typeof p?.headRefOid === 'string' && p.headRefOid === branchSha) ?? null;
 }
 
+/**
+ * The branch names the remote actually has right now, or null if the listing failed.
+ *
+ * Read from `git ls-remote`, never from `refs/remotes/*`. A remote-tracking ref is a
+ * local cache and it goes stale in the direction that invents work: this repository's own
+ * checkout listed nine branches as present on `origin` that `origin` had not carried for
+ * days, and one `git fetch --prune` removed all nine. A report built on that cache hands
+ * the founder a list of branches to delete that do not exist.
+ *
+ * null is a failed listing, `[]` is a remote with no branches. Those are different
+ * answers and the caller must not collapse them (L-08).
+ */
+function remoteHeads(remote) {
+  const out = git(['ls-remote', '--heads', remote]);
+  if (out === null) return null;
+  if (out === '') return [];
+  return out.split('\n')
+    .map(line => line.split('\t')[1])
+    .filter(ref => typeof ref === 'string' && ref.startsWith('refs/heads/'))
+    .map(ref => ref.slice('refs/heads/'.length));
+}
+
+/**
+ * Remote branches whose PR merged and which the remote still carries — the branches
+ * issue #125 strands.
+ *
+ * `gh pr merge --delete-branch` deletes the LOCAL branch first and returns on that
+ * failure, so it never reaches the remote delete. A worktree holds its branch checked
+ * out, and `sprint-start` gives every actor a worktree, so the local delete failed every
+ * time; the merge had already gone through, the error named the local branch, and the
+ * remote branch survived unmentioned. Nothing else in this plugin would ever notice: the
+ * skill is local-only, deliberately, and stays that way. This reports; the founder
+ * deletes.
+ *
+ * An open PR on the branch wins, exactly as it does locally — that is active work, not a
+ * leftover. A branch with no merged PR is not this defect and is not guessed at.
+ *
+ * Exported for the tests, and for the same reason `mergedAtRecordedHead` is: gh cannot be
+ * shimmed on Windows, so the only honest way to assert a rule about PR records is to hand
+ * them to it directly.
+ */
+export function strandedRemoteBranches(remoteNames, prByBranch, protectedNames) {
+  if (!Array.isArray(remoteNames)) return null;
+  const isProtected = protectedNames instanceof Set
+    ? protectedNames
+    : new Set(Array.isArray(protectedNames) ? protectedNames : []);
+  const rows = [];
+  for (const name of remoteNames) {
+    if (isProtected.has(name)) continue;
+    const prs = prByBranch?.[name] ?? [];
+    if (prs.some(p => p?.state === 'OPEN')) continue;
+    const merged = prs.filter(p => p?.state === 'MERGED');
+    if (!merged.length) continue;
+    // gh returns newest first, and the local classification above already reads
+    // mergedPrs[0] as "the" merged PR. Same reading here rather than a second one.
+    const pr = merged[0];
+    rows.push({ name, pr: pr.number ?? null, mergedAt: pr.mergedAt ?? null });
+  }
+  return rows;
+}
+
 function detectBase(args) {
   if (typeof args.base === 'string') {
     if (gitOk(['rev-parse', '--verify', 'refs/heads/' + args.base])) return args.base;
@@ -208,7 +269,8 @@ function main() {
   const protectedSet = new Set(['main', 'master', 'develop', 'release', base, current]
     .concat(typeof args.protected === 'string' ? args.protected.split(',').map(s => s.trim()).filter(Boolean) : []));
 
-  const hasRemote = !!git(['remote']);
+  const remoteName = firstLine(git(['remote'])) || null;
+  const hasRemote = !!remoteName;
   let ghAuthed = false;
   try { execFileSync('gh', ['auth', 'status'], { stdio: 'ignore' }); ghAuthed = true; } catch { ghAuthed = false; }
   const prCapable = hasRemote && ghAuthed;
@@ -312,6 +374,37 @@ function main() {
   const openPr = rows.filter(r => r.status === 'open-pr');
   const localOnly = rows.filter(r => r.status === 'local-only');
   console.log(`Summary: ${merged.length} merged · ${abandoned.length} abandoned · ${aheadPr.length} ahead-of-merged-pr (kept) · ${openPr.length} open-PR (kept) · ${localOnly.length} local-only/unknown (kept)`);
+
+  // Remote branches whose PR merged (#125). Report only — deleting on the remote would
+  // change this skill's posture and is the founder's own call.
+  //
+  // Skipped with a stated reason rather than printed empty when the answer is not known:
+  // an empty REMOTE block reads as "nothing stranded", which is the one claim that cannot
+  // be made without both a remote and PR data (L-08).
+  if (!hasRemote) {
+    console.log('\nREMOTE: not checked — no remote configured.');
+  } else if (!prKnown) {
+    console.log(
+      `\nREMOTE: not checked — PR state is ${prQueryFailed ? 'UNKNOWN (the PR query failed)' : 'unavailable'}, ` +
+      `so a merged-PR branch on "${remoteName}" cannot be identified. Missing data, not an all-clear.`,
+    );
+  } else {
+    const heads = remoteHeads(remoteName);
+    if (heads === null) {
+      console.log(`\nREMOTE: not checked — \`git ls-remote --heads ${remoteName}\` failed. Missing data, not an all-clear.`);
+    } else {
+      const stranded = strandedRemoteBranches(heads, prByBranch, protectedSet);
+      console.log(`\n----- REMOTE on "${remoteName}" (report only — this skill never deletes there) -----`);
+      if (!stranded.length) {
+        console.log(`  none — ${heads.length} branch(es) on "${remoteName}", none with a merged PR and no open one.`);
+      } else {
+        for (const r of stranded) {
+          console.log(`  ${pad(r.name, 44)} PR #${r.pr ?? '-'} merged${r.mergedAt ? ' ' + String(r.mergedAt).slice(0, 10) : ''}`);
+        }
+        console.log(`  ${stranded.length} merged branch(es) still on "${remoteName}". Retire one:  git push ${remoteName} --delete <branch>`);
+      }
+    }
+  }
 
   if (args.json) console.log('\nJSON ' + JSON.stringify(rows));
 

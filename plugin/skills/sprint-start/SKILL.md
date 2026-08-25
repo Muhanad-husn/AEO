@@ -77,8 +77,30 @@ both short.
 
 8. **Wrap-up brief, then report and pause.** Post the PR link, report
    `DONE`. The orchestrator merges only on the founder's explicit
-   approval, never before and never on its own judgment, then runs
-   `safe-cleanup` on the merged branch and removes the worktree.
+   approval, never before and never on its own judgment.
+
+   **Take the worktree off first, then merge** — this order, not the
+   reverse:
+
+   ```
+   git worktree remove <path>
+   gh pr merge <n> --squash --delete-branch
+   ```
+
+   `--delete-branch` deletes the local branch before the remote one and
+   returns on the first failure. A worktree holds its branch checked out,
+   so while step 4's worktree stands the local delete always fails, the
+   command stops there, and the **remote** branch is never deleted. The
+   merge itself has already gone through, so nothing looks broken: the
+   error names the *local* branch, the operator deletes that and moves on,
+   and the branch surviving on `origin` goes unmentioned. Check with `git
+   ls-remote --heads origin`, never with `git branch -r` — a
+   remote-tracking ref is a local cache and lists branches the remote
+   deleted months ago.
+
+   Then run `safe-cleanup` for anything the merge did not retire. It is
+   local-only by design, so the remote branches it finds are reported for
+   the founder to retire, not deleted.
 
 ## Concurrent selection and dispatch
 
