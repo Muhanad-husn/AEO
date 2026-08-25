@@ -131,11 +131,15 @@ Bundled resource:
    `AEO_LIVE_DATA_ROOT` and `AEO_DATA_ROOT` both blank. This is Claude Code's own
    settings file, not a place to configure this plugin, and `.gitignore` only
    excludes `settings.local.json`, so this one lands in the first commit. A blank
-   pair leaves `sandbox-guard` inert — the same state as a fresh install with no
-   file at all — rather than accidentally refusing every command. Point the
-   founder at it in your Stage-0 report: filling in `AEO_LIVE_DATA_ROOT` with the
-   absolute path to wherever this project's production data lives, and
-   `AEO_DATA_ROOT` with a sandbox path outside it, is what turns the guard on.
+   pair leaves `sandbox-guard` inert rather than accidentally refusing every
+   command — but it is not the same state as no file at all. `sandbox-guard`
+   reads `AEO_LIVE_DATA_ROOT` from this file, re-resolved on every call, and a
+   blank value in the file is an explicit disarm that wins even over an exported
+   environment variable; only an absent key, or no file, falls back to the
+   environment ([D33](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)). Point the founder at
+   it in your Stage-0 report: filling in `AEO_LIVE_DATA_ROOT` with the absolute
+   path to wherever this project's production data lives, and `AEO_DATA_ROOT`
+   with a sandbox path outside it, is what turns the guard on.
 
 4. **Confirm `sandbox-guard` can see the project.** Run the same resolver it
    reads from, from the target directory:

@@ -490,10 +490,11 @@ describe('the sandbox variables are declared blank at scaffold time (P6.2, issue
 
   // Not an assumption about sandbox-guard.mjs — the real gate, spawned the way hooks.json
   // wires it, fed exactly the pair the scaffold just wrote. readRoot() in sandbox-guard.mjs
-  // treats an empty string the same as an absent variable, so this placeholder must leave
-  // the guard exactly as inert as a fresh install with no .claude/settings.json at all,
-  // never accidentally armed into refusing everything.
-  test('the blank placeholder leaves sandbox-guard inert, the same as no declaration at all', () => {
+  // treats an empty string as an explicit disarm, so this placeholder must leave the guard
+  // inert. That is NOT the same state as no .claude/settings.json at all: a blank value in
+  // the file beats an exported AEO_LIVE_DATA_ROOT, where an absent key falls back to it (D33).
+  // Same outcome as an absent key here, for a different reason: the scaffold exports nothing.
+  test('the blank placeholder leaves sandbox-guard inert', () => {
     const parsed = JSON.parse(readFileSync(settingsAbsPath(), 'utf8'));
     const payload = {
       hook_event_name: 'PreToolUse',
