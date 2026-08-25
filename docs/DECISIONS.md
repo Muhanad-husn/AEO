@@ -15,6 +15,71 @@ Identifier schemes, kept distinct on purpose: **D*n*** here, **C/V/L** in
 
 ---
 
+## 2026-08-25 — One decision: the guard's declaration lives in the file, not the environment (#133)
+
+### D33 — A blank declaration in `settings.json` disarms the guard, and beats an exported one
+
+**Problem.** `sandbox-guard` read both of its roots from `process.env`. The seam
+(`AEO_DATA_ROOT`) has to, and says so in its own header: it must survive a process
+boundary into a subprocess CLI child, which is L-03's second requirement. That reasoning
+never applied to the declaration (`AEO_LIVE_DATA_ROOT`), which is compared in-process
+before anything is spawned, and applying it to both is what made the guard's grant state
+one-directional.
+
+`.claude/settings.json` is a tracked file, so its content is a function of the checked-out
+commit. Claude Code applies a settings change to a real value live and does not apply a
+change back to blank — that half looks like nothing happened. So a session that armed the
+guard by editing the file, then checked out a branch whose committed file predated the
+edit, kept the stale declaration in its environment while the seam genuinely reverted to
+production. The guard then refused every Bash call, correctly by its own rules, including
+the `git checkout` needed to undo the checkout that caused it. Two sessions in one checkout
+hit this independently and neither could get out without a restart. Ordinary version
+control was the whole trigger: a long-lived branch, a bisect, a stash cycle, a revert.
+
+**Decision.** The declaration is read from `<dir>/.claude/settings.json`'s `env` object,
+re-resolved on every invocation. The seam stays an environment variable, untouched.
+
+Four rules follow, and the third is the one that changes behaviour in projects that already
+exist:
+
+| State of the key in the file | What the guard does |
+| --- | --- |
+| Absent, or no file, unreadable, malformed | Falls back to `process.env` — exactly the old behaviour |
+| A path | Arms against that path |
+| **Blank** | **Explicitly disarmed. Does not fall through to a stale environment value** |
+| Any of the above | `AEO_DATA_ROOT` is read from the environment as it always was |
+
+**Why blank has to win.** It is the fix, not a side effect of it. If a blank fell through to
+the environment, the reverted checkout above would still leave the session armed against a
+value the current commit does not declare, and the lockout would survive. Treating the file
+as the statement of record means a checkout that reverts it disarms the guard on the very
+next call.
+
+**What it costs, stated plainly.** AEO's own scaffolder writes that key blank. So in any
+scaffolded project the file now beats an exported `AEO_LIVE_DATA_ROOT`, and a founder who
+armed the guard from their shell will find it off. That is a real regression in reach for
+that one setup, accepted for two reasons. A key that is *absent* still falls through, so a
+project that never adopted a settings file is untouched. And `session-status.mjs` resolves
+the declaration through the same path, so the session-start report and the gate cannot
+disagree: a disarmed guard is announced at every session start, not silently assumed. The
+failure mode this trades away — a guard stuck on with no way back — had no announcement and
+no exit.
+
+**Which directory.** `payload.cwd` first, then `CLAUDE_PROJECT_DIR`, then `process.cwd()`,
+walked up by the existing spawn-free worktree anchor. That anchor resolves a **linked
+worktree to itself**, not to the main checkout, because every worktree holds its own working
+copy of a tracked file and a session sitting in one must read that one. This is the opposite
+of how a sentinel resolves, and deliberately so: sentinels are shared across a project's
+worktrees, a declaration is not. Spawn-free matters because this runs before every Bash and
+file-tool call.
+
+**Not decided here.** An override flag. [D18](DECISIONS.md)'s no-override rule is untouched
+and this decision does not argue with it. The problem was never that the guard could not be
+overridden; it was that a legitimate configuration change could not be applied in the
+direction that loosens.
+
+---
+
 ## 2026-08-23 — One decision: a red gets a budget, and only one kind of red spends it (#130)
 
 ### D32 — A harness red gets a couple of minutes; a logic red gets whatever it needs

@@ -313,3 +313,24 @@ allowance.
 **Relation to [D31](#d31--the-record-names-two-tiers-and-the-doctrine-says-what-a-suite-may-cost).**
 D31 bounds wall clock per run. This bounds debug minutes per red. Same principle — the
 harness had no rule about its own cost — different axis, and neither implies the other.
+
+## D33 — A blank declaration in `settings.json` disarms the guard, and beats an exported one
+
+**Rule.** `sandbox-guard` reads `AEO_LIVE_DATA_ROOT` — the declaration — from
+`<dir>/.claude/settings.json`'s `env` object, re-resolved on every invocation, not from
+`process.env`. Four states: a path in the file arms the guard against it; a **blank** value
+in the file is an explicit disarm and does not fall through to the environment; the key
+absent, or the file missing, unreadable, or malformed, falls back to `process.env` — the old
+behaviour, unchanged. `AEO_DATA_ROOT` — the seam — stays environment-only in every case,
+because it must survive a process boundary into a subprocess CLI child. `session-status.mjs`
+resolves the declaration through the same path, so the session-start report and the gate
+cannot disagree about what is armed.
+
+**Why.** `.claude/settings.json` is a tracked file: a checkout, bisect, or stash cycle changes
+what it says without touching a shell that still holds a stale exported value. If a blank
+value fell through to the environment, a branch that reverted the file would leave the guard
+armed against a value the checked-out commit no longer declares, and nothing could turn it
+off — the guard would refuse even the `git checkout` needed to undo the switch. Making the
+file the statement of record, where a blank value beats an exported one rather than
+deferring to it, means a reverted checkout disarms the guard on its very next call instead of
+stranding the session.
