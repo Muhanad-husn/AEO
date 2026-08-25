@@ -191,54 +191,79 @@ export function pathCandidates(tokens) {
  * tests/` both put a path-shaped token straight after a plain program, and only one of
  * those programs is generic; a rule that tried to tell them apart by shape alone gets one
  * of the two wrong.
+ *
+ * `cmd`, `powershell` and `pwsh` are deliberately absent (#137). Their own flags are
+ * path-shaped by the same `/[\\/]/` test a script argument is — `/c` and `-File` both
+ * contain a slash or a dash the same way a path does — so `cmd /c scripts\check.cmd`
+ * mis-reduces to `['cmd', 'c']`, the flag's own basename, not the script's. No declared
+ * test command in this corpus starts with a Windows shell, and a set entry that
+ * mis-reduces is worse than one that is simply absent.
  */
-const GENERIC_INTERPRETERS = new Set([
-  'sh', 'bash', 'zsh', 'dash', 'node', 'python', 'python3', 'ruby', 'perl', 'pwsh', 'powershell', 'cmd',
-]);
-
-/**
- * `tokens[i]`, reduced to its basename when it is path-shaped AND immediately follows a
- * generic interpreter token in `tokens`; every other token, including a path-shaped one
- * that is not an interpreter's script argument, is returned unchanged. Declared and
- * invoked commands are both read through this before they are compared, so
- * `scripts/check.sh` right after a declared or invoked `bash` lines up with `check.sh` on
- * the other side.
- */
-function interpreterScriptToken(tokens, i) {
-  const t = tokens[i];
-  if (!/[\\/]/.test(t)) return t;
-  return i > 0 && GENERIC_INTERPRETERS.has(tokens[i - 1]) ? path.basename(t) : t;
-}
+const GENERIC_INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'dash', 'node', 'python', 'python3', 'ruby', 'perl']);
 
 /**
  * The declared command reduced to the tokens worth matching on.
  *
- * Flags, glob arguments and relative path arguments are dropped: `go test ./...` is the
- * same invocation as `go test ./pkg`, and a gate keyed on `./...` would miss the second.
+ * A flag or a glob argument never identifies the suite and is dropped outright: `go test
+ * ./...` is the same invocation as `go test ./pkg`.
  *
- * Of what survives, a path-shaped token is kept ONLY when it is a generic interpreter's
- * script argument, reduced to its basename: `bash scripts/check.sh` becomes `['bash',
- * 'check.sh']`. Any other path-shaped token is dropped — it is a target the suite runs
- * over, not part of what identifies it, which is what lets a bare `pytest` still match
- * `pytest tests/unit/test_api.py` and `go test pkg/...` still match `go test ./pkg`.
+ * A path-shaped token is kept, reduced to its basename, ONLY when it is a generic
+ * interpreter's own script argument — the token immediately after the interpreter, with
+ * no flag in between. `bash scripts/check.sh` becomes `['bash', 'check.sh']`, whatever
+ * relative prefix that script carries: `bash ./scripts/check.sh` reduces the same way,
+ * because dropping it as a relative argument the way `./...` is dropped would reopen
+ * #134 for every script path written the ordinary way, with a leading `./` (#137). A flag
+ * between the interpreter and a path means the path belongs to the FLAG, not the
+ * interpreter — `node --test tests/` becomes `['node']` alone, because `tests/` is
+ * `--test`'s own target, the same role `tests/` plays in `pytest tests/` (#137). Any
+ * other path-shaped token — relative or not, adjacent to a flag or to nothing — is
+ * dropped the same way: it is a target the suite runs over, not part of what identifies
+ * it, which is what lets a bare `pytest` still match `pytest tests/unit/test_api.py`.
  *
- * Keeping every path-shaped token once anything plain survived (an earlier version of
- * this rule) made a declared command with a directory argument fail to match its own
- * invocation — `pytest tests/` no longer matched a bare `pytest` — because the seam
- * between "the interpreter's script" and "the suite's own target" is structurally
- * undecidable from shape alone; GENERIC_INTERPRETERS is what actually decides it (#136).
- * Dropping every path-shaped token whenever a plain one survived (the version before
- * that) had the opposite failure: `bash scripts/check.sh` collapsed to just `bash`, so
- * any `bash <anything>` matched it, including a supervisor's own `status` and `stop`
+ * Two earlier versions of this rule got it wrong in opposite directions. Keeping every
+ * path-shaped token once anything plain survived made a declared command with a
+ * directory argument fail to match its own plain invocation — `pytest tests/` no longer
+ * matched a bare `pytest` (#136). Dropping every path-shaped token whenever a plain one
+ * survived, before that, made `bash scripts/check.sh` collapse to just `bash`, so any
+ * `bash <anything>` matched it, including a supervisor's own `status` and `stop`
  * commands, unreachable for the life of a run (#134).
  *
- * When nothing plain and no interpreter+script pair survives, a path-shaped program keeps
- * its basename, so `vendor/bin/phpunit` still matches a bare `phpunit`.
+ * When nothing survives — no plain token and no interpreter+script pair — a path-shaped
+ * program keeps its basename, so `vendor/bin/phpunit` still matches a bare `phpunit`.
  */
 function significantTokens(command) {
+  const wanted = [];
+  for (let i = 0; i < command.length; i += 1) {
+    const t = command[i];
+    if (t.startsWith('-') || t.includes('*')) continue;
+    if (/[\\/]/.test(t)) {
+      if (i > 0 && GENERIC_INTERPRETERS.has(command[i - 1])) wanted.push(path.basename(t));
+      continue;
+    }
+    wanted.push(t);
+  }
+  if (wanted.length > 0) return wanted;
   const kept = command.filter((t) => !t.startsWith('-') && !/^\.{1,2}[\\/]/.test(t) && !t.includes('*'));
-  const wanted = kept.map((t, i) => interpreterScriptToken(kept, i)).filter((t) => !/[\\/]/.test(t));
-  return wanted.length > 0 ? wanted : kept.map((t) => path.basename(t));
+  return kept.map((t) => path.basename(t));
+}
+
+/**
+ * `tokens[i]`, reduced to its basename when it is path-shaped and a generic interpreter
+ * appears earlier in the same command, skipping over any flags in between (#137). This is
+ * for the INVOKED side only, and is deliberately more permissive than the declared side's
+ * own rule above: an extra flag a user types between an interpreter and the script it
+ * already runs (`bash -x scripts/check.sh`) must not stop that script from being
+ * recognised, where on the declared side a flag in that position changes what the
+ * trailing path even means (see `significantTokens` on `node --test tests/`). The two
+ * sides are asymmetric on purpose — one decides what identifies the suite, the other only
+ * has to recognise that identity again, flags and all.
+ */
+function reduceInvokedToken(tokens, i) {
+  const t = tokens[i];
+  if (!/[\\/]/.test(t)) return t;
+  let j = i - 1;
+  while (j >= 0 && tokens[j].startsWith('-')) j -= 1;
+  return j >= 0 && GENERIC_INTERPRETERS.has(tokens[j]) ? path.basename(t) : t;
 }
 
 function isOrderedSubsequence(tokens, wanted) {
@@ -259,15 +284,15 @@ function isOrderedSubsequence(tokens, wanted) {
  * declared command wraps it, `cd sub && pytest` with it, and a script run directly as
  * `./scripts/check.sh`, whose basename is the program.
  *
- * Both forms read a path-shaped token through the same interpreter+script reduction as
- * the declared side (#136): the invoked command's own tokens through
- * interpreterScriptToken for the first form, and each segment's program through a plain
- * basename for the second — a program IS the thing invoked, not an argument to something
- * else, so there is no interpreter to require there. This is deliberately narrower than
- * reducing every path-shaped invoked token: doing that made `git add tools/pytest` and
- * `cat .venv/bin/pytest` match a bare declared `pytest`, because `tools/pytest` reduces to
- * the same basename as the declared suite even though it is `git add`'s and `cat`'s
- * argument, not an interpreter's.
+ * The first form reads the invoked command's own tokens through reduceInvokedToken before
+ * comparing, so an interpreter's script survives flags typed between them (#137). The
+ * second form reduces a segment's program to a plain basename unconditionally: a program
+ * IS the thing invoked, not an argument to something else, so there is no interpreter to
+ * require there. Both are deliberately narrower than reducing every path-shaped invoked
+ * token regardless of what precedes it: doing that made `git add tools/pytest` and `cat
+ * .venv/bin/pytest` match a bare declared `pytest`, because `tools/pytest` reduces to the
+ * same basename as the declared suite even though it is `git add`'s and `cat`'s argument,
+ * not an interpreter's.
  *
  * The second form used to accept that token anywhere in the command. Because flags and
  * globs are dropped, the final declared token is the literal `test` for Node, Go, Rust
@@ -287,11 +312,23 @@ function isOrderedSubsequence(tokens, wanted) {
  * script, as in `sh scripts/check.sh` against a declared `bash scripts/check.sh`. The
  * script's basename is an ARGUMENT to `sh` there, not the program in program position, so
  * neither form catches it — catching it would mean treating `sh` and `bash` as
- * equivalent, a table this function does not carry and should not grow one for.
+ * equivalent, which is a different question from which programs are generic enough to
+ * need a script argument at all. GENERIC_INTERPRETERS answers only the second question;
+ * it is not an interchangeability table between shells, and does not grow into one.
+ *
+ * A THIRD KNOWN MISS (#137): a wrapper that runs a script through a sub-command rather
+ * than an interpreter — `uv run scripts/check.py`, and the same for `deno`, `bun` or
+ * poetry's own `run` — still collapses to `['uv', 'run']`, because `run` is not in
+ * GENERIC_INTERPRETERS and the script argument after it is dropped like any other target.
+ * Any `uv run <anything>` then matches the declared suite, the same over-match #134 fixed
+ * for a bare interpreter. `poetry run python scripts/check.py` does not have this
+ * problem: its script follows `python`, a real interpreter, and reduces correctly. Adding
+ * `run` (or `uv`, `deno`, `bun`) to the set is not the fix — `npm run build` and `cargo
+ * run` are "run" too, and neither takes a script argument that identifies a suite.
  */
 export function invokesDeclaredSuite(command, declared) {
   const rawTokens = shellTokens(command);
-  const tokens = rawTokens.map((t, i) => interpreterScriptToken(rawTokens, i));
+  const tokens = rawTokens.map((t, i) => reduceInvokedToken(rawTokens, i));
   const programs = commandSegments(command).segments.map((s) =>
     s.program === null ? null : /[\\/]/.test(s.program) ? path.basename(s.program) : s.program,
   );

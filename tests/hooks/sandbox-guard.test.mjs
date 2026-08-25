@@ -1374,13 +1374,51 @@ describe('tokenising and matching', () => {
   // follow a generic interpreter, made a path ARGUMENT to an unrelated program match a
   // single-token declared suite by basename alone. Pinned allowed, not accepted as a
   // trade-off: `tools/pytest` here is `git add`'s and `cat`'s argument, not an
-  // interpreter's script, and interpreterScriptToken does not reduce it.
+  // interpreter's script, and reduceInvokedToken does not reduce it.
   describe('an unrelated command naming a path that merely ends in the suite\'s name (#136)', () => {
     const declared = [['pytest']];
 
     test('the path stays an argument to its own command, not the declared suite', () => {
       assert.equal(invokesDeclaredSuite('git add tools/pytest', declared), null);
       assert.equal(invokesDeclaredSuite('cat .venv/bin/pytest', declared), null);
+    });
+  });
+
+  // N1: reviewer finding on #136's fix. The declared and invoked sides disagreed about
+  // adjacency across a flag — significantTokens computed it AFTER filtering flags out of
+  // the declared tokens, invokesDeclaredSuite computed it over the raw invoked tokens with
+  // no flag skipping at all. A flag typed between an interpreter and its script defeated
+  // recognition on the invoked side (`bash -x scripts/check.sh`), and a flag between an
+  // interpreter and its own FLAG's target was silently treated as adjacency on the
+  // declared side, producing an identity nothing could ever satisfy twice consistently.
+  describe('a flag between an interpreter and a path (#137)', () => {
+    test('an extra flag at invocation time does not defeat a script the declared side has no flag before', () => {
+      const declared = [['bash', 'scripts/check.sh']];
+      assert.equal(invokesDeclaredSuite('bash -x scripts/check.sh', declared), 'bash scripts/check.sh');
+    });
+
+    // `node --test tests/`: `--test` sits between `node` and `tests/`, so `tests/` is
+    // `--test`'s own target, not `node`'s script — the same role a path plays in `pytest
+    // tests/`. The declared suite's identity is `node` alone, so a bare `node --test`,
+    // with no target at all, still names it.
+    test('a flag between the interpreter and a path makes the path the flag\'s target, not the interpreter\'s script', () => {
+      const declared = [['node', '--test', 'tests/']];
+      assert.equal(invokesDeclaredSuite('node --test tests/', declared), 'node --test tests/');
+      assert.equal(invokesDeclaredSuite('node --test', declared), 'node --test tests/');
+    });
+  });
+
+  // N2: reviewer finding on #136's fix. The relative-path pre-filter ran before the
+  // interpreter rule, so a script written the ordinary way, with a leading `./`, lost its
+  // own identity: `bash ./scripts/check.sh` collapsed to `['bash']` and reopened #134 for
+  // every project that writes its declared script path that way.
+  describe('an interpreter\'s script keeps its identity whatever prefix it carries (#137)', () => {
+    const declared = [['bash', './scripts/check.sh']];
+
+    test('a leading ./ on the declared script does not drop it from the suite\'s identity', () => {
+      assert.equal(invokesDeclaredSuite('bash scripts/check.sh', declared), 'bash ./scripts/check.sh');
+      assert.equal(invokesDeclaredSuite('bash deploy.sh', declared), null);
+      assert.equal(invokesDeclaredSuite('bash scripts/deploy.sh', declared), null);
     });
   });
 
