@@ -48,13 +48,18 @@ allowed.
 
 ## What is in it now
 
-`main` carries the naive `runningTotal`, which sums without filtering. `feat/e2e`
-is two commits ahead with the non-numeric skip. `fix/1-running-total-input-guard`
-adds the input guard, the CI workflow, and the committed test evidence, and is
-open as PR #2 against `main`.
+`main` sits at `db5086b` and carries `runningTotal` with both the input guard and
+the non-numeric filter. PR #2 merged that on 2026-08-11, so the branch behind it,
+`fix/1-running-total-input-guard`, is merged rather than open. The remote copy is
+still there; the local one is gone.
 
-That shape is deliberate and worth keeping: a default branch that is *behind* a
-feature branch is what exposes a lane that resolves the default branch correctly
+`feat/e2e` is local only and has diverged from `main`: two commits `main` does not
+carry, one commit it does. Its `runningTotal` skips non-numeric entries but has no
+input guard, no CI workflow, and no committed evidence, because it was cut before
+PR #2.
+
+That divergence is deliberate and worth keeping: a default branch that is *behind*
+a feature branch is what exposes a lane that resolves the default branch correctly
 and then branches from `HEAD` anyway. A repository whose `main` is current cannot
 tell those two apart.
 
@@ -63,6 +68,16 @@ real change (`runningTotal` gains an `options.max` cap), a plainly stated claim 
 `PR_BODY.md`, and green test evidence that never exercises the cap. Green, real,
 and about a different thing than the claim — the shape the reviewer's stage 0
 exists to catch. Reproducing it costs more than keeping it.
+
+`feat/sprint/3` through `feat/sprint/6` are the four-actor run from Checkpoint 5,
+one branch per actor. Each adds a single file pair under `src/` and `tests/` and
+touches nothing else: `mean`, `median`, `spread`, `roundTo`. That disjointness is
+what made all six merge-order pairs measurable. All four are pushed and open as
+PRs #9 through #12 against `main`, and issues #3 through #6 that they answer are
+open too. Issues #7 and #8 were filed in the same batch and have no branch.
+
+They stay open. Merging them would leave `main` current and spend the only set of
+real concurrent pull requests the testbed holds.
 
 ## Rules
 
