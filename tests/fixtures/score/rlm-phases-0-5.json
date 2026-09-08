@@ -1166,5 +1166,18 @@
     "mergeDecisions": 40,
     "sessions": 37
   },
-  "commitments": null
+  "commitments": null,
+  "harness": {
+    "processes": {
+      "bash": 1,
+      "grep": 0,
+      "read": 0,
+      "task": 0
+    },
+    "sessionStartLines": 839,
+    "tests": {
+      "testLines": 9534,
+      "sourceLines": 12348
+    }
+  }
 }

@@ -8,6 +8,7 @@ import {
   parseStatusTable, phaseNumber, isDone, phaseRow, milestoneOf, splitRow, windowOf,
 } from './consumer.mjs';
 import { countCommitments, scanTranscripts } from './interventions.mjs';
+import { measure } from './harness.mjs';
 
 function run(command, args, cwd) {
   return execFileSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).trim();
@@ -138,6 +139,7 @@ export function read(dir, phases) {
     issues: issues
       .map((i) => ({ number: i.number, state: i.state, milestone: i.milestone?.title ?? null }))
       .sort((a, b) => a.number - b.number),
+    harness: measure(dir),
   };
   // Derived counts, not transcripts: a replay reads these and never a session
   // file. Appended after the keys the window itself is computed from.

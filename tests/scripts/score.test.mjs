@@ -34,7 +34,7 @@ const expected = [
   'prs: 48 merged',
   'interventions: 1.38 per merged PR (66 messages, 40 merge decisions excluded, 37 sessions)',
   'executed: none declared',
-  'harness: not measured',
+  'harness: bash 1 node, grep 0, read 0, task 0; session start 839 lines; tests 0.77 of source (9534 / 12348)',
   '',
 ].join('\n');
 
@@ -57,7 +57,7 @@ test('a snapshot with no ledger rows prints no ledger', () => {
   assert.equal(lines[1], 'phases: 0 to 5, 2026-09-05 to 2026-09-08');
   assert.equal(lines[2], 'days: 4');
   assert.equal(lines[4], 'prs: 48 merged');
-  assert.equal(lines[7], 'harness: not measured');
+  assert.equal(lines[7], 'harness: bash 1 node, grep 0, read 0, task 0; session start 839 lines; tests 0.77 of source (9534 / 12348)');
 });
 
 test('an open last phase prints open and counts to the recorded time', () => {
