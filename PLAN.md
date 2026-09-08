@@ -127,7 +127,7 @@ One row per phase, written by the phase's closing pull request.
 
 | Phase | State | Score | Harness cost | Closed |
 |---|---|---|---|---|
-| 0 Score | done | consumer: Muhanad-husn/RLM<br>phases: 0 to 5, 2026-09-05 to 2026-09-08<br>days: 4<br>dollars: 3.50<br>prs: 48 merged<br>interventions: 1.40 per merged PR (67 messages, 41 merge decisions excluded, 38 sessions)<br>executed: none declared<br>consumer: Muhanad-husn/RLM-Challenge (from record)<br>phases: all, 2026-08-21 to 2026-09-05<br>days: 16<br>dollars: 20.58<br>prs: 117 merged of 122<br>interventions: no transcripts<br>executed: none declared<br>harness: no checkout | harness: bash 1 node, grep 0, read 0, task 0; session start 835 lines; tests 1.76 of source (17005 / 9677) | 2026-09-08 |
+| 0 Score | done | consumer: Muhanad-husn/RLM<br>phases: 0 to 5, 2026-09-05 to 2026-09-08<br>days: 4<br>dollars: 3.50<br>prs: 48 merged<br>interventions: 1.40 per merged PR (67 messages, 41 merge decisions excluded, 38 sessions)<br>executed: none declared<br>harness: bash 1 node, grep 0, read 0, task 0; session start 839 lines; tests 0.77 of source (9534 / 12348)<br>consumer: Muhanad-husn/RLM-Challenge (from record)<br>phases: all, 2026-08-21 to 2026-09-05<br>days: 16<br>dollars: 20.58<br>prs: 117 merged of 122<br>interventions: no transcripts<br>executed: none declared<br>harness: no checkout | harness: bash 1 node, grep 0, read 0, task 0; session start 835 lines; tests 1.76 of source (17005 / 9677) | 2026-09-08 |
 | 1 Invariants | not started | | | |
 | 2 Sensorium | not started | | | |
 | 3 Knowledge | not started | | | |
