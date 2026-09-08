@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "plugins": {
+    "demo@demo-marketplace": [
+      {
+        "scope": "user",
+        "installPath": "plugins/cache/demo",
+        "version": "1.0.0"
+      }
+    ]
+  }
+}
