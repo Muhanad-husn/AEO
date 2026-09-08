@@ -216,19 +216,20 @@ logs/            run records, one directory per verification
 source/          the vendored origins, verbatim, untouched
 ```
 
-## 11. Decisions the founder has made, and three he has not
+## 11. Decisions the founder has made
 
-Made: RLM is the example, not the template; the good conventions stay as knowledge, the
-lanes go; the orchestrator is trusted with path, tier, review and design; three
-consumers of different shape; the merge, the money and the data stay gated in code.
+Made 2026-09-08: RLM is the example, not the template; the good conventions stay as
+knowledge, the lanes go; the orchestrator is trusted with path, tier, review and design;
+three consumers of different shape; the merge, the money and the data stay gated in code.
 
-Open, with this plan's proposal:
+Made 2026-09-08, on this plan's proposals:
 
-1. The third consumer. Proposed: a small UI project, because it is the shape no oracle
-   covers and the founder-as-reader case has never been run.
-2. Whether `block-merge` gates every subagent or only named roles. Proposed: every
-   subagent, as the global copy already does in RLM, because plain dispatch has no role
-   names to scope to.
-3. What counts as a founder intervention for the score. Proposed: any founder message
-   inside an issue's session other than the merge decision, counted from the transcript by
-   the score script.
+1. The third consumer is a small UI project, because it is the shape no oracle covers and
+   the founder-as-reader case has never been run. The project is named when phase 6 is
+   sliced.
+2. `block-merge` gates every subagent, as the global copy already does in RLM, because
+   plain dispatch has no role names to scope to.
+3. A founder intervention is any founder message inside an issue's session other than the
+   merge decision, counted from the transcript by the score script.
+
+No decision is open.
