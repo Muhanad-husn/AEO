@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { windowOf } from '../../scripts/score/consumer.mjs';
 import { countCommitments, line, scanTranscripts } from '../../scripts/score/interventions.mjs';
-import { readCommitments, readInterventions } from '../../scripts/score/sources.mjs';
+import { projectSlug, readCommitments, readInterventions } from '../../scripts/score/sources.mjs';
 
 const fixtures = fileURLToPath(new URL('../fixtures/score/', import.meta.url));
 const transcripts = join(fixtures, 'transcripts');
@@ -36,13 +36,19 @@ function snapshot(extra = {}) {
   };
 }
 
+// The consumer path the scan is exercised with, and the slug the scan derives
+// from it. The slug comes from the function under test, so the fake directory
+// names match on every platform.
+const consumerDir = 'Consumer';
+const consumerSlug = projectSlug(consumerDir);
+
 function tempHome() {
   const home = mkdtempSync(join(tmpdir(), 'score-home-'));
   const projects = join(home, '.claude', 'projects');
   // The consumer's own directory and a worktree sibling, which shares its slug
   // as a prefix.
-  const own = join(projects, 'D--Consumer');
-  const worktree = join(projects, 'D--Consumer-wt-9');
+  const own = join(projects, consumerSlug);
+  const worktree = join(projects, `${consumerSlug}-wt-9`);
   mkdirSync(own, { recursive: true });
   mkdirSync(worktree, { recursive: true });
   cpSync(join(transcripts, 'in-window-a.jsonl'), join(own, 'a.jsonl'));
@@ -73,13 +79,13 @@ test('a snapshot with no transcripts says so', () => {
 
 test('the directory scan matches the consumer slug and its worktree siblings', () => {
   const home = tempHome();
-  const counts = readInterventions('D:/Consumer', windowOf(snapshot()), home);
+  const counts = readInterventions(consumerDir, windowOf(snapshot()), home);
   assert.deepEqual(counts, { messages: 5, mergeDecisions: 1, sessions: 2 });
 });
 
 test('a consumer with no transcript directory scans to null', () => {
   const home = tempHome();
-  assert.equal(readInterventions('D:/Absent', windowOf(snapshot()), home), null);
+  assert.equal(readInterventions('Absent-consumer', windowOf(snapshot()), home), null);
 });
 
 test('a consumer with no COMMITMENTS.md declares nothing', () => {

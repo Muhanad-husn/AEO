@@ -79,7 +79,7 @@ function readLedger(dir) {
 
 // The directory name Claude Code writes a project's sessions under: the
 // project path with every character outside [A-Za-z0-9] replaced by '-'.
-function projectSlug(dir) {
+export function projectSlug(dir) {
   return resolve(dir).replace(/[^A-Za-z0-9]/g, '-');
 }
 
