@@ -1,16 +1,17 @@
 # AEO handbook
 
-Read `RULES.md` first. It is one page and binding. This file says how a session works
-here; it does not repeat the rules.
+Read `RULES.md` first, then `PLAN.md`. Both are binding. This file says how a session
+works here; it does not repeat them.
 
 **What this is.** The harness repository. `plugin/` is the first build, `v0.2.0`:
 fifteen skills, five agents, six hooks, lanes from issue to pull request. It ran
 `RLM-Challenge` for sixteen days and 122 pull requests without a graded report. The RLM
 rebuild ran under one page of rules, one hook and two skills, and reached rubric 90 on
 the reference sample in four days for $3.50 (`D:\RLM`, `PLAN.md` section 4a). This
-repository is now run the same way. What it builds next is the founder's decision and
-goes in `PLAN.md` when he opens it. `plugin/`, `docs/`, `logs/` and `source/` are the
-first build's record: read them for the incidents they hold, never for the process.
+repository is now run the same way, and `PLAN.md` says what it builds next: the second
+build of the plugin, scored on three consuming projects. `plugin/`, `docs/`, `logs/` and
+`source/` are the first build's record: read them for the incidents they hold, never for
+the process.
 
 **Who decides.** Muhanad. He merges. He wants one recommendation with the number behind
 it, not an options list, and no reminders about what is uncommitted.
