@@ -1160,5 +1160,11 @@
       "state": "OPEN",
       "milestone": "Phase 1"
     }
-  ]
+  ],
+  "interventions": {
+    "messages": 66,
+    "mergeDecisions": 40,
+    "sessions": 37
+  },
+  "commitments": null
 }

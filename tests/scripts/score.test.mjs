@@ -32,8 +32,8 @@ const expected = [
   'days: 4',
   'dollars: 3.50',
   'prs: 48 merged',
-  'interventions: not measured',
-  'executed: not measured',
+  'interventions: 1.38 per merged PR (66 messages, 40 merge decisions excluded, 37 sessions)',
+  'executed: none declared',
   'harness: not measured',
   '',
 ].join('\n');
@@ -86,7 +86,13 @@ test('an open last phase prints open and counts to the recorded time', () => {
   // A gate that is open does not take the rest of the row down with it.
   assert.equal(lines[0], 'consumer: Muhanad-husn/RLM');
   assert.equal(lines[3], 'dollars: 3.50');
-  assert.equal(lines[5], 'interventions: not measured');
+  // The counts are derived and fixed in the snapshot; only the rate follows the
+  // wider window's merged count.
+  const rate = (snapshot.interventions.messages / merged.length).toFixed(2);
+  assert.equal(
+    lines[5],
+    `interventions: ${rate} per merged PR (66 messages, 40 merge decisions excluded, 37 sessions)`,
+  );
 });
 
 function offsetMs(offset) {
