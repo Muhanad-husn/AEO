@@ -37,6 +37,13 @@ jobs:
       # No API traffic follows. The fixture repository points at https://example.invalid,
       # so the query fails on DNS whether or not a token exists. The token exists to make
       # `gh auth status` succeed, nothing more, which is why read-only is enough.
+      #
+      # The live score test runs only here, against a fresh clone. The fast tier never
+      # touches the network; `npm test` has no network step.
+      - run: gh repo clone Muhanad-husn/RLM "$RUNNER_TEMP/rlm"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - run: npm run test:all
         env:
           GH_TOKEN: ${{ github.token }}
+          AEO_RLM_CLONE: ${{ runner.temp }}/rlm

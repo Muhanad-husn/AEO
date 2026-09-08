@@ -127,7 +127,7 @@ One row per phase, written by the phase's closing pull request.
 
 | Phase | State | Score | Harness cost | Closed |
 |---|---|---|---|---|
-| 0 Score | not started | | | |
+| 0 Score | done | consumer: Muhanad-husn/RLM<br>phases: 0 to 5, 2026-09-05 to 2026-09-08<br>days: 4<br>dollars: 3.50<br>prs: 48 merged<br>interventions: 1.40 per merged PR (67 messages, 41 merge decisions excluded, 38 sessions)<br>executed: none declared<br>consumer: Muhanad-husn/RLM-Challenge (from record)<br>phases: all, 2026-08-21 to 2026-09-05<br>days: 16<br>dollars: 20.58<br>prs: 117 merged of 122<br>interventions: no transcripts<br>executed: none declared<br>harness: no checkout | harness: bash 1 node, grep 0, read 0, task 0; session start 835 lines; tests 1.76 of source (17005 / 9677) | 2026-09-08 |
 | 1 Invariants | not started | | | |
 | 2 Sensorium | not started | | | |
 | 3 Knowledge | not started | | | |
@@ -231,5 +231,22 @@ Made 2026-09-08, on this plan's proposals:
    plain dispatch has no role names to scope to.
 3. A founder intervention is any founder message inside an issue's session other than the
    merge decision, counted from the transcript by the score script.
+
+Made 2026-09-08, in phase 0:
+
+1. The window is the first commit's calendar date to the date the last phase's State cell
+   turned `done`, read in the closing commit's UTC offset; days are inclusive, so RLM's
+   2026-09-05 to 2026-09-08 is 4.
+2. Dollars come from `LEDGER.md`'s Phase and Dollars columns summed over the phase range,
+   never from the status table.
+3. A founder message is a `user` record with string content not starting with `<` and not
+   marked meta; a merge decision is such a message of at most twelve words carrying
+   approve, approved, merge or lgtm, and is excluded from the intervention count.
+4. The commitment ledger is `COMMITMENTS.md`, a table with an Executed column holding
+   executed, partial or not; a blank cell stays out of the denominator, and a consumer
+   without the file prints `executed: none declared`.
+5. RLM-Challenge is scored from `scripts/records/rlm-challenge.json`, a record copied from
+   the first build's design mistake register, because its repository no longer exists;
+   the row's first line says `(from record)`.
 
 No decision is open.
