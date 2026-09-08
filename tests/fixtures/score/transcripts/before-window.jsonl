@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"Sketch the score row before phase 0 opens."},"timestamp":"2026-09-05T10:00:00.000Z"}
+{"type":"user","message":{"role":"user","content":"<task-notification>Agent sketch finished.</task-notification>"},"timestamp":"2026-09-05T10:20:00.000Z"}
+{"type":"user","message":{"role":"user","content":"<system-reminder>The plan file changed.</system-reminder>"},"timestamp":"2026-09-05T10:21:00.000Z"}
+{"type":"user","message":{"role":"user","content":"lgtm"},"timestamp":"2026-09-05T11:05:00.000Z"}
