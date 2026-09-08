@@ -40,10 +40,18 @@ jobs:
       #
       # The live score test runs only here, against a fresh clone. The fast tier never
       # touches the network; `npm test` has no network step.
+      #
+      # RLM is a private repository, and github.token reads only this one. The clone
+      # needs RLM_READ_TOKEN, a fine-grained token with read access to RLM's contents,
+      # pull requests and issues, stored as a repository secret. Without the secret the
+      # clone step does not run and the live test skips with its reason, so a missing
+      # token shows up as a skip in the log, never as a red.
       - run: gh repo clone Muhanad-husn/RLM "$RUNNER_TEMP/rlm"
+        if: env.RLM_READ_TOKEN != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          RLM_READ_TOKEN: ${{ secrets.RLM_READ_TOKEN }}
+          GH_TOKEN: ${{ secrets.RLM_READ_TOKEN }}
       - run: npm run test:all
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RLM_READ_TOKEN || github.token }}
           AEO_RLM_CLONE: ${{ runner.temp }}/rlm
