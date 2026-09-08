@@ -1,11 +1,13 @@
 // Every live read the score makes. Nothing else in scripts/score/ touches git,
 // GitHub or the filesystem.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 import {
-  parseStatusTable, phaseNumber, isDone, phaseRow, milestoneOf, splitRow,
+  parseStatusTable, phaseNumber, isDone, phaseRow, milestoneOf, splitRow, windowOf,
 } from './consumer.mjs';
+import { countCommitments, scanTranscripts } from './interventions.mjs';
 
 function run(command, args, cwd) {
   return execFileSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).trim();
@@ -75,6 +77,36 @@ function readLedger(dir) {
   return { present: true, rows };
 }
 
+// The directory name Claude Code writes a project's sessions under: the
+// project path with every character outside [A-Za-z0-9] replaced by '-'.
+export function projectSlug(dir) {
+  return resolve(dir).replace(/[^A-Za-z0-9]/g, '-');
+}
+
+// The derived intervention counts for a consumer's sessions inside the window.
+// Directories are matched by prefix, so a worktree cut from the consumer counts
+// as the same project. Returns null when no directory matches.
+export function readInterventions(dir, window, homeDir = homedir()) {
+  const root = join(homeDir, '.claude', 'projects');
+  if (!existsSync(root)) return null;
+  const slug = projectSlug(dir);
+  const matched = readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith(slug))
+    .map((entry) => join(root, entry.name));
+  if (matched.length === 0) return null;
+  const files = matched.flatMap((path) => readdirSync(path)
+    .filter((name) => name.endsWith('.jsonl'))
+    .map((name) => join(path, name)));
+  return scanTranscripts(files, window);
+}
+
+// The commitment ledger's rate, or null when the consumer declares none.
+export function readCommitments(dir) {
+  const path = join(dir, 'COMMITMENTS.md');
+  if (!existsSync(path)) return null;
+  return countCommitments(readFileSync(path, 'utf8'));
+}
+
 function ghJson(args, dir) {
   return JSON.parse(run('gh', args, dir));
 }
@@ -85,7 +117,7 @@ export function read(dir, phases) {
   const table = parseStatusTable(markdown);
   const prs = ghJson(['pr', 'list', '--state', 'merged', '--limit', '500', '--json', 'number,mergedAt'], dir);
   const issues = ghJson(['issue', 'list', '--state', 'all', '--limit', '500', '--json', 'number,milestone,state'], dir);
-  return {
+  const snapshot = {
     recordedAt: nowWithOffset(),
     consumer: consumerName(run('git', ['remote', 'get-url', 'origin'], dir)),
     phases,
@@ -107,6 +139,12 @@ export function read(dir, phases) {
       .map((i) => ({ number: i.number, state: i.state, milestone: i.milestone?.title ?? null }))
       .sort((a, b) => a.number - b.number),
   };
+  // Derived counts, not transcripts: a replay reads these and never a session
+  // file. Appended after the keys the window itself is computed from.
+  const window = windowOf(snapshot);
+  snapshot.interventions = readInterventions(dir, window);
+  snapshot.commitments = readCommitments(dir);
+  return snapshot;
 }
 
 export function load(file) {

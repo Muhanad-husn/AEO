@@ -96,18 +96,37 @@ function sumDollars(rows, from, to) {
   return total;
 }
 
-// The first five lines of the row.
-export function row(snapshot) {
-  const { from, to } = snapshot.phases;
+// The window a snapshot covers: the phase range, the offset its dates are read
+// in, and the first and last calendar dates. An open last phase closes the
+// window at the time the snapshot was taken.
+export function windowOf(snapshot) {
   const gate = snapshot.gateCommit;
-  // An open last phase closes the window at the time the snapshot was taken.
   const closingTime = gate ? gate.date : snapshot.recordedAt;
   const offset = closingTime.slice(-6);
-  const start = calendarDate(snapshot.firstCommit.date, offset);
-  const end = calendarDate(closingTime, offset);
+  return {
+    from: snapshot.phases.from,
+    to: snapshot.phases.to,
+    open: !gate,
+    closingTime,
+    offset,
+    start: calendarDate(snapshot.firstCommit.date, offset),
+    end: calendarDate(closingTime, offset),
+  };
+}
+
+// The pull requests merged on or before the window closes.
+export function mergedPullRequests(snapshot, window = windowOf(snapshot)) {
+  const cutoff = Date.parse(window.closingTime);
+  return snapshot.pullRequests.filter((pr) => Date.parse(pr.mergedAt) <= cutoff);
+}
+
+// The first five lines of the row.
+export function row(snapshot) {
+  const window = windowOf(snapshot);
+  const { from, to, start, end } = window;
 
   const lines = [`consumer: ${snapshot.consumer}`];
-  lines.push(gate ? `phases: ${from} to ${to}, ${start} to ${end}` : `phases: ${from} to ${to}, open`);
+  lines.push(window.open ? `phases: ${from} to ${to}, open` : `phases: ${from} to ${to}, ${start} to ${end}`);
   lines.push(`days: ${inclusiveDays(start, end)}`);
 
   const ledgerRows = snapshot.ledger?.rows ?? [];
@@ -115,8 +134,6 @@ export function row(snapshot) {
     ? 'dollars: no ledger'
     : `dollars: ${sumDollars(ledgerRows, from, to).toFixed(2)}`);
 
-  const cutoff = Date.parse(closingTime);
-  const merged = snapshot.pullRequests.filter((pr) => Date.parse(pr.mergedAt) <= cutoff);
-  lines.push(`prs: ${merged.length} merged`);
+  lines.push(`prs: ${mergedPullRequests(snapshot, window).length} merged`);
   return lines.join('\n');
 }
