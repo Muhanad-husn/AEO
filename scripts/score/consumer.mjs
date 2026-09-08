@@ -2,7 +2,7 @@
 // Nothing here reads git, GitHub or the filesystem.
 
 // A markdown table split into its header cells and its data rows.
-function splitRow(line) {
+export function splitRow(line) {
   return line
     .replace(/^\s*\|/, '')
     .replace(/\|\s*$/, '')

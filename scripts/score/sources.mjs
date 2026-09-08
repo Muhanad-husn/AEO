@@ -3,7 +3,9 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseStatusTable, phaseNumber, isDone, phaseRow, milestoneOf } from './consumer.mjs';
+import {
+  parseStatusTable, phaseNumber, isDone, phaseRow, milestoneOf, splitRow,
+} from './consumer.mjs';
 
 function run(command, args, cwd) {
   return execFileSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).trim();
@@ -45,10 +47,6 @@ function firstCommit(dir) {
   const out = run('git', ['log', '--reverse', '--format=%H %cI'], dir).split('\n')[0];
   const [sha, date] = out.split(' ');
   return { sha, date };
-}
-
-function splitRow(line) {
-  return line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
 }
 
 // The ledger's phase and dollars columns. A row with no phase is not spend
