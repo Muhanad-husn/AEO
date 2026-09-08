@@ -1,0 +1,39 @@
+{
+  "record": {
+    "path": "D:\\RLM\\reference\\design-mistake-register-first-build.md",
+    "header": {
+      "line": 1,
+      "text": "# Design mistake register: RLM-Challenge, 2026-08-21 to 2026-09-05"
+    },
+    "rows": [
+      {
+        "row": "1.2",
+        "line": 43,
+        "for": "dollars"
+      },
+      {
+        "row": "6.1",
+        "line": 101,
+        "for": "pullRequests"
+      }
+    ],
+    "copied": "2026-09-08",
+    "note": "The score's one hand-counted input. RLM-Challenge no longer exists to read; this record is copied once from the register the rebuild wrote about it."
+  },
+  "consumer": "Muhanad-husn/RLM-Challenge",
+  "phases": "all",
+  "firstCommit": {
+    "date": "2026-08-21T00:00:00+00:00"
+  },
+  "lastCommit": {
+    "date": "2026-09-05T00:00:00+00:00"
+  },
+  "dollars": 20.58,
+  "pullRequests": {
+    "total": 122,
+    "merged": 117
+  },
+  "interventions": null,
+  "commitments": null,
+  "harness": null
+}

@@ -192,7 +192,7 @@ export function measure(dir, { homeDir = join(homedir(), '.claude'), pluginRoot 
 
 export function line(snapshot) {
   const harness = snapshot.harness;
-  if (!harness) return 'harness: not measured';
+  if (!harness) return snapshot.record ? 'harness: no checkout' : 'harness: not measured';
   const { processes, sessionStartLines, tests } = harness;
   const testsPart = tests === null
     ? 'tests: no manifest'

@@ -82,7 +82,7 @@ export function calendarDate(iso, offset) {
   return new Date(Date.parse(iso) + offsetMs(offset)).toISOString().slice(0, 10);
 }
 
-function inclusiveDays(from, to) {
+export function inclusiveDays(from, to) {
   return Math.round((Date.parse(to) - Date.parse(from)) / 86400000) + 1;
 }
 
@@ -120,8 +120,30 @@ export function mergedPullRequests(snapshot, window = windowOf(snapshot)) {
   return snapshot.pullRequests.filter((pr) => Date.parse(pr.mergedAt) <= cutoff);
 }
 
+// A record has no phase range, no ledger and no live pull request list: it is
+// a hand-copied total, named by its `record` field.
+function isRecord(snapshot) {
+  return Boolean(snapshot.record);
+}
+
+// The first five lines of the row, for a record snapshot: a single window
+// bounded by first and last commit dates, a plain dollars total, and a
+// pull request total with its merged count.
+function recordRow(snapshot) {
+  const start = snapshot.firstCommit.date.slice(0, 10);
+  const end = snapshot.lastCommit.date.slice(0, 10);
+  const lines = [`consumer: ${snapshot.consumer} (from record)`];
+  lines.push(`phases: all, ${start} to ${end}`);
+  lines.push(`days: ${inclusiveDays(start, end)}`);
+  lines.push(`dollars: ${snapshot.dollars.toFixed(2)}`);
+  lines.push(`prs: ${snapshot.pullRequests.merged} merged of ${snapshot.pullRequests.total}`);
+  return lines.join('\n');
+}
+
 // The first five lines of the row.
 export function row(snapshot) {
+  if (isRecord(snapshot)) return recordRow(snapshot);
+
   const window = windowOf(snapshot);
   const { from, to, start, end } = window;
 
