@@ -1,0 +1,1164 @@
+{
+  "recordedAt": "2026-09-08T04:31:31+02:00",
+  "consumer": "Muhanad-husn/RLM",
+  "phases": {
+    "from": 0,
+    "to": 5
+  },
+  "firstCommit": {
+    "sha": "a6fa3ffba1bf92d3a0869e9c0c7ce3f16df7d69b",
+    "date": "2026-09-05T16:18:37+02:00"
+  },
+  "statusTable": {
+    "headers": [
+      "Phase",
+      "Milestone",
+      "State",
+      "Score",
+      "Dollars",
+      "Spread",
+      "Closed"
+    ],
+    "rows": [
+      [
+        "0 Fixtures",
+        "Phase 0",
+        "done",
+        "100 / 100 / 100",
+        "0",
+        "0",
+        "2026-09-05"
+      ],
+      [
+        "1 Ingest",
+        "Phase 1",
+        "done",
+        "100 / 100 / 100",
+        "0",
+        "0",
+        "2026-09-06"
+      ],
+      [
+        "2 Notes",
+        "Phase 2",
+        "done",
+        "100 / 100 / 100",
+        "1.51",
+        "0 / 20 / 0",
+        "2026-09-06"
+      ],
+      [
+        "3 Map",
+        "Phase 3",
+        "done",
+        "100 / 100 / 100",
+        "0",
+        "0 / 0 / 0",
+        "2026-09-07"
+      ],
+      [
+        "4 Dossier",
+        "Phase 4",
+        "done",
+        "100 / 100 / 100",
+        "0",
+        "0 / 0 / 0",
+        "2026-09-07"
+      ],
+      [
+        "5 Report",
+        "Phase 5",
+        "done",
+        "100 / 100 / 100, rubric 90",
+        "1.78",
+        "4 / 0 / 0",
+        "2026-09-08"
+      ],
+      [
+        "6 Widen",
+        "Phase 6",
+        "not started",
+        "",
+        "",
+        "",
+        ""
+      ],
+      [
+        "7 Compare",
+        "Phase 7",
+        "not started",
+        "",
+        "",
+        "",
+        ""
+      ]
+    ],
+    "milestones": [
+      {
+        "phase": 0,
+        "milestone": "Phase 0"
+      },
+      {
+        "phase": 1,
+        "milestone": "Phase 1"
+      },
+      {
+        "phase": 2,
+        "milestone": "Phase 2"
+      },
+      {
+        "phase": 3,
+        "milestone": "Phase 3"
+      },
+      {
+        "phase": 4,
+        "milestone": "Phase 4"
+      },
+      {
+        "phase": 5,
+        "milestone": "Phase 5"
+      },
+      {
+        "phase": 6,
+        "milestone": "Phase 6"
+      },
+      {
+        "phase": 7,
+        "milestone": "Phase 7"
+      }
+    ]
+  },
+  "gateCommit": {
+    "sha": "b0328969d088eeb505da3d48f7647423bfd85fa1",
+    "date": "2026-09-08T01:43:24+02:00"
+  },
+  "ledger": {
+    "present": true,
+    "rows": [
+      {
+        "phase": 2,
+        "dollars": 0.001
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0442
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0372
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0387
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0472
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0152
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0039
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0069
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0031
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0103
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0039
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0119
+      },
+      {
+        "phase": 2,
+        "dollars": 0.004
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0019
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0003
+      },
+      {
+        "phase": 2,
+        "dollars": 0
+      },
+      {
+        "phase": 2,
+        "dollars": 0
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0201
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0111
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0348
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0034
+      },
+      {
+        "phase": 2,
+        "dollars": 0
+      },
+      {
+        "phase": 2,
+        "dollars": 0
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0049
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0007
+      },
+      {
+        "phase": 2,
+        "dollars": 0.1657
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0606
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0031
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0003
+      },
+      {
+        "phase": 2,
+        "dollars": 0.007
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0008
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0695
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0641
+      },
+      {
+        "phase": 2,
+        "dollars": 0.013
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0161
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0035
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0062
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0196
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0114
+      },
+      {
+        "phase": 2,
+        "dollars": 0.2773
+      },
+      {
+        "phase": 2,
+        "dollars": 0.2861
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0659
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0719
+      },
+      {
+        "phase": 2,
+        "dollars": 0.012
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0124
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0281
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0106
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0704
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0149
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0045
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0734
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0143
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0035
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0101
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0125
+      },
+      {
+        "phase": 2,
+        "dollars": 0.0011
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0169
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0163
+      },
+      {
+        "phase": 5,
+        "dollars": 0.017
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0161
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0166
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0169
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0171
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0171
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0171
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0171
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0169
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0171
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0169
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0053
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0051
+      },
+      {
+        "phase": 5,
+        "dollars": 0.005
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0051
+      },
+      {
+        "phase": 5,
+        "dollars": 0.09
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0049
+      },
+      {
+        "phase": 5,
+        "dollars": 0.005
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0049
+      },
+      {
+        "phase": 5,
+        "dollars": 0.002
+      },
+      {
+        "phase": 5,
+        "dollars": 0.002
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0052
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0041
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0039
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0041
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0041
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0044
+      },
+      {
+        "phase": 5,
+        "dollars": 0.004
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0039
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0047
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0052
+      },
+      {
+        "phase": 5,
+        "dollars": 0.005
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0049
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0045
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0043
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0049
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0051
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0057
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0054
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0059
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0058
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0048
+      },
+      {
+        "phase": 5,
+        "dollars": 0.005
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0062
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0042
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0025
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0028
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0139
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0061
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0155
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0088
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0043
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0042
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0188
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0161
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0174
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0159
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0097
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0081
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0948
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0948
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0481
+      },
+      {
+        "phase": 5,
+        "dollars": 0.046
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0269
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0258
+      },
+      {
+        "phase": 5,
+        "dollars": 0.1111
+      },
+      {
+        "phase": 5,
+        "dollars": 0.1099
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0974
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0996
+      },
+      {
+        "phase": 5,
+        "dollars": 0.053
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0552
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0962
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0931
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0388
+      },
+      {
+        "phase": 5,
+        "dollars": 0.0857
+      },
+      {
+        "phase": 6,
+        "dollars": 0.0684
+      },
+      {
+        "phase": 6,
+        "dollars": 0.0066
+      },
+      {
+        "phase": 6,
+        "dollars": 0.1217
+      },
+      {
+        "phase": 6,
+        "dollars": 0.1192
+      },
+      {
+        "phase": 6,
+        "dollars": 0.0711
+      },
+      {
+        "phase": 6,
+        "dollars": 0.1228
+      },
+      {
+        "phase": 6,
+        "dollars": 0.1149
+      }
+    ]
+  },
+  "pullRequests": [
+    {
+      "number": 6,
+      "mergedAt": "2026-09-05T15:46:22Z"
+    },
+    {
+      "number": 7,
+      "mergedAt": "2026-09-05T16:10:59Z"
+    },
+    {
+      "number": 8,
+      "mergedAt": "2026-09-05T16:10:50Z"
+    },
+    {
+      "number": 10,
+      "mergedAt": "2026-09-05T16:47:05Z"
+    },
+    {
+      "number": 11,
+      "mergedAt": "2026-09-05T16:48:16Z"
+    },
+    {
+      "number": 13,
+      "mergedAt": "2026-09-05T16:49:40Z"
+    },
+    {
+      "number": 19,
+      "mergedAt": "2026-09-05T17:54:18Z"
+    },
+    {
+      "number": 20,
+      "mergedAt": "2026-09-05T17:54:31Z"
+    },
+    {
+      "number": 21,
+      "mergedAt": "2026-09-05T21:33:21Z"
+    },
+    {
+      "number": 22,
+      "mergedAt": "2026-09-05T21:41:22Z"
+    },
+    {
+      "number": 25,
+      "mergedAt": "2026-09-05T23:32:07Z"
+    },
+    {
+      "number": 26,
+      "mergedAt": "2026-09-05T23:34:23Z"
+    },
+    {
+      "number": 27,
+      "mergedAt": "2026-09-05T23:36:40Z"
+    },
+    {
+      "number": 29,
+      "mergedAt": "2026-09-05T23:31:54Z"
+    },
+    {
+      "number": 32,
+      "mergedAt": "2026-09-05T23:55:15Z"
+    },
+    {
+      "number": 33,
+      "mergedAt": "2026-09-06T00:38:59Z"
+    },
+    {
+      "number": 35,
+      "mergedAt": "2026-09-06T00:56:32Z"
+    },
+    {
+      "number": 36,
+      "mergedAt": "2026-09-06T01:12:32Z"
+    },
+    {
+      "number": 42,
+      "mergedAt": "2026-09-06T02:07:40Z"
+    },
+    {
+      "number": 43,
+      "mergedAt": "2026-09-06T13:21:38Z"
+    },
+    {
+      "number": 44,
+      "mergedAt": "2026-09-06T15:16:36Z"
+    },
+    {
+      "number": 45,
+      "mergedAt": "2026-09-06T16:05:35Z"
+    },
+    {
+      "number": 46,
+      "mergedAt": "2026-09-06T18:41:24Z"
+    },
+    {
+      "number": 48,
+      "mergedAt": "2026-09-06T18:42:21Z"
+    },
+    {
+      "number": 50,
+      "mergedAt": "2026-09-06T19:04:10Z"
+    },
+    {
+      "number": 51,
+      "mergedAt": "2026-09-06T19:45:15Z"
+    },
+    {
+      "number": 57,
+      "mergedAt": "2026-09-06T20:22:59Z"
+    },
+    {
+      "number": 58,
+      "mergedAt": "2026-09-06T20:52:48Z"
+    },
+    {
+      "number": 59,
+      "mergedAt": "2026-09-06T21:35:47Z"
+    },
+    {
+      "number": 60,
+      "mergedAt": "2026-09-06T22:04:31Z"
+    },
+    {
+      "number": 61,
+      "mergedAt": "2026-09-06T23:55:17Z"
+    },
+    {
+      "number": 62,
+      "mergedAt": "2026-09-07T00:32:08Z"
+    },
+    {
+      "number": 67,
+      "mergedAt": "2026-09-07T01:25:56Z"
+    },
+    {
+      "number": 68,
+      "mergedAt": "2026-09-07T02:13:25Z"
+    },
+    {
+      "number": 71,
+      "mergedAt": "2026-09-07T03:31:02Z"
+    },
+    {
+      "number": 74,
+      "mergedAt": "2026-09-07T03:54:30Z"
+    },
+    {
+      "number": 75,
+      "mergedAt": "2026-09-07T04:15:40Z"
+    },
+    {
+      "number": 76,
+      "mergedAt": "2026-09-07T13:02:10Z"
+    },
+    {
+      "number": 77,
+      "mergedAt": "2026-09-07T13:04:07Z"
+    },
+    {
+      "number": 78,
+      "mergedAt": "2026-09-07T13:02:21Z"
+    },
+    {
+      "number": 85,
+      "mergedAt": "2026-09-07T16:17:34Z"
+    },
+    {
+      "number": 86,
+      "mergedAt": "2026-09-07T17:04:49Z"
+    },
+    {
+      "number": 87,
+      "mergedAt": "2026-09-07T18:45:44Z"
+    },
+    {
+      "number": 88,
+      "mergedAt": "2026-09-07T19:36:35Z"
+    },
+    {
+      "number": 89,
+      "mergedAt": "2026-09-07T23:25:27Z"
+    },
+    {
+      "number": 93,
+      "mergedAt": "2026-09-07T23:26:50Z"
+    },
+    {
+      "number": 94,
+      "mergedAt": "2026-09-07T23:26:25Z"
+    },
+    {
+      "number": 95,
+      "mergedAt": "2026-09-07T23:43:24Z"
+    },
+    {
+      "number": 102,
+      "mergedAt": "2026-09-08T00:16:52Z"
+    },
+    {
+      "number": 103,
+      "mergedAt": "2026-09-08T01:34:31Z"
+    }
+  ],
+  "issues": [
+    {
+      "number": 1,
+      "state": "CLOSED",
+      "milestone": "Phase 0"
+    },
+    {
+      "number": 2,
+      "state": "CLOSED",
+      "milestone": "Phase 0"
+    },
+    {
+      "number": 3,
+      "state": "CLOSED",
+      "milestone": "Phase 0"
+    },
+    {
+      "number": 4,
+      "state": "CLOSED",
+      "milestone": "Phase 0"
+    },
+    {
+      "number": 5,
+      "state": "CLOSED",
+      "milestone": "Phase 0"
+    },
+    {
+      "number": 9,
+      "state": "CLOSED",
+      "milestone": "Phase 0"
+    },
+    {
+      "number": 14,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 15,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 16,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 17,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 18,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 23,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 24,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 28,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 30,
+      "state": "CLOSED",
+      "milestone": "Phase 0"
+    },
+    {
+      "number": 31,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 34,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 37,
+      "state": "CLOSED",
+      "milestone": "Phase 2"
+    },
+    {
+      "number": 38,
+      "state": "CLOSED",
+      "milestone": "Phase 2"
+    },
+    {
+      "number": 39,
+      "state": "CLOSED",
+      "milestone": "Phase 2"
+    },
+    {
+      "number": 40,
+      "state": "CLOSED",
+      "milestone": "Phase 2"
+    },
+    {
+      "number": 41,
+      "state": "CLOSED",
+      "milestone": "Phase 2"
+    },
+    {
+      "number": 47,
+      "state": "CLOSED",
+      "milestone": "Phase 2"
+    },
+    {
+      "number": 49,
+      "state": "CLOSED",
+      "milestone": "Phase 2"
+    },
+    {
+      "number": 52,
+      "state": "CLOSED",
+      "milestone": "Phase 2"
+    },
+    {
+      "number": 53,
+      "state": "CLOSED",
+      "milestone": "Phase 3"
+    },
+    {
+      "number": 54,
+      "state": "CLOSED",
+      "milestone": "Phase 3"
+    },
+    {
+      "number": 55,
+      "state": "CLOSED",
+      "milestone": "Phase 3"
+    },
+    {
+      "number": 56,
+      "state": "CLOSED",
+      "milestone": "Phase 3"
+    },
+    {
+      "number": 63,
+      "state": "CLOSED",
+      "milestone": "Phase 4"
+    },
+    {
+      "number": 64,
+      "state": "CLOSED",
+      "milestone": "Phase 4"
+    },
+    {
+      "number": 65,
+      "state": "CLOSED",
+      "milestone": "Phase 4"
+    },
+    {
+      "number": 66,
+      "state": "CLOSED",
+      "milestone": "Phase 4"
+    },
+    {
+      "number": 69,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 70,
+      "state": "CLOSED",
+      "milestone": "Phase 4"
+    },
+    {
+      "number": 72,
+      "state": "CLOSED",
+      "milestone": "Phase 2"
+    },
+    {
+      "number": 73,
+      "state": "CLOSED",
+      "milestone": "Phase 1"
+    },
+    {
+      "number": 79,
+      "state": "CLOSED",
+      "milestone": "Phase 5"
+    },
+    {
+      "number": 80,
+      "state": "CLOSED",
+      "milestone": "Phase 5"
+    },
+    {
+      "number": 81,
+      "state": "CLOSED",
+      "milestone": "Phase 5"
+    },
+    {
+      "number": 82,
+      "state": "CLOSED",
+      "milestone": "Phase 5"
+    },
+    {
+      "number": 83,
+      "state": "CLOSED",
+      "milestone": "Phase 5"
+    },
+    {
+      "number": 84,
+      "state": "CLOSED",
+      "milestone": "Phase 5"
+    },
+    {
+      "number": 90,
+      "state": "CLOSED",
+      "milestone": "Phase 5"
+    },
+    {
+      "number": 92,
+      "state": "CLOSED",
+      "milestone": "Phase 5"
+    },
+    {
+      "number": 96,
+      "state": "CLOSED",
+      "milestone": "Phase 6"
+    },
+    {
+      "number": 97,
+      "state": "OPEN",
+      "milestone": "Phase 6"
+    },
+    {
+      "number": 98,
+      "state": "OPEN",
+      "milestone": "Phase 6"
+    },
+    {
+      "number": 99,
+      "state": "OPEN",
+      "milestone": "Phase 6"
+    },
+    {
+      "number": 100,
+      "state": "OPEN",
+      "milestone": "Phase 6"
+    },
+    {
+      "number": 101,
+      "state": "OPEN",
+      "milestone": "Phase 6"
+    },
+    {
+      "number": 104,
+      "state": "OPEN",
+      "milestone": "Phase 1"
+    }
+  ]
+}
