@@ -29,15 +29,6 @@ const hooksJsonPath = path.join(pluginRoot, 'hooks', 'hooks.json');
 const rawText = readFileSync(hooksJsonPath, 'utf8');
 const parsed = JSON.parse(rawText);
 
-// Scripts P1.2/P1.6 own and were building in sibling worktrees while P1.7 wrote this
-// file. They are wired here deliberately -- single ownership of hooks.json is the
-// point (L-04) -- but they did not exist on disk in that worktree until those branches
-// merged. A missing file for one of these was a scheduling fact, not a defect, so its
-// existence check skips loudly (L-08: a loud skip, never a silent pass) instead of
-// failing red. Both have now merged, so nothing here skips; the allowance stays only
-// because the next slice to be wired ahead of its merge needs it.
-const PENDING_SIBLING_SLICES = new Set(['hooks/block-merge.mjs', 'hooks/review-jail.mjs']);
-
 // ---------------------------------------------------------------------------
 // scratch space
 // ---------------------------------------------------------------------------
@@ -79,8 +70,10 @@ function scriptOf(hook) {
   return null;
 }
 
-const isGateScript = (rel) =>
-  rel !== null && /\/(block-merge|review-jail|path-guard|redirect-guard|sandbox-guard)\.mjs$/.test(`/${rel}`);
+// One script is wired on PreToolUse now (#167), so the gate-entry group below has one
+// subject. The pattern stays a pattern rather than an equality so a second gate script,
+// if one is ever wired, is checked by these tests without being added here first.
+const isGateScript = (rel) => rel !== null && /\/gate\.mjs$/.test(`/${rel}`);
 
 /** A scratch plugin root with this real hooks.json plus a stub for every script it names. */
 function makePassingPluginRoot() {
@@ -125,15 +118,9 @@ describe('every named script resolves to a file', () => {
     const rel = scriptOf(hook);
     if (rel === null) continue; // no ${CLAUDE_PLUGIN_ROOT}...mjs reference in this hook to check
     const abs = path.join(pluginRoot, rel);
-    const exists = existsSync(abs);
-    const pending = !exists && PENDING_SIBLING_SLICES.has(rel);
-    test(
-      `${event}: ${rel}`,
-      { skip: pending ? `not yet merged into this worktree (parallel Phase 1 slice; verified at integration)` : false },
-      () => {
-        assert.ok(exists, `${rel} is wired in hooks.json but not present at ${abs}`);
-      },
-    );
+    test(`${event}: ${rel}`, () => {
+      assert.ok(existsSync(abs), `${rel} is wired in hooks.json but not present at ${abs}`);
+    });
   }
 });
 
@@ -252,127 +239,66 @@ describe('matchers', () => {
     }
   });
 
-  test('the shell gates are anchored, not a bare substring (V-12: BashOutput is not Bash)', () => {
-    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('block-merge.mjs')));
-    assert.equal(group.matcher, '^(Bash|PowerShell)$');
+  test('the shell gate is anchored, not a bare substring (V-12: BashOutput is not Bash)', () => {
+    const group = parsed.hooks.PreToolUse.find((g) => g.matcher === `^(${[...SHELL_TOOLS].join('|')})$`);
+    assert.ok(group, 'no PreToolUse group is matched on exactly lib.mjs SHELL_TOOLS');
+    assert.equal(toolMatches(group.matcher, 'BashOutput'), false, 'BashOutput reaches a gate that cannot judge it');
   });
 
   // C-07. PowerShell is a first-class tool that survives the background-subagent filter,
-  // and every gate here was written against Bash alone. The sandbox guard is the one that
-  // was actually open: it does not exempt the main session, so it refused `cat <file in
-  // the production data root>` while allowing `Get-Content` on the same file.
-  //
-  // These assert the matcher against lib's SHELL_TOOLS rather than against a literal, so
-  // a third shell tool cannot be added to the set and quietly left out of the wiring.
-  // A matcher and a set maintained in two files is V-13's failure with new names.
-  test('every gate that reads tool_input.command matches exactly lib.mjs SHELL_TOOLS', () => {
-    const expected = [...SHELL_TOOLS].join('|');
-    for (const script of ['block-merge.mjs']) {
-      const groups = parsed.hooks.PreToolUse.filter(
-        (g) => g.matcher?.startsWith('^(') && g.hooks.some((h) => scriptOf(h)?.endsWith(script)),
-      );
-      assert.ok(groups.length > 0, `expected a shell-matched PreToolUse group for ${script}`);
-      for (const g of groups) {
-        assert.equal(g.matcher, `^(${expected})$`, `${script} is wired to a matcher that is not SHELL_TOOLS`);
-      }
-    }
+  // and every rule the gate runs was written against Bash alone. The matcher is asserted
+  // against lib's SHELL_TOOLS rather than a literal, so a third shell tool cannot be
+  // added to the set and quietly left out of the wiring. A matcher and a set maintained
+  // in two files is V-13's failure with new names.
+  test('the shell matcher is exactly lib.mjs SHELL_TOOLS', () => {
+    const groups = parsed.hooks.PreToolUse.filter((g) => [...SHELL_TOOLS].some((t) => toolMatches(g.matcher, t)));
+    assert.equal(groups.length, 1, 'exactly one PreToolUse group covers the shell tools');
+    assert.equal(groups[0].matcher, `^(${[...SHELL_TOOLS].join('|')})$`);
   });
 
-  test('the sandbox guard matches every shell tool as well as the file tools', () => {
-    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('sandbox-guard.mjs')));
-    assert.ok(group, 'expected a PreToolUse group for sandbox-guard.mjs');
-    for (const tool of SHELL_TOOLS) {
-      assert.ok(
-        toolMatches(group.matcher, tool),
-        `sandbox-guard does not match ${tool}, so that tool reaches production data unchecked`,
-      );
-    }
-    // The file tools it was extended to cover in D22 stay covered.
-    for (const tool of ['Read', 'Write', 'Edit', 'NotebookEdit']) {
-      assert.ok(toolMatches(group.matcher, tool), `sandbox-guard stopped matching ${tool}`);
-    }
-  });
-
-  test('no shell tool reaches path-guard directly; redirect-guard covers that surface instead', () => {
-    // path-guard is deliberately NOT widened: a shell writes through a redirect, which
-    // path-guard cannot see whatever its matcher says. redirect-guard.mjs (#116) closes
-    // that gap on its own matcher, reusing lib.mjs's isPathIntoHarness rather than
-    // path-guard gaining a second job. This test pins the decision so the next reader
-    // does not "fix" path-guard's matcher and duplicate the fence.
-    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('path-guard.mjs')));
-    assert.ok(group, 'expected a PreToolUse group for path-guard.mjs');
-    for (const tool of SHELL_TOOLS) {
-      assert.ok(!toolMatches(group.matcher, tool), `path-guard now matches ${tool}; redirect-guard should cover this instead`);
-    }
-
-    const redirectGroup = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('redirect-guard.mjs')));
-    assert.ok(redirectGroup, 'expected a PreToolUse group for redirect-guard.mjs');
-    for (const tool of SHELL_TOOLS) {
-      assert.ok(toolMatches(redirectGroup.matcher, tool), `redirect-guard does not match ${tool}`);
-    }
-  });
-
-  test('redirect-guard is ordered before block-merge (a stated intent, not a measured saving)', () => {
-    // The two gates on this matcher block on an order-independent union: either one
-    // refusing is enough. Ordering redirect-guard first cannot change WHETHER a command
-    // is refused, only WHICH message a role sees first when both gates would have
-    // refused it (redirect-guard's own header says as much, and does not claim a
-    // measured cost saving -- this repo's principle is measure, don't speculate, and
-    // nothing here times it). This test can only assert array position, which is all the
-    // intent claims.
-    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('redirect-guard.mjs')));
-    assert.ok(group, 'expected a PreToolUse group for redirect-guard.mjs');
-    const names = group.hooks.map((h) => scriptOf(h));
-    const redirectIdx = names.findIndex((n) => n?.endsWith('redirect-guard.mjs'));
-    const blockMergeIdx = names.findIndex((n) => n?.endsWith('block-merge.mjs'));
-    assert.ok(redirectIdx !== -1 && blockMergeIdx !== -1);
-    assert.ok(redirectIdx < blockMergeIdx, 'redirect-guard must be ordered before block-merge in its hooks array');
-  });
-
-  test('the forge-tool matcher matches D14\'s namespace-agnostic pattern, not one literal server name', () => {
-    const group = parsed.hooks.PreToolUse.find((g) => g.matcher?.includes('github'));
-    assert.ok(group, 'expected a PreToolUse group matching github-namespaced tools');
-    // Every github-namespaced tool, not the subset of action names block-merge blocks
-    // today. C-04: the matcher is a best-effort pre-filter and never the security
-    // boundary, so a looser one that invokes the gate more often is safe while a
-    // tighter one that misses is not. Naming the action list here would also be the
-    // same list in two files, and the copy in this one goes stale silently the first
-    // time the gate learns a new action.
-    assert.equal(group.matcher, 'mcp__.*github.*__.*');
-  });
-
-  test('review-jail fires for every tool, asserted by matching rather than by spelling', () => {
-    // The matcher is omitted, not `"*"`. All three all-tools forms are documented, but
-    // every shipped official plugin that fires on all tools omits the field -- hookify,
-    // the reference PreToolUse plugin, is the clearest case -- and an omitted matcher
-    // leaves no string for anything to interpret. `"*"` is only correct as a special
-    // case: hand it to `new RegExp` and it raises "Nothing to repeat", and the jail
-    // stops running with every test still green, which is what the old assertion (the
-    // literal `"*"` compared against itself) could not see.
-    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('review-jail.mjs')));
-    assert.ok(group, 'review-jail is not registered on PreToolUse at all');
-    for (const tool of ['Bash', 'Edit', 'NotebookEdit', 'Read', 'Task', 'WebFetch', 'mcp__github__create_pull_request']) {
-      assert.equal(toolMatches(group.matcher, tool), true, `${tool} would reach the reviewer with no jail in front of it`);
-    }
-  });
-
-  test('the path guard fires for every write tool this environment has', () => {
+  test('the write matcher fires for every write tool this environment has, and no read tool', () => {
     // C-04: the matcher is a best-effort pre-filter and never the boundary, so a looser
     // one costs an extra process and a tighter one costs the gate outright. NotebookEdit
     // is a live write tool here and `^(Edit|Write)$` never saw it; the official
     // security-guidance plugin names the same four.
-    const group = parsed.hooks.PreToolUse.find((g) => g.hooks.some((h) => scriptOf(h)?.endsWith('path-guard.mjs')));
+    const group = parsed.hooks.PreToolUse.find((g) => toolMatches(g.matcher, 'Write'));
+    assert.ok(group, 'expected a PreToolUse group matching the write tools');
     for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
-      assert.equal(toolMatches(group.matcher, tool), true, `${tool} can write under .claude/ without the path guard firing`);
+      assert.equal(toolMatches(group.matcher, tool), true, `${tool} can write under .claude/ without the gate firing`);
     }
-    assert.equal(toolMatches(group.matcher, 'Read'), false, 'the guard has no business on a read tool');
+    for (const tool of ['Read', 'NotebookRead']) {
+      assert.equal(toolMatches(group.matcher, tool), false, 'the gate has no business on a read tool');
+    }
   });
 
-  test('block-merge is wired on both arms it decides: the shells and the forge', () => {
-    const matchers = parsed.hooks.PreToolUse.filter((g) =>
-      g.hooks.some((h) => scriptOf(h)?.endsWith('block-merge.mjs')),
-    ).map((g) => g.matcher);
-    assert.deepEqual(matchers.sort(), [`^(${[...SHELL_TOOLS].join('|')})$`, 'mcp__.*github.*__.*']);
+  test('the forge matcher names the merge, so a forge call that is not a merge starts no process', () => {
+    // Narrowed from `mcp__.*github.*__.*` in #167. The matcher only stops the spawn:
+    // gate.mjs still hands every forge tool name to block-merge, which decides on the
+    // action itself, so a looser matcher was never the boundary and a tighter one costs
+    // nothing but the processes it saves.
+    const group = parsed.hooks.PreToolUse.find((g) => g.matcher?.includes('github'));
+    assert.ok(group, 'expected a PreToolUse group matching github-namespaced tools');
+    assert.equal(group.matcher, '^mcp__.*github.*__merge');
+    assert.equal(toolMatches(group.matcher, 'mcp__plugin_github_github__merge_pull_request'), true);
+    assert.equal(toolMatches(group.matcher, 'mcp__plugin_github_github__get_pull_request'), false);
+  });
+
+  test('no PreToolUse entry fires on every tool', () => {
+    // review-jail was wired with no matcher at all, which started a node process on
+    // every Grep, Read and Task in a session. Nothing is wired that way any more, and
+    // this is the regression test for it.
+    for (const group of parsed.hooks.PreToolUse) {
+      assert.equal(matchesEveryTool(group.matcher), false, 'an all-tools matcher starts a process on every tool call');
+    }
+  });
+
+  test('one script is wired on PreToolUse, once per matcher', () => {
+    const scripts = new Set();
+    for (const group of parsed.hooks.PreToolUse) {
+      assert.equal(group.hooks.length, 1, 'a second hook on a matcher is a second node process');
+      scripts.add(scriptOf(group.hooks[0]));
+    }
+    assert.deepEqual([...scripts], ['hooks/gate.mjs']);
   });
 });
 
@@ -381,28 +307,13 @@ describe('matchers', () => {
 // ---------------------------------------------------------------------------
 
 describe('timeouts', () => {
-  const timeoutOf = (suffix) => {
-    for (const { hook } of allCommandHooks(parsed)) {
-      if (scriptOf(hook)?.endsWith(suffix)) return hook.timeout;
-    }
-    return undefined;
-  };
-
-  test('review-jail declares the short timeout its slice specified', () => {
-    // The jail reads a payload and compares two paths. It spawns nothing, so there is
-    // nothing for a long timeout to protect.
-    assert.equal(timeoutOf('review-jail.mjs'), 10);
-  });
-
-  test('redirect-guard declares the same short timeout as path-guard', () => {
-    // Parses a string and resolves a handful of git toplevels; no test suite, no long
-    // subprocess, same cost profile as path-guard's own 10s.
-    assert.equal(timeoutOf('redirect-guard.mjs'), 10);
-  });
-
-  test('block-merge declares no timeout override', () => {
-    for (const { hook } of allCommandHooks(parsed)) {
-      if (scriptOf(hook)?.endsWith('block-merge.mjs')) assert.equal(hook.timeout, undefined);
+  test('every gate entry declares the same short timeout', () => {
+    // The gate parses a string and resolves a handful of git toplevels. It spawns no
+    // test suite and no long subprocess, so there is nothing for a long timeout to
+    // protect, and one value across the three entries means there is no per-entry
+    // number to keep in step.
+    for (const group of parsed.hooks.PreToolUse) {
+      for (const hook of group.hooks) assert.equal(hook.timeout, 10);
     }
   });
 });

@@ -129,6 +129,7 @@
 // gate does not widen it.
 
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   HARNESS_DIRNAME,
@@ -392,14 +393,20 @@ function checkCommand(payload, command) {
   }
 }
 
-await runGate({
-  name: 'redirect-guard',
-  run: (payload) => {
-    if (!isShellTool(payload)) return; // Bash or PowerShell only (C-07), matches hooks.json's own matcher
-    if (!isAnyAeoRole(payload)) return; // main session and non-AEO agents pass (C-02), same scoping as path-guard
+// Exported so gate.mjs can run this decision in the same process as the other rules
+// (#167). The body is what ran as this script's own `run` before.
+/** @param {object} payload */
+export function redirectGuard(payload) {
+  if (!isShellTool(payload)) return; // Bash or PowerShell only (C-07), matches hooks.json's own matcher
+  if (!isAnyAeoRole(payload)) return; // main session and non-AEO agents pass (C-02), same scoping as path-guard
 
-    const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
-    if (command.trim() === '') return;
-    checkCommand(payload, command);
-  },
-});
+  const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
+  if (command.trim() === '') return;
+  checkCommand(payload, command);
+}
+
+// Importing this file must not run the gate, so gate.mjs and the tests can use its
+// exports without spawning it.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await runGate({ name: 'redirect-guard', run: redirectGuard });
+}

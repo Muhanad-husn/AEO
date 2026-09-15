@@ -65,6 +65,7 @@
 // THAT directory's git toplevel.
 
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import {
   HARNESS_DIRNAME,
@@ -89,8 +90,7 @@ const FENCED_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
  * back to `path.resolve`'s own default (the hook process's cwd) keeps this gate's
  * posture the same as the original in the one case neither answer is trustworthy:
  * never block on an unresolvable relative path, because this gate's default is allow
- * and only a proven `.claude/` write flips it (contrast review-jail, whose default is
- * deny).
+ * and only a proven `.claude/` write flips it.
  */
 function resolveFullPath(filePath, payload) {
   const normalized = normalizeHookPath(filePath);
@@ -104,31 +104,37 @@ const FENCE_REASON =
   `role subagents may not touch ${HARNESS_DIRNAME}/ - harness config governs the roles, so a role does not ` +
   'edit it. Ask the orchestrator';
 
-await runGate({
-  name: 'path-guard',
-  run: (payload) => {
-    const tool = typeof payload?.tool_name === 'string' ? payload.tool_name : '';
-    if (!FENCED_TOOLS.has(tool)) return;
-    if (!isAnyAeoRole(payload)) return; // main session and non-AEO agents pass (C-02)
+// Exported so gate.mjs can run this decision in the same process as the other rules
+// (#167). The body is what ran as this script's own `run` before.
+/** @param {object} payload */
+export function pathGuard(payload) {
+  const tool = typeof payload?.tool_name === 'string' ? payload.tool_name : '';
+  if (!FENCED_TOOLS.has(tool)) return;
+  if (!isAnyAeoRole(payload)) return; // main session and non-AEO agents pass (C-02)
 
-    // Which field carries the target is lib.mjs's to know, because the sandbox guard
-    // reads the same field set and V-13 is two gates deriving one thing twice.
-    const named = toolFilePath(payload);
-    // No target named: there is nothing to fence against, so this passes rather than
-    // blocks. Mirrors the PS original (`if (-not $filePath) { exit 0 }`) and this
-    // gate's own allow-by-default posture. It is not review-jail's deny-by-default.
-    if (named === null) return;
+  // Which field carries the target is lib.mjs's to know, because the sandbox guard
+  // reads the same field set and V-13 is two gates deriving one thing twice.
+  const named = toolFilePath(payload);
+  // No target named: there is nothing to fence against, so this passes rather than
+  // blocks. Mirrors the PS original (`if (-not $filePath) { exit 0 }`) and this gate's
+  // own allow-by-default posture.
+  if (named === null) return;
 
-    const full = resolveFullPath(named, payload);
-    const hit = isPathIntoHarness(full);
-    if (hit === null) return;
+  const full = resolveFullPath(named, payload);
+  const hit = isPathIntoHarness(full);
+  if (hit === null) return;
 
-    // hit.root is null exactly when no git worktree contains `full` at all -- the
-    // machine-where-$HOME-is-not-a-repository case isPathIntoHarness's own header
-    // describes -- and that message shape is path-guard's own, not shared: it names the
-    // absolute path and says so, rather than a path relative to a root that doesn't
-    // exist here.
-    if (hit.root === null) block(`${FENCE_REASON} (tried: ${hit.rel}, outside any git worktree).`);
-    block(`${FENCE_REASON} (tried: ${hit.rel}).`);
-  },
-});
+  // hit.root is null exactly when no git worktree contains `full` at all -- the
+  // machine-where-$HOME-is-not-a-repository case isPathIntoHarness's own header
+  // describes -- and that message shape is path-guard's own, not shared: it names the
+  // absolute path and says so, rather than a path relative to a root that doesn't
+  // exist here.
+  if (hit.root === null) block(`${FENCE_REASON} (tried: ${hit.rel}, outside any git worktree).`);
+  block(`${FENCE_REASON} (tried: ${hit.rel}).`);
+}
+
+// Importing this file must not run the gate, so gate.mjs and the tests can use its
+// exports without spawning it.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await runGate({ name: 'path-guard', run: pathGuard });
+}
