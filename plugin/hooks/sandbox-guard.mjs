@@ -1,7 +1,7 @@
 // AEO sandbox guard: production data is not reachable from a session, and a live long
 // job is not run over.
 //
-// PreToolUse on Bash and on the tools that read or write a file directly. It decides from
+// PreToolUse on Bash and on the tools that write a file directly. It decides from
 // stdin rather than from an `if:` filter, because `if:` fails open on an unparseable
 // command and is never the security boundary (C-04).
 //
@@ -101,17 +101,20 @@ const NO_OVERRIDE =
  *
  * A smoke test of the installed plugin found the hole this set closes. The matcher was
  * `^Bash$`, so `cat <file inside production data>` was refused while a Write that CREATED
- * a file inside the production data root was not gated at all, and a Read of a file inside
- * it went through freely. Production data does not care which tool reached it.
+ * a file inside the production data root was not gated at all. Production data does not
+ * care which tool reached it.
  *
- * READS ARE IN SCOPE, by the same evidence the rest of this gate is built on: L-03's
- * second incident is six test call-sites silently READING a live 49,674-entry index.
+ * READ AND NOTEBOOKREAD ARE NOT HERE (#167). PLAN.md section 2 fires nothing on a read
+ * tool, so hooks.json starts no process on one and this set would be judging a payload
+ * that never arrives. L-03's second incident is not lost by that: six test call-sites
+ * silently READING a live 49,674-entry index is code reading an index, which arrives as
+ * a Bash call and is judged as one. A Read tool call reads one named file into context.
  *
- * Glob and Grep are not here. They name a pattern plus an optional root rather than a
- * file, which is a wider surface than this fix, and a matcher wider than the set the gate
- * actually judges reads as covered while it is not.
+ * Glob and Grep are not here either. They name a pattern plus an optional root rather
+ * than a file, which is a wider surface than this fix, and a matcher wider than the set
+ * the gate actually judges reads as covered while it is not.
  */
-const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'NotebookRead']);
+const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 function note(message) {
   try {
@@ -661,9 +664,10 @@ export function sandboxGuard(payload) {
     block(
       fileTool
         ? `this ${tool} targets ${JSON.stringify(candidate)}, which resolves to ${realise(resolved)}, inside the ` +
-            `production data root ${live.root}. Production data is not reachable from a session, reads included: ` +
-            `six test call-sites silently reading a live 49,674-entry index is one of the three incidents this ` +
-            `gate exists for (L-03). ${NO_OVERRIDE}`
+            `production data root ${live.root}. Production data is not reachable from a session. The write tools ` +
+            `are judged here; code that reads production data arrives as a Bash call and is judged as one, which ` +
+            `is the shape of L-03's second incident, six test call-sites reading a live 49,674-entry index. ` +
+            `${NO_OVERRIDE}`
         : `this command names ${JSON.stringify(candidate)}, which resolves to ${realise(resolved)}, inside the ` +
             `production data root ${live.root}. A run pointed at production data is refused. ${NO_OVERRIDE}`,
     );

@@ -424,8 +424,9 @@ describe('gates stated positively', () => {
     const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /Gates wired for this session/);
-    assert.match(r.stdout, /PreToolUse: .*block-merge/);
-    assert.match(r.stdout, /PreToolUse: .*sandbox-guard/);
+    // One script is wired on PreToolUse now (#167), on three matchers, so the report
+    // names it once per matcher rather than naming one script per rule.
+    assert.match(r.stdout, /PreToolUse: [a-z-]*gate/);
     // The half that fixes the misreading. Naming the gates without this leaves the
     // actor to work out what silence from one means, which is the step both actors got
     // wrong.

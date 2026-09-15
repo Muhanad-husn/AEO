@@ -81,7 +81,7 @@ into whichever repository you happen to be working in.
 
 ### What that installs
 
-Fifteen skills, five agent charters, and six gate scripts wired to two hook
+Fifteen skills, five agent charters, and two gate scripts wired to two hook
 events — `SessionStart` and `PreToolUse`.
 
 **Seven of the fifteen skills are operator-invoked only.** They run when you
@@ -202,24 +202,32 @@ Five agent charters back these lanes: `builder`, `reviewer`, `triage`,
 
 ## The gates
 
-Six gate scripts are wired through `hooks/hooks.json`. Five refuse specific
-actions; the sixth never blocks anything — it reports. A local commit gate
-used to sit here too; it duplicated a check GitHub's own branch protection
-already makes server-side, and it is deleted (see "Who merges" below).
+Two gate scripts are wired through `hooks/hooks.json`. One refuses; the other
+never blocks anything — it reports. A local commit gate used to sit here too;
+it duplicated a check GitHub's own branch protection already makes
+server-side, and it is deleted (see "Who merges" below).
 
 | Hook | What it refuses |
 | --- | --- |
-| `sandbox-guard` | Any command or file read/write that would reach declared production data, and running the suite over a job that's still live. |
-| `redirect-guard` | A role subagent writing into `.claude/` through a shell redirect or command (`>`, `tee`, `cp`, `sed -i`, and PowerShell equivalents) — the route around `path-guard` below, which only sees the file-edit tools. |
-| `block-merge` | A subagent, or the GitHub forge tool, merging, or deleting a branch. |
-| `path-guard` | A role subagent editing the harness's own `.claude/` configuration. |
-| `review-jail` | The reviewer or verifier role calling any tool but a `Read` of its own staged evidence packet. |
-| `session-status` | Nothing — it never blocks. It reports which of the above are actually wired and the project's live state, at the start of every session. |
+| `gate` | Everything below, in one node process per matched call: a shell call on `Bash` or `PowerShell`, a write on `Edit`, `Write`, `MultiEdit` or `NotebookEdit`, and a GitHub forge merge. Nothing starts on a `Read`, a `Grep`, a `Glob`, a `Task` or a forge call that is not a merge. |
+| `session-status` | Nothing — it never blocks. It reports which of the rules below are actually wired and the project's live state, at the start of every session. |
+
+The rules `gate` runs, each still its own module under `plugin/hooks/`:
+
+- **sandbox-guard** — any command or file write that would reach declared
+  production data, and running the suite over a job that's still live.
+- **redirect-guard** — a role subagent writing into `.claude/` through a shell
+  redirect or command (`>`, `tee`, `cp`, `sed -i`, and PowerShell
+  equivalents): the route around path-guard, which only sees the file-edit
+  tools.
+- **block-merge** — a subagent, or the GitHub forge tool, merging, or deleting
+  a branch.
+- **path-guard** — a role subagent editing the harness's own `.claude/`
+  configuration.
 
 `claude plugin details` reports **2 hooks** — that counts the event types
-these scripts are wired to (`SessionStart`, `PreToolUse`), not the six
-scripts themselves. Both numbers are correct; they're counting different
-things.
+these scripts are wired to (`SessionStart`, `PreToolUse`), not the scripts
+themselves. Both numbers are correct; they're counting different things.
 
 ## Who merges
 

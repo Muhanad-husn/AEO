@@ -24,6 +24,7 @@ import { projectAnchor, sentinelPath } from '../../plugin/hooks/sentinel.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const GUARD = path.join(repoRoot, 'plugin', 'hooks', 'sandbox-guard.mjs');
+const GATE = path.join(repoRoot, 'plugin', 'hooks', 'gate.mjs');
 const SENTINEL_CLI = path.join(repoRoot, 'plugin', 'scripts', 'run-sentinel.mjs');
 
 const LIVE = 'AEO_LIVE_DATA_ROOT';
@@ -125,6 +126,7 @@ function runHook(script, { payload, raw, env = {} } = {}) {
 }
 
 const guard = (options) => runHook(GUARD, options);
+const gate = (options) => runHook(GATE, options);
 
 const bash = (command, cwd, extra = {}) => ({
   session_id: 'test-session',
@@ -153,7 +155,10 @@ const fileCall = (tool, target, cwd, extra = {}) => {
   return { session_id: 'test-session', hook_event_name: 'PreToolUse', cwd, tool_name: tool, tool_input: body, ...extra };
 };
 
-const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'NotebookRead'];
+// The write tools only (#167). Read and NotebookRead left this set when they left
+// hooks.json's matchers: a payload the wiring never sends is not a case this suite can
+// hold the gate to.
+const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 
 function assertBlockedBecause(result, pattern, message) {
   assert.equal(result.status, 2, `${message}: expected exit 2, got ${result.status}\n${result.stderr}`);
@@ -764,15 +769,37 @@ describe('the file tools', () => {
     );
   });
 
-  test('a Read of a file inside production data blocks, and names it', () => {
+  // #167 reversed this case. It used to assert that a Read inside production data blocks,
+  // which is not what the wiring does: hooks.json matches no read tool, so no process
+  // starts on one and the assertion described a payload that never arrives. L-03's second
+  // incident is still judged, because code reading a live index arrives as a Bash call.
+  // Both entry points are checked, the rule's own script and the one hooks.json wires.
+  test('a Read of a file inside production data allows, from the guard and from the gate', () => {
     const { live, sandbox } = roots();
     const target = path.join(live, 'index', 'entries.jsonl');
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, '{}\n');
-    const r = guard({ payload: fileCall('Read', target, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } });
-    assertBlockedBecause(r, TARGETS_LIVE_DATA, 'Read inside production data');
-    assert.match(r.stderr, /49,674-entry index/, 'the block does not say why a read is in scope');
-    assert.match(r.stderr, /There is no override flag/, 'the block does not end with the no-override sentence');
+    const payload = fileCall('Read', target, tempDir());
+    const env = { [LIVE]: live, [DATA]: sandbox };
+    assertAllowed(guard({ payload, env }), 'Read inside production data, through sandbox-guard.mjs');
+    assertAllowed(gate({ payload, env }), 'Read inside production data, through gate.mjs');
+  });
+
+  test("a Bash call reading the same file still blocks, which is L-03's own shape", () => {
+    const { live, sandbox } = roots();
+    const target = path.join(live, 'index', 'entries.jsonl');
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, '{}\n');
+    const payload = {
+      session_id: 'test-session',
+      hook_event_name: 'PreToolUse',
+      cwd: tempDir(),
+      tool_name: 'Bash',
+      tool_input: { command: `cat ${target}` },
+    };
+    const env = { [LIVE]: live, [DATA]: sandbox };
+    assertBlockedBecause(guard({ payload, env }), NAMES_LIVE_DATA, 'a Bash read of production data');
+    assertBlockedBecause(gate({ payload, env }), NAMES_LIVE_DATA, 'a Bash read of production data, through the gate');
   });
 
   test('every file tool allows a target outside production data', () => {
@@ -1723,11 +1750,16 @@ describe('tokenising and matching', () => {
 // ---------------------------------------------------------------------------
 // Registration (C-01): the gate is only a gate if hooks.json wires it
 // ---------------------------------------------------------------------------
+//
+// These rules no longer have a script of their own in hooks.json. gate.mjs is wired on
+// PreToolUse and calls sandboxGuard on the shell arm and the write arm (#167), so what
+// registration means here is that the matchers behind gate.mjs reach every tool this
+// guard judges and no tool it cannot judge.
 
 describe('hooks.json registration', () => {
   const manifest = path.join(repoRoot, 'plugin', 'hooks', 'hooks.json');
 
-  test('sandbox-guard is registered on PreToolUse for Bash, with no shell fallback', (t) => {
+  test('gate.mjs is wired on PreToolUse for the shells and the write tools, with no shell fallback', (t) => {
     if (!existsSync(manifest)) return t.skip('plugin/hooks/hooks.json does not exist yet');
     const parsed = JSON.parse(readFileSync(manifest, 'utf8'));
     const entries = parsed?.hooks?.PreToolUse;
@@ -1742,35 +1774,36 @@ describe('hooks.json registration', () => {
             ? Object.values(node).flatMap(strings)
             : [];
 
-    const ours = entries.filter((e) => strings(e).some((s) => s.includes('sandbox-guard.mjs')));
-    if (ours.length === 0) {
-      return t.skip('sandbox-guard.mjs is not wired yet; whoever reconciles hooks.json owns that entry');
-    }
-    assert.equal(ours.length, 1, 'exactly one PreToolUse entry must run sandbox-guard.mjs');
-    assert.ok(
-      ours[0].matcher === undefined || ours[0].matcher === '*' || ours[0].matcher === '' || /Bash/.test(ours[0].matcher),
-      `sandbox-guard must be matched on Bash; found ${JSON.stringify(ours[0].matcher)}`,
-    );
-    // The tools the gate judges must all reach it. A gate the matcher never invokes is
+    const ours = entries.filter((e) => strings(e).some((str) => str.includes('gate.mjs')));
+    assert.ok(ours.length > 0, 'no PreToolUse entry runs gate.mjs');
+
+    // The tools this guard judges must all reach it. A gate the matcher never invokes is
     // not a gate: the file tools were absent here while the guard's own header said
     // production data is not reachable from a session, and a Write into the production
     // root passed with no block at all.
-    const matcher = ours[0].matcher;
-    for (const tool of ['Bash', ...FILE_TOOLS]) {
-      assert.equal(new RegExp(matcher).test(tool), true, `${tool} never reaches the sandbox guard`);
+    const reaches = (tool) => ours.some((e) => new RegExp(e.matcher).test(tool));
+    // FILE_TOOLS above holds the read tools too, and those are deliberately unmatched
+    // now, so this names the write half.
+    for (const tool of ['Bash', 'PowerShell', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      assert.equal(reaches(tool), true, `${tool} never reaches the sandbox rules`);
     }
-    // V-12, and the reason the matcher is anchored: BashOutput is not Bash, and a
+    // V-12, and the reason the matchers are anchored: BashOutput is not Bash, and a
     // pattern loose enough to catch it would fire the gate on payloads it cannot judge.
-    for (const tool of ['BashOutput', 'Glob', 'Grep', 'Task', 'WebFetch']) {
-      assert.equal(new RegExp(matcher).test(tool), false, `${tool} reaches a gate that does not judge it`);
+    // Read and NotebookRead are out by decision, not by accident: PLAN.md section 2 fires
+    // nothing on a read tool, and the L-03 read incident was code reading a live index,
+    // which arrives as a Bash call and is still judged.
+    for (const tool of ['BashOutput', 'Glob', 'Grep', 'Task', 'WebFetch', 'Read', 'NotebookRead']) {
+      assert.equal(reaches(tool), false, `${tool} reaches a gate that does not judge it`);
     }
 
-    for (const s of strings(ours[0])) {
-      assert.doesNotMatch(s, /\|\||&&/, `a shell fallback converts every block into a pass: ${s}`);
+    for (const entry of ours) {
+      for (const str of strings(entry)) {
+        assert.doesNotMatch(str, /\|\||&&/, `a shell fallback converts every block into a pass: ${str}`);
+      }
+      assert.ok(
+        strings(entry).some((str) => str.includes('${CLAUDE_PLUGIN_ROOT}/hooks/gate.mjs')),
+        'the entry must reference ${CLAUDE_PLUGIN_ROOT}/hooks/gate.mjs or preflight reports no gate scripts',
+      );
     }
-    assert.ok(
-      strings(ours[0]).some((s) => s.includes('${CLAUDE_PLUGIN_ROOT}/hooks/sandbox-guard.mjs')),
-      'the entry must reference ${CLAUDE_PLUGIN_ROOT}/hooks/sandbox-guard.mjs or preflight reports no gate scripts',
-    );
   });
 });

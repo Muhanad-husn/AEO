@@ -38,6 +38,8 @@
 // `general-purpose` subagent, or a foreign plugin's `other:builder`, passes this
 // check. That narrowing, and why it was accepted, is recorded in the slice log.
 
+import { pathToFileURL } from 'node:url';
+
 import { block, isAnyAeoRole, isShellTool, matchesGitSubcommand, runGate } from './lib.mjs';
 
 // Every block shares the PowerShell original's closing line, in one place so the
@@ -179,21 +181,28 @@ function checkBashCommand(command) {
 
 // ---------------------------------------------------------------------------
 
-await runGate({
-  name: 'block-merge',
-  run: (payload) => {
-    const tool = typeof payload?.tool_name === 'string' ? payload.tool_name : '';
+// Exported so gate.mjs can run this decision in the same process as the other rules
+// (#167). The body is what ran as this script's own `run` before; what it judges is not
+// this slice's business.
+/** @param {object} payload */
+export function blockMergeGate(payload) {
+  const tool = typeof payload?.tool_name === 'string' ? payload.tool_name : '';
 
-    const action = forgeAction(tool);
-    if (action !== null) {
-      checkForgeTool(action);
-      return; // every other forge tool passes
-    }
+  const action = forgeAction(tool);
+  if (action !== null) {
+    checkForgeTool(action);
+    return; // every other forge tool passes
+  }
 
-    if (!isShellTool(payload)) return; // Bash or PowerShell; C-07
-    if (!isAnyAeoRole(payload)) return; // orchestrator's own approved path (C-02, F5)
+  if (!isShellTool(payload)) return; // Bash or PowerShell; C-07
+  if (!isAnyAeoRole(payload)) return; // orchestrator's own approved path (C-02, F5)
 
-    const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
-    checkBashCommand(command);
-  },
-});
+  const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
+  checkBashCommand(command);
+}
+
+// Importing this file must not run the gate, so gate.mjs and the tests can use its
+// exports without spawning it.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await runGate({ name: 'block-merge', run: blockMergeGate });
+}
