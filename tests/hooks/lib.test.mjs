@@ -963,6 +963,67 @@ describe('runGate (C-06)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// warn — a gate that allows and still has something to say (#169)
+// ---------------------------------------------------------------------------
+//
+// The shape matters as much as the text. A hook says something to the session by
+// writing one JSON object on stdout; two objects, or a line of prose beside it, and the
+// whole thing is discarded. So these tests parse stdout rather than matching it.
+
+describe('warn (#169)', () => {
+  const payload = {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Bash',
+    tool_input: { command: 'echo "unterminated' },
+  };
+
+  test('a latched warning writes one JSON object on stdout and exits 0', () => {
+    const r = runHook('gate.mjs', { payload, mode: 'warn' });
+    assert.equal(r.status, 0, r.stderr);
+    const parsed = JSON.parse(r.stdout);
+    assert.equal(parsed.hookSpecificOutput.hookEventName, 'PreToolUse');
+    assert.equal(parsed.hookSpecificOutput.permissionDecision, 'allow');
+    assert.equal(typeof parsed.hookSpecificOutput.permissionDecisionReason, 'string');
+    assert.notEqual(parsed.hookSpecificOutput.permissionDecisionReason, '');
+  });
+
+  test('the warning text reaches additionalContext and systemMessage', () => {
+    const r = runHook('gate.mjs', { payload, mode: 'warn' });
+    const parsed = JSON.parse(r.stdout);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /fixture warned about the command/);
+    assert.match(parsed.systemMessage, /fixture warned about the command/);
+  });
+
+  test('two warnings arrive as one object, both texts kept', () => {
+    const r = runHook('gate.mjs', { payload, mode: 'warn-twice' });
+    assert.equal(r.status, 0, r.stderr);
+    const parsed = JSON.parse(r.stdout);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /fixture warned first/);
+    assert.match(parsed.hookSpecificOutput.additionalContext, /fixture warned again/);
+  });
+
+  test('a gate that warns about nothing writes nothing on stdout', () => {
+    const r = runHook('gate.mjs', { payload, mode: 'allow' });
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, '');
+  });
+
+  // The point of the rule: a warning is advice, and advice does not decide.
+  test('a warning does not change a block exit code', () => {
+    const r = runHook('gate.mjs', { payload, mode: 'warn-block' });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /^BLOCKED: fixture blocked Bash/m);
+    assert.equal(r.stdout, '');
+  });
+
+  test('a warning does not change a crash exit code', () => {
+    const r = runHook('gate.mjs', { payload, mode: 'warn-throw' });
+    assert.equal(r.status, 2);
+    assert.match(r.stderr, /BLOCKED: the fixture-gate gate could not evaluate this call/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // runReporter — never blocks
 // ---------------------------------------------------------------------------
 
