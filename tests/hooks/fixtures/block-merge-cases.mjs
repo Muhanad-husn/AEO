@@ -11,8 +11,9 @@
 //
 // `blocks` holds the real thing: a merge, a pull request merge, a local branch
 // deletion, a remote branch deletion, each in the spellings the first build found, plus
-// the same commands hidden inside an interpreter's inline string, plus one command the
-// parser cannot read at all.
+// the same commands hidden inside an interpreter's inline string, behind a wrapper
+// program, or behind two wrappers stacked, plus one command the parser cannot read at
+// all.
 
 /** Commands a subagent must be able to run. */
 export const passes = [
@@ -67,6 +68,14 @@ export const passes = [
   {
     command: 'Select-String -Pattern "git merge" -Path RULES.md',
     source: 'C-07, the PowerShell spelling of the grep case',
+  },
+  {
+    command: 'env grep -rn "git merge" plugin/',
+    source: 'this slice: a wrapper in front of the grep case, which must stay a pass',
+  },
+  {
+    command: 'timeout 5 git merge-base HEAD main',
+    source: 'this slice: a wrapper in front of a read-only git call, duration operand and all',
   },
 ];
 
@@ -127,6 +136,42 @@ export const blocks = [
   {
     command: 'pwsh -Command "git merge feat"',
     source: 'C-07, the interpreter case in its PowerShell spelling',
+  },
+  {
+    command: 'env git merge feat',
+    source: 'this slice: a wrapper program in front of the real one',
+  },
+  {
+    command: 'sudo git merge feat',
+    source: 'this slice: the same shape under sudo',
+  },
+  {
+    command: 'timeout 30 git merge feat',
+    source: 'this slice: a wrapper whose own operand is a duration, not a program',
+  },
+  {
+    command: 'nohup git merge feat',
+    source: 'this slice: a wrapper with no options of its own',
+  },
+  {
+    command: 'nice -n 5 git merge feat',
+    source: 'this slice: a wrapper option that takes a separate value',
+  },
+  {
+    command: 'command git merge feat',
+    source: "this slice: the shell's own wrapper builtin",
+  },
+  {
+    command: 'env GIT_DIR=x git -C d merge feat',
+    source: "this slice: an env assignment in front of git's own -C option",
+  },
+  {
+    command: 'sudo env git merge feat',
+    source: 'this slice: two wrappers stacked, so the unwrapping has to repeat',
+  },
+  {
+    command: 'sudo -u me gh pr merge 1',
+    source: 'this slice: a wrapper with a value-taking option in front of gh',
   },
   {
     command: 'git merge feat "unterminated',
