@@ -24,6 +24,7 @@ import { projectAnchor, sentinelPath } from '../../plugin/hooks/sentinel.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const GUARD = path.join(repoRoot, 'plugin', 'hooks', 'sandbox-guard.mjs');
+const GATE = path.join(repoRoot, 'plugin', 'hooks', 'gate.mjs');
 const SENTINEL_CLI = path.join(repoRoot, 'plugin', 'scripts', 'run-sentinel.mjs');
 
 const LIVE = 'AEO_LIVE_DATA_ROOT';
@@ -125,6 +126,7 @@ function runHook(script, { payload, raw, env = {} } = {}) {
 }
 
 const guard = (options) => runHook(GUARD, options);
+const gate = (options) => runHook(GATE, options);
 
 const bash = (command, cwd, extra = {}) => ({
   session_id: 'test-session',
@@ -153,7 +155,10 @@ const fileCall = (tool, target, cwd, extra = {}) => {
   return { session_id: 'test-session', hook_event_name: 'PreToolUse', cwd, tool_name: tool, tool_input: body, ...extra };
 };
 
-const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Read', 'NotebookRead'];
+// The write tools only (#167). Read and NotebookRead left this set when they left
+// hooks.json's matchers: a payload the wiring never sends is not a case this suite can
+// hold the gate to.
+const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 
 function assertBlockedBecause(result, pattern, message) {
   assert.equal(result.status, 2, `${message}: expected exit 2, got ${result.status}\n${result.stderr}`);
@@ -764,15 +769,37 @@ describe('the file tools', () => {
     );
   });
 
-  test('a Read of a file inside production data blocks, and names it', () => {
+  // #167 reversed this case. It used to assert that a Read inside production data blocks,
+  // which is not what the wiring does: hooks.json matches no read tool, so no process
+  // starts on one and the assertion described a payload that never arrives. L-03's second
+  // incident is still judged, because code reading a live index arrives as a Bash call.
+  // Both entry points are checked, the rule's own script and the one hooks.json wires.
+  test('a Read of a file inside production data allows, from the guard and from the gate', () => {
     const { live, sandbox } = roots();
     const target = path.join(live, 'index', 'entries.jsonl');
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, '{}\n');
-    const r = guard({ payload: fileCall('Read', target, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } });
-    assertBlockedBecause(r, TARGETS_LIVE_DATA, 'Read inside production data');
-    assert.match(r.stderr, /49,674-entry index/, 'the block does not say why a read is in scope');
-    assert.match(r.stderr, /There is no override flag/, 'the block does not end with the no-override sentence');
+    const payload = fileCall('Read', target, tempDir());
+    const env = { [LIVE]: live, [DATA]: sandbox };
+    assertAllowed(guard({ payload, env }), 'Read inside production data, through sandbox-guard.mjs');
+    assertAllowed(gate({ payload, env }), 'Read inside production data, through gate.mjs');
+  });
+
+  test("a Bash call reading the same file still blocks, which is L-03's own shape", () => {
+    const { live, sandbox } = roots();
+    const target = path.join(live, 'index', 'entries.jsonl');
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, '{}\n');
+    const payload = {
+      session_id: 'test-session',
+      hook_event_name: 'PreToolUse',
+      cwd: tempDir(),
+      tool_name: 'Bash',
+      tool_input: { command: `cat ${target}` },
+    };
+    const env = { [LIVE]: live, [DATA]: sandbox };
+    assertBlockedBecause(guard({ payload, env }), NAMES_LIVE_DATA, 'a Bash read of production data');
+    assertBlockedBecause(gate({ payload, env }), NAMES_LIVE_DATA, 'a Bash read of production data, through the gate');
   });
 
   test('every file tool allows a target outside production data', () => {

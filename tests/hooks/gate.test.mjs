@@ -176,6 +176,25 @@ describe('gate.mjs refuses through the rules it now runs in one process', () => 
     assert.equal(r.status, 2, r.stderr);
   });
 
+  // The forge arm. hooks.json's matcher narrows to a merge-named action, so these two
+  // start a process and the third does not; the gate is sent all three anyway, because
+  // the matcher is a pre-filter and block-merge is what decides (C-04). The forge arm
+  // refuses the orchestrator too, which is why no agent_type is set here.
+  for (const tool of ['mcp__plugin_github_github__merge_pull_request', 'mcp__github__merge_branch']) {
+    test(`${tool} exits 2`, () => {
+      const r = runGateScript({ tool_name: tool, tool_input: { pullNumber: 1 } });
+      assert.equal(r.status, 2, r.stderr);
+    });
+  }
+
+  test('a forge call that is not a merge exits 0', () => {
+    const r = runGateScript({
+      tool_name: 'mcp__plugin_github_github__get_pull_request',
+      tool_input: { pullNumber: 1 },
+    });
+    assert.equal(r.status, 0, r.stderr);
+  });
+
   test('a Read of that same file exits 0', () => {
     const r = runGateScript({
       tool_name: 'Read',
