@@ -176,6 +176,14 @@ function pushDeletesRemoteBranch(tokens) {
 // command list inside a single argument. That string is parsed and judged on the same
 // terms, to a small depth, so the structural read is not walked past by one quote.
 //
+// THE WRAPPER CASE. `env`, `sudo`, `timeout`, `nohup`, `nice`, `command` and the rest
+// below run another program, so the segment's program is the wrapper and the real one
+// sits in its arguments. commandSegments does not unwrap them, and this gate does not
+// edit lib.mjs, so the unwrapping is here: the wrapper's own options are dropped, each
+// with its separate value where it takes one, `env`'s `NAME=value` assignments are
+// dropped, `timeout`'s duration operand is dropped, and what is left is judged as the
+// real program and its arguments. It repeats, so `sudo env git merge feat` is caught.
+//
 // THE FALLBACK. When commandSegments reports a parse error there is nothing to walk, so
 // the old whole-string text match decides instead, under its own name. A command the
 // parser cannot read is judged as it was before this slice, and a quoting trick does not
@@ -191,6 +199,88 @@ function pushDeletesRemoteBranch(tokens) {
 const INTERPRETERS = new Set(['bash', 'sh', 'zsh', 'dash', 'ash', 'pwsh', 'powershell']);
 const INLINE_COMMAND_FLAG = /^-{1,2}(c|command)$/i;
 const MAX_INTERPRETER_DEPTH = 3;
+
+/**
+ * The programs that run another program, and the options of their own that take a
+ * separate value. `operands` is how many bare words the wrapper consumes for itself
+ * before the real program begins: `timeout` takes a duration, the rest take none.
+ *
+ * The option lists are the value-taking ones only. Every other `-flag` is dropped
+ * without looking at it, which is the safe direction here: dropping one word too few
+ * would leave a flag standing where a program name is read, and the next non-flag word
+ * is still the program.
+ */
+const WRAPPERS = new Map([
+  ['env', { valueFlags: new Set(['-u', '--unset', '-C', '--chdir', '-S', '--split-string']), operands: 0 }],
+  [
+    'sudo',
+    {
+      valueFlags: new Set([
+        '-u', '--user', '-g', '--group', '-p', '--prompt', '-C', '--close-from',
+        '-U', '--other-user', '-T', '--command-timeout', '-h', '--host', '-R', '--chroot',
+      ]),
+      operands: 0,
+    },
+  ],
+  ['doas', { valueFlags: new Set(['-u', '-C']), operands: 0 }],
+  ['timeout', { valueFlags: new Set(['-s', '--signal', '-k', '--kill-after']), operands: 1 }],
+  ['nice', { valueFlags: new Set(['-n', '--adjustment']), operands: 0 }],
+  [
+    'xargs',
+    {
+      valueFlags: new Set([
+        '-I', '-i', '-n', '-L', '-P', '-s', '-d', '-E', '-a', '-e',
+        '--replace', '--max-args', '--max-procs', '--max-chars', '--delimiter',
+        '--arg-file', '--eof', '--max-lines',
+      ]),
+      operands: 0,
+    },
+  ],
+  ['nohup', { valueFlags: new Set(), operands: 0 }],
+  ['command', { valueFlags: new Set(), operands: 0 }],
+  ['builtin', { valueFlags: new Set(), operands: 0 }],
+  ['exec', { valueFlags: new Set(['-a']), operands: 0 }],
+  ['time', { valueFlags: new Set(['-o', '--output', '-f', '--format']), operands: 0 }],
+]);
+
+// Two wrappers stacked is already unusual; more than this is not a shape to keep
+// unwrapping, and the limit is what stops a crafted chain from looping.
+const MAX_WRAPPER_DEPTH = 4;
+
+const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
+
+/**
+ * The real program and arguments behind any wrappers, or the pair unchanged.
+ *
+ * Returns `null` when a wrapper is present but no program follows it, which is a
+ * wrapper run with nothing to run and so nothing for this gate to judge.
+ */
+function unwrapProgram(program, args) {
+  let current = program;
+  let rest = args;
+  for (let depth = 0; depth < MAX_WRAPPER_DEPTH; depth += 1) {
+    const wrapper = WRAPPERS.get(current);
+    if (wrapper === undefined) return { program: current, args: rest };
+
+    let i = 0;
+    let operands = wrapper.operands;
+    while (i < rest.length) {
+      const word = rest[i];
+      if (word === '--') { i += 1; break; }
+      if (word.startsWith('-') && word !== '-') {
+        i += wrapper.valueFlags.has(word) ? 2 : 1;
+        continue;
+      }
+      if (ENV_ASSIGNMENT.test(word)) { i += 1; continue; }
+      if (operands > 0) { operands -= 1; i += 1; continue; }
+      break;
+    }
+    if (i >= rest.length) return null;
+    current = programName(rest[i]);
+    rest = rest.slice(i + 1);
+  }
+  return { program: current, args: rest };
+}
 
 /** A program name reduced to what it is: no directory, no `.exe`, lower case. */
 function programName(raw) {
@@ -261,8 +351,9 @@ function inlineCommand(args) {
 
 function checkSegment(segment, depth) {
   if (typeof segment.program !== 'string' || segment.program === '') return;
-  const program = programName(segment.program);
-  const args = segment.args;
+  const unwrapped = unwrapProgram(programName(segment.program), segment.args);
+  if (unwrapped === null) return; // a wrapper with nothing after it runs nothing
+  const { program, args } = unwrapped;
 
   if (program === 'git') checkGitSegment(args);
   else if (program === 'gh') checkGhSegment(args);
