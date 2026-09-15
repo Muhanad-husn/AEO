@@ -464,51 +464,41 @@ describe('a target outside any git worktree', () => {
 // ---------------------------------------------------------------------------
 
 describe('identity', () => {
-  for (const role of ['builder', 'reviewer', 'triage']) {
-    test(`aeo:${role} is fenced from .claude/`, () => {
+  // C-02: the fence is presence of ANY agent_type, not membership in this plugin's own
+  // `aeo:<role>` roster. A main session launched with `--agent` also carries an
+  // agent_type and is treated as a subagent under this rule; that is the accepted cost.
+  const fenced = ['general-purpose', 'builder', 'other:builder', 'aeo:builder'];
+
+  for (const agent_type of fenced) {
+    test(`agent_type '${agent_type}' is fenced from .claude/`, () => {
       const repo = makeRepo();
       const target = path.join(repo, '.claude', 'x.md');
-      const r = runHook(roleCall('Write', target, { agent_type: `aeo:${role}` }));
+      const r = runHook(roleCall('Write', target, { agent_type }));
       assertBlocked(r, HARNESS_FENCE);
     });
   }
 
-  const unaffected = [
-    ['no agent_type at all, the orchestrator', NO_AGENT_TYPE],
-    ["a bare 'builder' from --agent (C-02: not this plugin's role)", 'builder'],
-    ['another plugin\'s builder', 'some-plugin:builder'],
-    ['a name with our role as a suffix', 'senior-aeo:builder'],
-    ['a different namespace ending in ours', 'not-aeo:builder'],
-    ['a case variant, which Claude Code does not emit', 'aeo:Builder'],
-    ['a built-in agent', 'Explore'],
-  ];
-
-  for (const [label, agent_type] of unaffected) {
-    test(`${label} passes through`, () => {
-      const repo = makeRepo();
-      const target = path.join(repo, '.claude', 'x.md');
-      const r = runHook(roleCall('Write', target, { agent_type }));
-      assertAllowed(r);
-    });
-  }
-
-  // isAnyAeoRole matches any lowercase `aeo:<role>`-shaped identity, not a
-  // hard-coded three-role roster (P1.1: "would rot if it did"). This gate enforces
-  // against that broader set on purpose, the same call P1.2's block-merge made, so a
-  // role name this plugin has not shipped yet is still fenced.
-  test("a longer aeo-namespaced identity ('aeo:builder-assistant') is still fenced, not treated as foreign", () => {
+  test('no agent_type at all, the orchestrator, passes through', () => {
     const repo = makeRepo();
     const target = path.join(repo, '.claude', 'x.md');
-    const r = runHook(roleCall('Write', target, { agent_type: 'aeo:builder-assistant' }));
-    assertBlocked(r, HARNESS_FENCE);
+    const r = runHook(roleCall('Write', target, { agent_type: NO_AGENT_TYPE }));
+    assertAllowed(r);
   });
 
-  test('surrounding whitespace on the identity does not slip the fence', () => {
+  // agentIdentity trims to null, so whitespace-only is the same as absent.
+  test('a whitespace-only agent_type passes through, because agentIdentity trims it to null', () => {
     const repo = makeRepo();
     const target = path.join(repo, '.claude', 'x.md');
-    for (const agent_type of [' aeo:builder', 'aeo:builder ', 'aeo:builder\n', '\taeo:builder\t']) {
-      assertBlocked(runHook(roleCall('Write', target, { agent_type })), HARNESS_FENCE);
+    for (const agent_type of ['', '   ', '\t\n']) {
+      assertAllowed(runHook(roleCall('Write', target, { agent_type })));
     }
+  });
+
+  test('a general-purpose subagent writing outside .claude/ still passes', () => {
+    const repo = makeRepo();
+    const target = path.join(repo, 'src', 'x.mjs');
+    const r = runHook(roleCall('Write', target, { agent_type: 'general-purpose' }));
+    assertAllowed(r);
   });
 
   test('a tool outside the fenced set is never fenced, even under .claude/', () => {
