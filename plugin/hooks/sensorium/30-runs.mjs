@@ -94,11 +94,10 @@ function lastRunLine(root) {
   } catch (err) {
     return `last run: logs/${newest.name}, unreadable (${err.message})`;
   }
-  const total = lines.length;
   if (record?.unit === 'run') {
     return `last run: logs/${newest.name}, closed ${record.status} ${record.ts}`;
   }
-  return `last run: logs/${newest.name}, ${record?.unit} ${total} of ${total}, ${record?.status}, ${record?.ts}`;
+  return `last run: logs/${newest.name}, ${record?.unit}, ${record?.status}, ${record?.ts}`;
 }
 
 /**

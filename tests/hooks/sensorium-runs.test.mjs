@@ -104,7 +104,7 @@ describe('30-runs.mjs, render({ root }) directly', () => {
     assert.match(lines[1], /could not be read/);
   });
 
-  test('newest run.jsonl ending on a progress record: unit, count and status', () => {
+  test('newest run.jsonl ending on a progress record: unit and status, no counter', () => {
     const root = tempDir();
     writeRunLog(root, '2026-08-01-older-job', [
       { ts: '2026-08-01T09:00:00.000Z', job: 'older', unit: 'fetch', status: 'ok', duration: 10, detail: '' },
@@ -117,7 +117,7 @@ describe('30-runs.mjs, render({ root }) directly', () => {
     const lines = render({ root });
     assert.deepEqual(lines, [
       'runs: none live',
-      'last run: logs/2026-08-05-newer-job, ingest 3 of 3, running, 2026-08-05T10:10:00.000Z',
+      'last run: logs/2026-08-05-newer-job, ingest, running, 2026-08-05T10:10:00.000Z',
     ]);
   });
 
@@ -175,7 +175,7 @@ describe('renderSensorium(root): the acceptance criterion scenario', () => {
     assert.ok(lines.some((l) => /live-job\.json/.test(l)), 'the live sentinel is named');
     assert.ok(lines.some((l) => /crashed-job\.json/.test(l) && l.endsWith('(stale, owner gone)')), 'the stale sentinel is named and marked');
     assert.ok(
-      lines.includes('last run: logs/2026-08-05-newer-job, ingest 2 of 2, running, 2026-08-05T10:10:00.000Z'),
+      lines.includes('last run: logs/2026-08-05-newer-job, ingest, running, 2026-08-05T10:10:00.000Z'),
       'the last run line names the newer directory and its last record',
     );
   });
