@@ -130,7 +130,7 @@ One row per phase, written by the phase's closing pull request.
 | 0 Score | done | consumer: Muhanad-husn/RLM<br>phases: 0 to 5, 2026-09-05 to 2026-09-08<br>days: 4<br>dollars: 3.50<br>prs: 48 merged<br>interventions: 1.40 per merged PR (67 messages, 41 merge decisions excluded, 38 sessions)<br>executed: none declared<br>harness: bash 1 node, grep 0, read 0, task 0; session start 839 lines; tests 0.77 of source (9534 / 12348)<br>consumer: Muhanad-husn/RLM-Challenge (from record)<br>phases: all, 2026-08-21 to 2026-09-05<br>days: 16<br>dollars: 20.58<br>prs: 117 merged of 122<br>interventions: no transcripts<br>executed: none declared<br>harness: no checkout | harness: bash 1 node, grep 0, read 0, task 0; session start 835 lines; tests 1.76 of source (17005 / 9677) | 2026-09-08 |
 | 1 Invariants | done | consumer: none (phase 1 has no consumer) | plugin: bash 1 node, grep 0, read 0, task 0<br>harness: bash 1 node, grep 0, read 0, task 0; session start 836 lines; tests 1.72 of source (17021 / 9899) | 2026-09-16 |
 | 2 Sensorium | done | score: 7 Compare done, sample 4 recall 86.4 (8 of 8 phases done)<br>bar: Phase 5 under 70 on sample 1 after $25 spent means the method is wrong.<br>dollars: 18.95 of 50, balance 31.05 (LEDGER.md)<br>runs: none live<br>last run: none<br>commitment: none declared<br>executed: none declared<br>(empty git repository) score: none declared | harness: bash 1 node, grep 0, read 0, task 0; session start 834 lines<br>harness: bash 1 node, grep 0, read 0, task 0; session start 834 lines; tests 1.72 of source (17995 / 10489) | 2026-09-16 |
-| 3 Knowledge | not started | | | |
+| 3 Knowledge | done | consumer: none (phase 3 has no consumer)<br>grade-plugin: 0 of 20 expectations failing<br>then: 4 | plugin: session start 6 lines (budget 150)<br>prose: 1,067 lines under `plugin/skills` and `plugin/references` (budget 800, over by 267 — see the pull request)<br>harness: bash 1 node, grep 0, read 0, task 0; session start 836 lines; tests 1.58 of source (15865 / 10064) | 2026-09-16 |
 | 4 Run 1 | not started | | | |
 | 5 Run 2 | not started | | | |
 | 6 Removal | not started | | | |
@@ -282,5 +282,32 @@ Made 2026-09-16, in phase 2:
 Made 2026-09-16: RLM shipped and went public; no further RLM phases run. Phase 4 moves
 to CIP's next milestone under the plugin; RLM's phases 0 to 5 row (section 5a, phase 0)
 stays the reference score, not a live bar.
+
+Made 2026-09-16, in phase 3:
+
+1. One references directory, `plugin/references/<topic>.md`, one topic per file; each
+   file's first lines name the incident or measurement it carries, by its `docs/EVIDENCE.md`
+   id or its number. Skill-local `references/` directories are gone.
+2. The grader is rewritten first and counts nothing: it checks the roster-agnostic shape
+   (no refuse-family word, no `disable-model-invocation` outside `sprint-plan`, no
+   step-ordered lane, the read budget, reference citations) so slices 02 to 05 could each
+   delete or rename skills without touching it.
+3. A step-ordered lane is an ordered list of three or more items in a SKILL.md body,
+   outside `sprint-plan`; the grader also prints the `then:` count as a number, never a
+   check.
+4. The tests that pinned lanes went with the lanes: a deleted lane has no test, a rewritten
+   skill is prose and gets none (D20).
+5. `tdd-plan` is deleted and is not in section 3's table. The parts of `slicing-guide.md`
+   that carried a measurement moved to `references/slicing.md`, which `sprint-plan` and
+   `build` both point at.
+6. `tdd-ci` became a reference, `references/ci.md`, with its workflow templates beside it
+   under `references/workflows/`.
+7. `new-project` asks one question, the product oracle, before writing a line, and writes
+   `RULES.md` with a `Kill line` item, `PLAN.md` with a status table in the phase 2 shape,
+   `LEDGER.md` when the answer says money moves, and `COMMITMENTS.md`, landing one green
+   commit on `main`.
+8. The score row's harness cell prints the plugin's own read budget, as phase 1's row did
+   with `plugin:`, so the 150-line bar is measured on the artefact, not on the founder's
+   machine.
 
 No decision is open.
