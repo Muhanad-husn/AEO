@@ -50,8 +50,7 @@ function identicalPaths(text) {
 
 /** True when the section's first line of prose begins with "None". */
 function sectionSaysNone(text) {
-  const lines = text.split(/?
-/);
+  const lines = text.split(/\r?\n/);
   const start = lines.findIndex((line) => line.trim() === SECTION_HEADING);
   const body = lines.slice(start + 1).find((line) => line.trim() !== '');
   return body !== undefined && body.trim().startsWith('None');
