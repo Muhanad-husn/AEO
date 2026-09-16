@@ -18,6 +18,9 @@
 //    Two cases sit outside it and are pinned by tests rather than claimed as covered:
 //    a gate file that crashes at module scope before runGate is entered, and a gate
 //    that breaks the contract above and calls process.exit itself.
+//    A gate that allows and still has something to say calls warn(text) instead. A
+//    warning is not a decision: it never changes an exit code, and runGate writes it as
+//    one JSON object on stdout on the clean path only.
 //
 // 2. IDENTITY IS WHOLE-TOKEN OR WHOLE-SEGMENT, NEVER SUBSTRING (V-12). An argv identity
 //    test goes through matchesGitSubcommand; a path containment test goes through
@@ -86,6 +89,28 @@ export function block(reason) {
   throw new BlockDecision(blockLatched);
 }
 
+// Latched the same way, and for the same reason: a gate that wraps its own body in
+// try/catch must not be able to lose what it said. A warning is not a decision, so this
+// latch is read only where the gate already decided to allow.
+let warnLatched = null;
+
+/**
+ * Say something about this call without deciding it (#169).
+ *
+ * A gate warns when it allowed on what it could read and something it could not read is
+ * worth naming. runGate writes it on the clean path, as one JSON object on stdout. It
+ * never changes an exit code: a call that blocks still blocks, and a call that crashes
+ * still blocks. Two warnings arrive as one object, one per line, because a hook that
+ * writes two objects has its whole output discarded.
+ *
+ * @param {string} text Stated to the session. Blank text records nothing.
+ */
+export function warn(text) {
+  const line = String(text ?? '').trim();
+  if (line === '') return;
+  warnLatched = warnLatched === null ? line : `${warnLatched}\n${line}`;
+}
+
 function finish(code, message) {
   if (message) {
     try {
@@ -95,6 +120,49 @@ function finish(code, message) {
     }
   }
   process.exit(code);
+}
+
+/**
+ * The clean exit of a gate that warned: one JSON object on stdout, then exit 0 (#169).
+ *
+ * `hookSpecificOutput.additionalContext` is the field the running Claude Code surfaces
+ * to the model, confirmed live on 2.1.270 against a probe that put a different string in
+ * each field. `systemMessage` carries the same text to the user's transcript, so the
+ * person reading along sees what the model was told. No permission decision is stated:
+ * a control run showed the warning is delivered without one, and stating `allow` could
+ * skip the user's own permission prompt for a command the gate could not read.
+ */
+function finishWithWarning(name, payload, text) {
+  const event = typeof payload?.hook_event_name === 'string' && payload.hook_event_name !== ''
+    ? payload.hook_event_name
+    : 'PreToolUse';
+  const body = {
+    hookSpecificOutput: {
+      hookEventName: event,
+      additionalContext: text,
+    },
+    systemMessage: text,
+  };
+  let line;
+  try {
+    line = `${JSON.stringify(body)}\n`;
+  } catch {
+    line = null; // Unserialisable text is not worth an exit code. The call was allowed.
+  }
+  if (line !== null) {
+    try {
+      writeSync(1, line);
+    } catch {
+      // Loud skip, never a quiet pass (L-08): the call still proceeds, and losing the
+      // warning must not change that, but it is said somewhere.
+      try {
+        writeSync(2, `${name}: a warning could not be written to stdout.\n`);
+      } catch {
+        // Both streams are gone. The call was allowed; there is nothing left to say.
+      }
+    }
+  }
+  process.exit(0);
 }
 
 const CANNOT_DECIDE =
@@ -190,7 +258,10 @@ export async function runGate({ name, run }) {
     );
   }
 
+  // A warning never changes an exit code (#169), so the block latch is read first and a
+  // warning latched beside it is dropped: the stderr reason is what a blocked call needs.
   if (blockLatched !== null) return finish(2, `BLOCKED: ${blockLatched}`);
+  if (warnLatched !== null) return finishWithWarning(name, payload, warnLatched);
   return finish(0, null);
 }
 

@@ -5,7 +5,7 @@
 // tests/ and never ships: plugin/hooks/ holds gates and the library and nothing else
 // (D1), and the shipped plugin carries no test files.
 
-import { block, runGate } from '../../../plugin/hooks/lib.mjs';
+import { block, runGate, warn } from '../../../plugin/hooks/lib.mjs';
 
 const mode = process.env.AEO_FIXTURE_MODE ?? 'allow';
 
@@ -87,6 +87,27 @@ await runGate({
         // the library can stop one that does.
         process.exit(7);
         return;
+
+      case 'warn':
+        // A gate that allows and still has something to say. No `return` in front of
+        // warn(): unlike block() it does not throw, and the latch is what carries it.
+        warn('fixture warned about the command');
+        return;
+
+      case 'warn-twice':
+        warn('fixture warned first');
+        warn('fixture warned again');
+        return;
+
+      case 'warn-block':
+        // A warning never changes an exit code. This one still exits 2.
+        warn('fixture warned before blocking');
+        block(`fixture blocked ${payload.tool_name}`);
+        return;
+
+      case 'warn-throw':
+        warn('fixture warned before crashing');
+        throw new Error('fixture exploded after warning');
 
       case 'echo':
         // Proves the parsed payload reaches the gate intact.

@@ -171,6 +171,31 @@ function assertAllowed(result, message) {
   assert.doesNotMatch(result.stderr, /^BLOCKED: /m, `${message}: blocked when it should have allowed`);
 }
 
+/**
+ * A call the guard allowed while saying something about it (#169).
+ *
+ * The warning reaches the session as one JSON object on stdout. Anything else there, a
+ * second object or a line of prose beside it, and the session sees none of it, so this
+ * parses stdout rather than matching it.
+ */
+function assertWarned(result, pattern, message) {
+  assert.equal(result.status, 0, `${message}: expected exit 0, got ${result.status}\n${result.stderr}`);
+  assert.doesNotMatch(result.stderr, /^BLOCKED: /m, `${message}: blocked when it should have warned`);
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout);
+  } catch {
+    assert.fail(`${message}: stdout is not one JSON object: ${JSON.stringify(result.stdout)}`);
+  }
+  assert.equal(parsed.hookSpecificOutput.permissionDecision, undefined, `${message}: a warning must not decide permission`);
+  assert.match(
+    parsed.hookSpecificOutput.additionalContext,
+    pattern,
+    `${message}: warned, but not about the rule under test\n${result.stdout}`,
+  );
+  return parsed;
+}
+
 // The rule each block message names. Asserting on these is what stops a mutation from
 // leaving the battery green because something else happened to block.
 const NO_SEAM = /sets no AEO_DATA_ROOT/;
@@ -183,8 +208,9 @@ const OPERATES_IN = /this command operates in .*inside the production data root/
 const LIVE_RUN = /a long job is running and this would execute code alongside it/;
 const SENTINEL_UNREADABLE = /sentinel is present but unreadable/;
 const SENTINEL_DIR_UNREADABLE = /could not be read \(.*\), so the gate cannot tell whether a long job is running/;
-const CD_UNNAMEABLE = /changes directory to somewhere the guard cannot name/;
-const UNREADABLE_COMMAND = /could not be read as a sequence of shell commands/;
+// The two rules that warn instead of refusing (#169). Same wording, read off stdout.
+const WARNS_UNNAMED_CD = /changes directory to somewhere the guard cannot name/;
+const WARNS_UNREADABLE = /could not be read as a sequence of shell commands/;
 
 // A sandbox and a production root that are real directories and are not related.
 function roots() {
@@ -970,18 +996,19 @@ describe('a cd the shell honours, in every syntax that reaches it', () => {
     }
   });
 
-  // Fail closed: a directory the guard cannot name is not a directory it can clear.
-  test('a cd to somewhere the guard cannot name blocks', () => {
+  // #169: a directory the guard cannot name is judged on the directories it did name,
+  // and the session is told which one could not be read.
+  test('a cd to somewhere the guard cannot name warns and allows', () => {
     const { base, env } = setup();
     for (const command of ['cd $PROD && rm -rf corpus', 'cd && rm -rf corpus', 'cd - && rm -rf corpus']) {
-      assertBlockedBecause(guard({ payload: bash(command, base), env }), CD_UNNAMEABLE, JSON.stringify(command));
+      assertWarned(guard({ payload: bash(command, base), env }), WARNS_UNNAMED_CD, JSON.stringify(command));
     }
   });
 
-  test('a command that cannot be read at all blocks', () => {
+  test('a command that cannot be read at all warns and allows', () => {
     const { base, env } = setup();
     for (const command of ['rm -rf `cat target.txt`', "rm -rf 'corpus", 'cd "prod && rm -rf corpus']) {
-      assertBlockedBecause(guard({ payload: bash(command, base), env }), UNREADABLE_COMMAND, JSON.stringify(command));
+      assertWarned(guard({ payload: bash(command, base), env }), WARNS_UNREADABLE, JSON.stringify(command));
     }
   });
 
@@ -992,6 +1019,138 @@ describe('a cd the shell honours, in every syntax that reaches it', () => {
     const { base, prod, env } = setup();
     const command = `cat > run.sh <<EOF\ncd ${prod}\nrm -rf corpus\nEOF`;
     assertAllowed(guard({ payload: bash(command, base), env }), 'a cd inside a heredoc body');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A command the guard cannot read is judged on what it can read (#169)
+// ---------------------------------------------------------------------------
+//
+// Refusing outright was the safe-looking answer and it refused `echo "unterminated`,
+// which reaches no data at all. The rules below it do not need the parse: a token that
+// names a path is a path whether or not the quote closes, the directory the call runs in
+// is known from the payload, and the sentinel matches on tokens. So both rules now run
+// what they can and say what they could not read.
+
+describe('a command the guard cannot read is judged on what it can read (#169)', () => {
+  const setup = () => {
+    const { base, live, sandbox } = roots();
+    mkdirSync(path.join(live, 'index'), { recursive: true });
+    return { base, live, sandbox, env: { [LIVE]: live, [DATA]: sandbox } };
+  };
+
+  test('an unreadable command that reaches nothing runs, and the warning names it', () => {
+    const { base, env } = setup();
+    const parsed = assertWarned(guard({ payload: bash('echo "unterminated', base), env }), WARNS_UNREADABLE, 'echo');
+    assert.match(parsed.hookSpecificOutput.additionalContext, /echo "unterminated/);
+  });
+
+  test('an unreadable command still blocks on a path inside production data', () => {
+    const { base, live, env } = setup();
+    const command = `cat "unterminated ${path.join(live, 'index.json')}`;
+    assertBlockedBecause(guard({ payload: bash(command, base), env }), NAMES_LIVE_DATA, command);
+  });
+
+  // The adversarial read on this slice: a quote is not a way past the token judgement.
+  // The token regex takes no opinion from an opening quote it never sees closed, so the
+  // path inside it is still a token. A path with a space in it splits at the space, and
+  // the left half is still inside the production root, which is what blocks.
+  test('an unterminated quote does not hide a path inside production data', () => {
+    const { base, live, env } = setup();
+    mkdirSync(path.join(live, 'my data'), { recursive: true });
+    for (const command of [
+      `cat "${path.join(live, 'index.json')}`,
+      `cat '${path.join(live, 'index.json')}`,
+      `cat "${path.join(live, 'my data', 'index.json')}`,
+      `cat "unterminated ${path.join(live, 'index.json')} and more`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, base), env }), NAMES_LIVE_DATA, command);
+    }
+  });
+
+  // The shape that does escape, pinned rather than claimed as fixed: a production root
+  // whose OWN path contains a space. The split then leaves a left half that is a sibling
+  // of the root rather than a child of it, and a right half that is relative. The seam
+  // rule still covers the ordinary way a run reaches production data; what escapes here
+  // is one command naming one path by hand inside a quote that never closes.
+  test('a production root whose own path contains a space is a known miss', () => {
+    const base = tempDir();
+    const live = path.join(base, 'my production');
+    const sandbox = path.join(base, 'sandbox');
+    mkdirSync(live, { recursive: true });
+    mkdirSync(sandbox, { recursive: true });
+    const command = `cat "${path.join(live, 'index.json')}`;
+    assertWarned(
+      guard({ payload: bash(command, base), env: { [LIVE]: live, [DATA]: sandbox } }),
+      WARNS_UNREADABLE,
+      command,
+    );
+  });
+
+  test('an unreadable command still blocks on the directory it runs in', () => {
+    const { live, env } = setup();
+    assertBlockedBecause(guard({ payload: bash('echo "unterminated', live), env }), OPERATES_IN, 'run from inside');
+  });
+
+  test('an unreadable command still blocks on a missing seam', () => {
+    const { base, live } = setup();
+    assertBlockedBecause(
+      guard({ payload: bash('echo "unterminated', base), env: { [LIVE]: live, [DATA]: undefined } }),
+      NO_SEAM,
+      'the seam rule needs no parse',
+    );
+  });
+
+  test('an unreadable command still blocks the declared suite during a live run', () => {
+    const repo = makeRepo();
+    raise(repo);
+    assertBlockedBecause(guard({ payload: bash('npm test "unterminated', repo) }), LIVE_RUN, 'sentinel on tokens');
+  });
+
+  test('a cd the guard cannot name runs, and the warning names the command', () => {
+    const { base, env } = setup();
+    const parsed = assertWarned(guard({ payload: bash('cd $DIR && ls', base), env }), WARNS_UNNAMED_CD, 'cd $DIR && ls');
+    assert.match(parsed.hookSpecificOutput.additionalContext, /cd \$DIR && ls/);
+  });
+
+  test('a cd the guard cannot name still blocks on an absolute path inside production data', () => {
+    const { base, live, env } = setup();
+    const command = `cd $DIR && cat ${path.join(live, 'x')}`;
+    assertBlockedBecause(guard({ payload: bash(command, base), env }), NAMES_LIVE_DATA, command);
+  });
+
+  test('a cd the guard cannot name still blocks on a directory the walk did resolve', () => {
+    const { live, env } = setup();
+    assertBlockedBecause(guard({ payload: bash('cd $DIR && ls', live), env }), OPERATES_IN, 'started inside');
+  });
+
+  // A KNOWN MISS, pinned rather than claimed as covered. The tokeniser splits on a space
+  // it sees outside a quote, so an unterminated quote around a path whose PRODUCTION ROOT
+  // ITSELF contains a space leaves two tokens, and neither of them resolves inside that
+  // root. The command reaches production data and gets a warning instead of a refusal. A
+  // space below the root is caught, because the token left of it is still inside the root
+  // (the test above). What still covers the ordinary shape of this is the seam rule,
+  // which needs no parse; what escapes is one command naming one path by hand.
+  test('an unterminated quote around a production root whose own path contains a space is not caught', () => {
+    const base = tempDir();
+    const live = path.join(base, 'live data');
+    const sandbox = path.join(base, 'sandbox');
+    mkdirSync(live, { recursive: true });
+    mkdirSync(sandbox, { recursive: true });
+    assertWarned(
+      guard({ payload: bash(`cat "${path.join(live, 'index.json')}`, base), env: { [LIVE]: live, [DATA]: sandbox } }),
+      WARNS_UNREADABLE,
+      'a space inside the production root defeats the token split',
+    );
+  });
+
+  // With nothing declared there is nothing to protect and nothing to say. A guard that
+  // narrated every backtick in a project with no production data is a guard people delete.
+  test('with no declaration at all an unreadable command says nothing', () => {
+    const { base } = setup();
+    const r = guard({ payload: bash('echo "unterminated', base) });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, '');
   });
 });
 
