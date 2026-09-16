@@ -37,8 +37,6 @@ what it cost, and which consumer number it expects to move.
 **The harness: one hook, two skills, one readout, nothing else.**
 - `block-merge`, at `~/.claude/hooks/block-merge.mjs`, wired in `~/.claude/settings.json`.
   It keeps merging and branch deletion with the founder and applies to every subagent.
-  Known limit: it matches command text, so a subagent cannot grep for or commit a message
-  containing the two words `git merge` side by side; write them apart.
 - `/sprint-plan`, typed by the founder once per phase. It slices the phase into issues
   under `plans/` and files them on his approval.
 - `/status`, for the readout at any time. The same renderer runs at session start from
