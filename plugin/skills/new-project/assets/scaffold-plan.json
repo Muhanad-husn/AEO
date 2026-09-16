@@ -35,6 +35,28 @@
     "accidentally-enabled one. It is Claude Code's own settings file, not the project config",
     "file D10 forbids, and it is tracked in git: .gitignore excludes only settings.local.json.",
     "",
+    "A step carrying \"when\" is written only when the founder's answers match it: every key",
+    "in the object names an entry in \"answers\", and the answer given must be one of the",
+    "values listed. A step with no \"when\" is always written. That is the whole mechanism,",
+    "deliberately: the plan says which files a project gets and the answers decide, with no",
+    "expression language to learn or to get wrong. LEDGER.md is the one conditional step",
+    "today, because a project where no money moves has no dollars to carry.",
+    "",
+    "A step carrying \"requires\" names the literal strings its authored text has to contain.",
+    "These are not taste. Each one is what a reader under plugin/hooks/ matches on, so a",
+    "file that drops its marker leaves the sensorium printing \"none declared\" for that line",
+    "while the file itself still looks written: the status table under a Status heading is",
+    "the score (phase 2 decision 3), the **Kill line.** item is the bar (phase 2 decision",
+    "4), Ceiling $<n> is where dollars come from (phase 0 decision 2), and the Date /",
+    "Recommendation / Executed header is the commitment ledger (phase 0 decision 4).",
+    "",
+    "answers holds the two questions SKILL.md asks before it writes a line. The oracle is",
+    "the one project-specific thing (PLAN.md section 2): a key and rubric, an acceptance",
+    "suite over samples, the founder as reader with a written checklist, or none yet. A",
+    "project that answers \"none yet\" still gets a status table, so its score prints as",
+    "0 of <n> phases done rather than as nothing at all. money decides LEDGER.md, and a",
+    "yes carries the ceiling its first line records.",
+    "",
     "founderDocs (issue #124) is not a step; it is the rule SKILL.md's step 3 applies before",
     "it starts walking the steps array. A founder who writes a PRD, a spec, a research note",
     "or a sketch into the project root before scaffolding gets it filed under destination",
@@ -83,6 +105,35 @@
     },
     {
       "stage": 0,
+      "path": "RULES.md",
+      "role": "repository",
+      "authored": true,
+      "requires": ["**Kill line.**"]
+    },
+    {
+      "stage": 0,
+      "path": "PLAN.md",
+      "role": "repository",
+      "authored": true,
+      "requires": ["## Status", "| Phase | State | Score |"]
+    },
+    {
+      "stage": 0,
+      "path": "LEDGER.md",
+      "role": "repository",
+      "authored": true,
+      "when": { "money": ["yes"] },
+      "requires": ["Ceiling $", "| Phase | Dollars | Balance |"]
+    },
+    {
+      "stage": 0,
+      "path": "COMMITMENTS.md",
+      "role": "repository",
+      "authored": true,
+      "requires": ["| Date | Recommendation | Executed |"]
+    },
+    {
+      "stage": 0,
       "path": "README.md",
       "role": "repository",
       "authored": true
@@ -115,11 +166,24 @@
       "authored": true
     }
   ],
+  "answers": {
+    "oracle": {
+      "values": ["key and rubric", "acceptance suite", "founder as reader", "none yet"]
+    },
+    "money": {
+      "values": ["yes", "no"],
+      "ceilingWith": "yes"
+    }
+  },
   "founderDocs": {
     "destination": "docs",
     "excludeAtRoot": [
       "README.md",
       "CLAUDE.md",
+      "RULES.md",
+      "PLAN.md",
+      "LEDGER.md",
+      "COMMITMENTS.md",
       "LICENSE.md",
       "CONTRIBUTING.md",
       "CODE_OF_CONDUCT.md",
