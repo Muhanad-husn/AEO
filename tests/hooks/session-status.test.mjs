@@ -15,7 +15,7 @@
 // flaky because the real CLI hung or rate-limited.
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
@@ -629,99 +629,39 @@ describe('production data root', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Newest run log
+// Run log excerpt: dropped (#183)
 // ---------------------------------------------------------------------------
 
-// Selection is asserted with mtime pinned by hand in every case below, never left to
-// whatever the clock did during the test.
-//
-// The original of the first test wrote two summaries back to back and let their write
-// order decide. Two files created in the same millisecond tie on mtime, the hook's
-// comparison was `>` against a running best, and the tie then resolved by readdir
-// order, which returns `2026-08-01-older-job` first. That is a one-in-three test flake
-// and the same bug in the shipped hook: the status reporter would name a stale log as
-// the newest, which is precisely what L-08 built it to stop. Nothing here can now pass
-// by luck: the timestamps are set, and two of the five cases make mtime point the
-// wrong way on purpose.
+// This hook printed an eight-line excerpt of the newest logs/<dir>/summary.md, quoted
+// with a leading `> ` on every line. That reporting moved to the sensorium's own runs
+// section (plugin/hooks/sensorium/30-runs.mjs, see tests/hooks/sensorium-runs.test.mjs
+// for its own battery), which reads run.jsonl's structured record instead of
+// summary.md's prose. findNewestRunLog and compareRunLogs moved with it, so this hook
+// no longer reads logs/ at all; the acceptance criterion (plans/phase-2/03-runs.md) is
+// just that no `> `-prefixed line survives.
 
-/** A `logs/<name>/summary.md` whose mtime is pinned to `mtime`. */
-function writeRunLog(repo, name, body, mtime) {
+/** A `logs/<name>/summary.md` file, with content long enough to have excerpted before. */
+function writeSummaryOnly(repo, name, body) {
   const dir = path.join(repo, 'logs', name);
   mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, 'summary.md');
-  writeFileSync(file, body);
-  utimesSync(file, mtime, mtime);
-  return file;
+  writeFileSync(path.join(dir, 'summary.md'), body);
+  return dir;
 }
 
-const EIGHT_PLUS_LINES = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
+const TWENTY_LINES = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n');
 
-describe('newest run log', () => {
-  test('picks the newest date when mtimes are identical, capped at 8 lines', () => {
+describe('the dropped run log excerpt (#183)', () => {
+  test('no line begins with "> ", even with a long logs/<dir>/summary.md present', () => {
     const repo = makeRepo();
-    const sameInstant = new Date('2026-08-03T12:00:00Z');
-    writeRunLog(repo, '2026-08-01-older-job', '# stale entry\n\nshould not appear\n', sameInstant);
-    writeRunLog(repo, '2026-08-02-newer-job', `# newer job\n\n${EIGHT_PLUS_LINES}\n`, sameInstant);
+    writeSummaryOnly(repo, '2026-08-05-newer-job', `# newer job\n\n${TWENTY_LINES}\n`);
 
     const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
-    assert.match(r.stdout, /\*\*Newest run log:\*\* `logs\/2026-08-02-newer-job\/summary\.md`/);
-    assert.doesNotMatch(r.stdout, /stale entry/);
-    const quotedLines = r.stdout.split('\n').filter((l) => l.startsWith('> '));
-    assert.equal(quotedLines.length, 9, 'eight excerpt lines plus the truncation marker');
-    // 21 non-blank lines in the summary, eight shown. Without the marker an excerpt
-    // whose ninth line reads "3 acceptance tests still failing" looks complete.
-    assert.match(quotedLines[8], /excerpt: 13 more line\(s\) in the summary/);
-  });
-
-  test('the date in the name beats mtime, so a re-touched old log is not the current one', () => {
-    // mtime says the older job is newest. The name says otherwise, and the name is
-    // what a reader means by "newest run log". This case is deterministic and the old
-    // mtime-only selection fails it every time.
-    const repo = makeRepo();
-    writeRunLog(repo, '2026-08-01-older-job', '# stale entry\n\nshould not appear\n', new Date('2026-08-04T12:00:00Z'));
-    writeRunLog(repo, '2026-08-02-newer-job', '# newer job\n', new Date('2026-08-02T12:00:00Z'));
-
-    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
-    assert.match(r.stdout, /\*\*Newest run log:\*\* `logs\/2026-08-02-newer-job\/summary\.md`/);
-    assert.doesNotMatch(r.stdout, /stale entry/);
-  });
-
-  test('a dated log outranks an undated directory whatever its mtime', () => {
-    const repo = makeRepo();
-    writeRunLog(repo, 'scratch', '# undated\n\nshould not appear\n', new Date('2026-08-09T12:00:00Z'));
-    writeRunLog(repo, '2026-08-02-newer-job', '# newer job\n', new Date('2026-08-02T12:00:00Z'));
-
-    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
-    assert.match(r.stdout, /\*\*Newest run log:\*\* `logs\/2026-08-02-newer-job\/summary\.md`/);
-    assert.doesNotMatch(r.stdout, /undated/);
-  });
-
-  test('mtime still decides between two undated directories', () => {
-    const repo = makeRepo();
-    writeRunLog(repo, 'alpha-job', '# alpha\n', new Date('2026-08-01T12:00:00Z'));
-    writeRunLog(repo, 'beta-job', '# beta wrote last\n', new Date('2026-08-05T12:00:00Z'));
-
-    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
-    assert.match(r.stdout, /\*\*Newest run log:\*\* `logs\/beta-job\/summary\.md`/);
-  });
-
-  test('two logs on the same date with identical mtimes still resolve to one answer', () => {
-    // The last tiebreak. Directory names are unique, so this always decides, and the
-    // point is only that it decides the same way every run rather than by readdir
-    // order. Run twice in one test because a single run cannot show stability.
-    const repo = makeRepo();
-    const sameInstant = new Date('2026-08-03T12:00:00Z');
-    writeRunLog(repo, '2026-08-03-aaa-job', '# aaa\n', sameInstant);
-    writeRunLog(repo, '2026-08-03-zzz-job', '# zzz\n', sameInstant);
-
-    const env = fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() });
-    const first = runHook({ payload: { cwd: repo }, env });
-    const second = runHook({ payload: { cwd: repo }, env });
-    assert.match(first.stdout, /\*\*Newest run log:\*\* `logs\/2026-08-03-zzz-job\/summary\.md`/);
     assert.equal(
-      /\*\*Newest run log:\*\* `([^`]+)`/.exec(first.stdout)?.[1],
-      /\*\*Newest run log:\*\* `([^`]+)`/.exec(second.stdout)?.[1],
+      r.stdout.split('\n').some((l) => l.startsWith('> ')),
+      false,
+      'the excerpt block is gone',
     );
+    assert.doesNotMatch(r.stdout, /\*\*Newest run log:\*\*/, 'the header moved to the sensorium\'s runs section');
   });
 
   test('says nothing about run logs when logs/ does not exist', () => {

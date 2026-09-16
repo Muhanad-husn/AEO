@@ -1,6 +1,8 @@
 // SessionStart reporter. Injects the repo's live ground truth into context before the
 // first prompt: branch, HEAD, open issues, open and merged PRs, gate health, and the
-// newest run log.
+// sensorium block (score, bar, live runs; see sensorium.mjs). The newest run log's
+// last progress line moved into the sensorium's own runs section (#183); this hook no
+// longer reads logs/<dir>/summary.md itself.
 //
 // This hook never blocks. That is structural, not a promise: it is built on
 // runReporter (lib.mjs), which owns every exit and always returns 0; there is no
@@ -25,98 +27,13 @@
 // this file sets them directly any more, but this hook's own tests still set the same
 // env vars to reach the fake `gh` the shared module spawns.
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { currentBranch, git, preflight, resolveWorktree, runReporter } from './lib.mjs';
 import { renderSensorium } from './sensorium.mjs';
 import { LIVE_DATA_ROOT_ENV, resolveRoots, settingsDeclarationDir } from './sandbox-guard.mjs';
 import { ISSUE_LIMIT, OPEN_PR_LIMIT, fetchOpenIssues, fetchOpenPrs, formatPrLine, ghJson, renderSection } from './status-render.mjs';
-
-const RUN_LOG_HEAD_LINES = 8;
-
-// A run log directory is named `<YYYY-MM-DD>-<job>`. That date is the primary ordering
-// key because mtime alone cannot order these at all: two summaries written in the same
-// millisecond carry the same mtime, and the tie then falls to readdir order, which is
-// the filesystem's business and not a fact about the runs.
-const RUN_LOG_DATE = /^(\d{4}-\d{2}-\d{2})\b/;
-
-/**
- * Newest first. Four keys, each doing work the one before it could not:
- *
- * 1. Dated directories outrank undated ones. `<date>-<job>` is the convention this
- *    hook reports on; a directory that does not follow it is not a run log by name.
- * 2. Date descending. This is what makes the answer deterministic, and it is what a
- *    reader means by "newest run log": the run's own date, not when the file was last
- *    touched. Re-editing an old summary does not make it the current one.
- * 3. mtime descending. Real signal within one date, and the only signal at all for
- *    undated directories.
- * 4. Name descending. Directory names are unique, so this always decides, which is
- *    the property the old comparison lacked.
- */
-function compareRunLogs(a, b) {
-  if (a.date !== b.date) return a.date < b.date ? 1 : -1; // '' sorts last, so undated ranks below dated
-  if (a.mtimeMs !== b.mtimeMs) return b.mtimeMs - a.mtimeMs;
-  return a.name < b.name ? 1 : a.name > b.name ? -1 : 0;
-}
-
-/**
- * The newest `logs/<job>/summary.md` under the repo root, and its first few non-blank
- * lines.
- *
- * Reporting a stale log as the current one is the exact failure this hook exists to
- * prevent (L-08), so "newest" here is a total order rather than a comparison that can
- * tie.
- */
-function findNewestRunLog(root) {
-  const logsDir = path.join(root, 'logs');
-  if (!existsSync(logsDir)) return null;
-
-  let entries;
-  try {
-    entries = readdirSync(logsDir, { withFileTypes: true });
-  } catch {
-    return null;
-  }
-
-  const candidates = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const summaryPath = path.join(logsDir, entry.name, 'summary.md');
-    if (!existsSync(summaryPath)) continue;
-    let mtimeMs;
-    try {
-      mtimeMs = statSync(summaryPath).mtimeMs;
-    } catch {
-      continue;
-    }
-    candidates.push({
-      name: entry.name,
-      date: RUN_LOG_DATE.exec(entry.name)?.[1] ?? '',
-      mtimeMs,
-      summaryPath,
-    });
-  }
-  if (candidates.length === 0) return null;
-  const newest = candidates.sort(compareRunLogs)[0];
-
-  // `omitted` exists for the same reason the list sections report both sides of their
-  // cap: an excerpt with no marker reads as the whole summary, and the ninth line of a
-  // run log is exactly where "3 acceptance tests still failing" lives.
-  let head = [];
-  let omitted = 0;
-  try {
-    const lines = readFileSync(newest.summaryPath, 'utf8')
-      .split(/\r?\n/)
-      .filter((line) => line.trim() !== '');
-    head = lines.slice(0, RUN_LOG_HEAD_LINES);
-    omitted = lines.length - head.length;
-  } catch {
-    head = [];
-    omitted = 0;
-  }
-  return { rel: path.relative(root, newest.summaryPath).replace(/\\/g, '/'), head, omitted };
-}
 
 /**
  * Whether this session has declared where production data is (D18).
@@ -317,14 +234,6 @@ async function run(payload) {
     lines.push('');
   } else if (!mergedPrs.ok) {
     lines.push(`**Recently merged PRs:** unknown (${mergedPrs.reason}).`, '');
-  }
-
-  const newestLog = findNewestRunLog(root);
-  if (newestLog) {
-    lines.push(`**Newest run log:** \`${newestLog.rel}\``);
-    for (const line of newestLog.head) lines.push(`> ${line}`);
-    if (newestLog.omitted > 0) lines.push(`> _(excerpt: ${newestLog.omitted} more line(s) in the summary)_`);
-    lines.push('');
   }
 
   return lines.join('\n');
