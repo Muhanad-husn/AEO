@@ -183,19 +183,22 @@ describe('renderSensorium', () => {
 // ---------------------------------------------------------------------------
 
 describe('the score section, against RLM\'s own status table and Kill line', () => {
-  test('renderSensorium prints the score and its bar', async () => {
+  // Both repos here carry no COMMITMENTS.md, so the commitment section (#184, added
+  // after this slice) always declares none; its two lines are asserted against
+  // directly in tests/hooks/sensorium-commitment.test.mjs. This checks the score
+  // section's own two lines still come first, not that they are the whole block --
+  // directory discovery means later slices append sections here without this file
+  // needing to enumerate them.
+  test('renderSensorium prints the score and its bar first', async () => {
     const dir = makeRlmRepo();
     const lines = await renderSensorium(dir);
-    // makeRlmRepo() holds no LEDGER.md, so the dollars section (#182) that now
-    // shares this real sensorium/ directory renders "none declared" after these
-    // two lines; that section's own tests are tests/hooks/sensorium-dollars.test.mjs.
-    assert.deepEqual(lines, [EXPECTED_SCORE, EXPECTED_BAR, 'dollars: none declared', EXPECTED_HARNESS]);
+    assert.deepEqual(lines.slice(0, 2), [EXPECTED_SCORE, EXPECTED_BAR]);
   });
 
-  test('a repository with no PLAN.md prints "none declared" for both', async () => {
-    const dir = makeRepo(); // no PLAN.md, no RULES.md, no LEDGER.md
+  test('a repository with no PLAN.md prints "none declared" for both, first', async () => {
+    const dir = makeRepo(); // no PLAN.md, no RULES.md
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, ['score: none declared', 'bar: none declared', 'dollars: none declared', EXPECTED_HARNESS]);
+    assert.deepEqual(lines.slice(0, 2), ['score: none declared', 'bar: none declared']);
   });
 });
 
@@ -224,7 +227,7 @@ describe('session-status.mjs prints the sensorium after gate health and before t
     // between.
     const between = stdout.slice(gateIndex, dataRootIndex);
     assert.ok(
-      between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\ndollars: none declared\n${EXPECTED_HARNESS}\n`),
+      between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\ndollars: none declared\ncommitment: none declared\nexecuted: none declared\n${EXPECTED_HARNESS}\n`),
       'score then bar then harness, as their own three lines, right after the gate section',
     );
   });
@@ -235,7 +238,7 @@ describe('session-status.mjs prints the sensorium after gate health and before t
     assert.match(
       stdout,
       new RegExp(
-        `not one where none was wired\\.\\n\\nscore: none declared\\nbar: none declared\\ndollars: none declared\\n${EXPECTED_HARNESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`,
+        `not one where none was wired\\.\\n\\nscore: none declared\\nbar: none declared\\ndollars: none declared\\ncommitment: none declared\\nexecuted: none declared\\n${EXPECTED_HARNESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`,
       ),
     );
   });
