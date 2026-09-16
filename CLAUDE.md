@@ -16,9 +16,11 @@ the process.
 **Who decides.** Muhanad. He merges. He wants one recommendation with the number behind
 it, not an options list, and no reminders about what is uncommitted.
 
-**How work moves.** One issue is one session and one pull request. The founder reads the
-pull request and merges or not. There are no reviewer or verifier roles, no evidence
-packets, no fix rounds, no pull request template. A pull request body says what changed,
+**How work moves.** One issue is one session and one pull request. The orchestrator
+checks the agents' work: tests, acceptance criterion, prose rules, merge conflicts. When
+the work is correct it presents the pull requests to the founder for approval; when it is
+not, it sends the agent back. The founder merges or not. There are no separate reviewer
+or verifier agents, no evidence packets, no pull request template. A pull request body says what changed,
 what it cost, and which consumer number it expects to move.
 
 **How an issue is built** (the founder's rules, 2026-09-05, carried from RLM):
