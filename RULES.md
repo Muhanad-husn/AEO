@@ -6,9 +6,9 @@ One page. Read before any work in this repository.
 
 1. **The product is a consuming project's number, not this repository's.** A harness
    change earns its place by moving what a project that uses it delivers: days to a correct
-   deliverable, dollars spent, or both. `D:\RLM` is the reference consumer and its
-   `PLAN.md` status table is the score. A pull request says which number it expects to
-   move and by how much; one that moves nothing says so, and the founder decides.
+   deliverable, dollars spent, or both. The live consumer's `PLAN.md` status table is the
+   score. A pull request says which number it expects to move and by how much; one that
+   moves nothing says so, and the founder decides.
 2. **Two attempts per shape, then replace.** A fix that fails twice is not tried a third
    time on the same shape. The third attempt changes the shape, or stops and says the
    method is wrong. That report is a first-class message, not an apology.
@@ -39,13 +39,13 @@ its number. Nothing else.
 Plain. No marketing register. No em dashes. Certainty words come from the source, never
 invented. A rule states what holds now and cites nothing.
 
-## Decisions the founder has made, and one he has not
+## Decisions the founder has made
 
 Made: the `aeo` plugin is off in this repository; one hook, two skills and one readout are
 the whole harness; `plugin/`, `docs/`, `logs/` and `source/` are the first build's record;
 merge is his; prose is free to change.
 
-Open, with this file's proposal:
+Made, section 11:
 
-1. The score for this repository while `D:\RLM` is its only consumer. Proposed: RLM's
-   status table, as is, until a second consumer exists; then days and dollars across both.
+1. The score for this repository is the live consumer's `PLAN.md` status table. RLM's
+   phases 0 to 5 row stays the reference numbers for the bar.

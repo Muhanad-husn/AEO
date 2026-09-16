@@ -81,14 +81,12 @@ absence is loud.
 
 ## 4. Consumers and the score
 
-The plugin is scored on projects that use it, never on itself. Three consumers, of
-different shape on purpose.
+The plugin is scored on projects that use it, never on itself.
 
-| # | Project | Shape | Oracle | Baseline on record |
-|---|---|---|---|---|
-| 1 | `D:\RLM` | Python pipeline, model calls, money | key, rubric, spread | reference only, not a live consumer: RLM shipped and went public 2026-09-12, no further phases. phases 0 to 5: 4 days, $3.50, 48 PRs under one hook and two skills. `RLM-Challenge`: 16 days, $20.58, 122 PRs, no report, under the first build |
-| 2 | `D:\CIP-code` | service with production data at `D:\CIP-data`, 7,000 tests | acceptance suite, founder as reader | filed #127, #130, #133, #134 against the first build: an hour lost to a flaky gate, a day to harness noise, two lockouts |
-| 3 | a fresh project from `new-project` | whatever the founder names; a UI is the useful case | founder as reader with a checklist | none; this is the generalisation test |
+| Project | Status | Record |
+|---|---|---|
+| Past record | closed | `D:\RLM`: phases 0 to 5, 4 days, $3.50, 48 PRs under one hook and two skills. `RLM-Challenge`: 16 days, $20.58, 122 PRs, no report, under the first build. `D:\CIP-code`: issues #127, #130, #133, #134 against the first build, an hour lost to a flaky gate, a day to harness noise, two lockouts. Neither project runs another phase; neither is a live consumer or a continuous benchmark. |
+| Live consumer | open | A fresh project from `new-project`, named by the founder. The plugin is scored on its phases: days from first issue to the phase's gate, dollars, founder interventions per merged pull request (a message that corrects, re-asks or unblocks), and the commitment ledger's executed rate. Read by a script from git, GitHub and the consumer's own ledger; nothing hand-counted. The harness's own cost is printed beside it: node processes per Bash call, lines read at session start, tests over source. |
 
 **The score**, per consumer phase: days from first issue to the phase's gate, dollars,
 founder interventions per merged pull request (a message that corrects, re-asks or
@@ -103,19 +101,18 @@ the gate passes. A gap found later is fixed in the phase that owns it.
 
 | Phase | Artefact | Test against the score | Consumer | Days |
 |---|---|---|---|---|
-| 0 Score | `scripts/score.mjs`: reads a consumer repo and prints days, dollars, PRs, interventions, executed rate, harness cost | Reproduces RLM's phases 0 to 5 row and `RLM-Challenge`'s sixteen days from their records. Two runs byte-identical | 1 | 1 |
+| 0 Score | `scripts/score.mjs`: reads a consumer repo and prints days, dollars, PRs, interventions, executed rate, harness cost | Reproduces past record: RLM's phases 0 to 5 and `RLM-Challenge`'s sixteen days from the records. Two runs byte-identical | past record | 1 |
 | 1 Invariants | `hooks/` at the keep-list of section 3; `hooks.json` with matchers that fire nothing on read tools | `block-merge` structural on the first build's false-positive list. Node processes per call: Grep 0, Bash 1 unarmed, 2 armed. Existing hook tests pass minus the deleted | none | 1 |
-| 2 Sensorium | `session-status` and `/status` printing the section 2 fields, plus the commitment ledger read and write | Against RLM: prints its status row, ledger balance, last recommendation with its executed word. Against a repo with no oracle: prints `score: none declared` | 1 | 1 to 2 |
+| 2 Sensorium | `session-status` and `/status` printing the section 2 fields, plus the commitment ledger read and write | Against past record: prints its status row, ledger balance, last recommendation with its executed word. Against a repo with no oracle: prints `score: none declared` | past record | 1 to 2 |
 | 3 Knowledge | `skills/` rewritten advisory; agents deleted; `new-project` asks the oracle question; references carry every surviving incident | `grade-plugin` finds no `refuses`, no `disable-model-invocation` outside `sprint-plan`, no step-ordered lane. Session-start read budget under 150 lines. Every reference cites an incident or a measurement | none | 2 |
-| 4 Run 1 | CIP's next milestone built under the plugin, `AEO_LIVE_DATA_ROOT` declared | No lockout, no false refusal, sentinel and data rules hold live. Score row beside CIP's record under the first build | 2 | CIP's own |
-| 5 Run 2 | A fresh project from `new-project` to its first gated artefact | Scaffold to first green commit in one session; oracle declared or `none declared` printed; score row exists | 3 | 1 to 2 |
-| 6 Removal | Each surviving rule taken out in turn, the cheapest consumer rerun, the rule deleted if the score holds | The plugin ships with only rules that failed the removal test. `v1.0.0` tagged with the three score rows in the release notes | all | 2 |
+| 4 Run 1 | The live consumer's first real milestone built under the plugin, `AEO_LIVE_DATA_ROOT` declared | No lockout, no false refusal, sentinel and data rules hold live. Founder interventions per merged pull request at or under RLM's record of 1.40 | live consumer | live consumer's phase duration |
+| 5 Run 2 | The live consumer from `new-project` to its first gated artefact | Scaffold to first green commit in one session; oracle declared or `none declared` printed; score row exists | live consumer | 1 to 2 |
+| 6 Removal | Each surviving rule taken out in turn, the live consumer rerun, the rule deleted if the score holds | The plugin ships with only rules that failed the removal test. `v1.0.0` tagged with the live consumer's score row and the reference numbers | live consumer | 2 |
 
-**The bar.** Phase 4 is the bar: CIP under the plugin must produce no lockout and no
+**The bar.** Phase 4 is the bar: the live consumer under the plugin must produce no lockout and no
 false refusal, and must not cost more founder interventions per merged pull request than
-CIP's record under the first build (#127, #130, #133, #134: an hour lost to a flaky gate,
-a day to harness noise, two lockouts). If the plugin adds nothing over CIP's record under
-the first build, that record is the product and the plugin is the installer for it.
+RLM's record of 1.40. If the plugin adds nothing over the live consumer's own record under
+the first build, the record is the product and the plugin is the installer for it.
 
 **Kill line.** If phase 4 misses the bar, or phase 4 or 5 produces a lockout or a refusal of
 legitimate work, the layer that caused it is removed, not fixed, before another phase
@@ -309,5 +306,7 @@ Made 2026-09-16, in phase 3:
 8. The score row's harness cell prints the plugin's own read budget, as phase 1's row did
    with `plugin:`, so the 150-line bar is measured on the artefact, not on the founder's
    machine.
+
+Made 2026-09-16: RLM and CIP are finished projects and neither is a consumer or a benchmark; phase 4 and 5 run on the fresh project from `new-project`, phase 6 reruns it. This supersedes the 2026-09-16 line that moved phase 4 to CIP.
 
 No decision is open.
