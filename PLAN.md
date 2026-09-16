@@ -117,7 +117,7 @@ CIP's record under the first build (#127, #130, #133, #134: an hour lost to a fl
 a day to harness noise, two lockouts). If the plugin adds nothing over CIP's record under
 the first build, that record is the product and the plugin is the installer for it.
 
-**Kill line.** If phase 4 misses the bar, or phase 4 produces a lockout or a refusal of
+**Kill line.** If phase 4 misses the bar, or phase 4 or 5 produces a lockout or a refusal of
 legitimate work, the layer that caused it is removed, not fixed, before another phase
 runs. Two misses on the same layer and the layer is gone from the plan.
 
