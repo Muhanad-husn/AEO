@@ -16,6 +16,8 @@ import path from 'node:path';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { blocks, passes } from './fixtures/block-merge-cases.mjs';
+
 const gatePath = path.join(import.meta.dirname, '..', '..', 'plugin', 'hooks', 'block-merge.mjs');
 
 // ---------------------------------------------------------------------------
@@ -358,16 +360,18 @@ describe('identity policy (F5)', () => {
     assert.equal(r.status, 0);
   });
 
-  test('a main session run with --agent, under a non-aeo identity, is not enforced against', () => {
-    // agent_type is present here (C-02's exact trap), but it does not match any of
-    // this plugin's `aeo:<role>` identities, so isAnyAeoRole is false and the
-    // orchestrator's own approved merge path stays open.
+  test('a plain dispatched subagent IS enforced against', () => {
+    // Slice 02 widened identity to any non-empty agent_type, the rule the founder's
+    // global copy already applies. Work here is built by plain dispatched agents,
+    // `general-purpose` among them, so the narrow `aeo:<role>` read left the gate
+    // enforcing against nobody who actually runs. The orchestrator is recognised by
+    // carrying no agent_type at all, which is the case above.
     const r = runHook({
       tool_name: 'Bash',
       tool_input: { command: 'git merge feat/x' },
       agent_type: 'general-purpose',
     });
-    assert.equal(r.status, 0);
+    assert.equal(r.status, 2, r.stderr);
   });
 
   test('aeo:builder is enforced against', () => {
@@ -382,19 +386,59 @@ describe('identity policy (F5)', () => {
     }
   });
 
-  test(
-    "a foreign plugin's namespaced subagent is NOT enforced against, " +
-      'this pins the narrow policy (isAnyAeoRole), not a broader one',
-    () => {
-      const r = runHook(bash('git merge feat/x', { agent_type: 'other-plugin:builder' }));
-      assert.equal(r.status, 0);
-    },
-  );
-
-  test('the bare frontmatter name never fires, same as the library contract', () => {
-    const r = runHook(bash('git merge feat/x', { agent_type: 'builder' }));
-    assert.equal(r.status, 0);
+  test("a foreign plugin's namespaced subagent is enforced against too", () => {
+    const r = runHook(bash('git merge feat/x', { agent_type: 'other-plugin:builder' }));
+    assert.equal(r.status, 2, r.stderr);
   });
+
+  test('a bare frontmatter name is a subagent as well', () => {
+    const r = runHook(bash('git merge feat/x', { agent_type: 'builder' }));
+    assert.equal(r.status, 2, r.stderr);
+  });
+
+  test('an empty or whitespace agent_type reads as the orchestrator', () => {
+    for (const agent_type of ['', '   ']) {
+      const r = runHook({ tool_name: 'Bash', tool_input: { command: 'git merge feat/x' }, agent_type });
+      assert.equal(r.status, 0, JSON.stringify(agent_type));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// structure, not text (slice 02)
+// ---------------------------------------------------------------------------
+//
+// The two lists live in fixtures/block-merge-cases.mjs, each entry naming the first
+// build record it came from. Every pass is run on both shell tools, because a gate that
+// reads Bash and not PowerShell is the C-07 shape. Every block is run twice as well:
+// once for a subagent, which must be refused, and once with no agent_type at all, which
+// is the founder's own approved path and must go through.
+
+describe('the shell arm judges structure, not the whole string as text (slice 02)', () => {
+  for (const { command, source } of passes) {
+    test(`passes for a subagent: ${command}`, () => {
+      for (const payload of [
+        { tool_name: 'Bash', tool_input: { command }, agent_type: 'general-purpose' },
+        { tool_name: 'PowerShell', tool_input: { command }, agent_type: 'general-purpose' },
+      ]) {
+        const r = runHook(payload);
+        assert.equal(r.status, 0, `${payload.tool_name}: ${source}\n${r.stderr}`);
+      }
+    });
+  }
+
+  for (const { command, source, fallback } of blocks) {
+    test(`blocked for a subagent: ${command}`, () => {
+      const r = runHook({ tool_name: 'Bash', tool_input: { command }, agent_type: 'general-purpose' });
+      assert.equal(r.status, 2, `${source}\n${r.stderr}`);
+      if (fallback) assert.match(r.stderr, /text fallback/);
+    });
+
+    test(`allowed for the main session: ${command}`, () => {
+      const r = runHook({ tool_name: 'Bash', tool_input: { command } });
+      assert.equal(r.status, 0, `${source}\n${r.stderr}`);
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
