@@ -48,12 +48,26 @@ function identicalPaths(text) {
   return paths;
 }
 
+/** True when the section's first line of prose begins with "None". */
+function sectionSaysNone(text) {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.trim() === SECTION_HEADING);
+  const body = lines.slice(start + 1).find((line) => line.trim() !== '');
+  return body !== undefined && body.trim().startsWith('None');
+}
+
 describe('the byte-identical table in plugin/VENDORED.md', () => {
-  test('parses to at least one row', () => {
+  test('parses to at least one row, or says "None" in as many words', () => {
     // A table the parser silently reads as zero rows passes every assertion below
-    // vacuously, which is how this file came to be wrong in the first place.
-    const paths = identicalPaths(readFileSync(MANIFEST, 'utf8'));
-    assert.ok(paths.length > 0, 'no rows parsed out of the byte-identical table');
+    // vacuously, which is how this file came to be wrong in the first place. Since
+    // Phase 3 no shipped file is identical with upstream, so an empty table is the
+    // truth; it has to be stated, never left for the parser to infer.
+    const text = readFileSync(MANIFEST, 'utf8');
+    const paths = identicalPaths(text);
+    assert.ok(
+      paths.length > 0 || sectionSaysNone(text),
+      'no rows parsed out of the byte-identical table and the section does not say "None"',
+    );
   });
 
   test('every listed file is byte-identical with its upstream copy', () => {
