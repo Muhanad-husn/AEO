@@ -129,7 +129,7 @@ One row per phase, written by the phase's closing pull request.
 |---|---|---|---|---|
 | 0 Score | done | consumer: Muhanad-husn/RLM<br>phases: 0 to 5, 2026-09-05 to 2026-09-08<br>days: 4<br>dollars: 3.50<br>prs: 48 merged<br>interventions: 1.40 per merged PR (67 messages, 41 merge decisions excluded, 38 sessions)<br>executed: none declared<br>harness: bash 1 node, grep 0, read 0, task 0; session start 839 lines; tests 0.77 of source (9534 / 12348)<br>consumer: Muhanad-husn/RLM-Challenge (from record)<br>phases: all, 2026-08-21 to 2026-09-05<br>days: 16<br>dollars: 20.58<br>prs: 117 merged of 122<br>interventions: no transcripts<br>executed: none declared<br>harness: no checkout | harness: bash 1 node, grep 0, read 0, task 0; session start 835 lines; tests 1.76 of source (17005 / 9677) | 2026-09-08 |
 | 1 Invariants | done | consumer: none (phase 1 has no consumer) | plugin: bash 1 node, grep 0, read 0, task 0<br>harness: bash 1 node, grep 0, read 0, task 0; session start 836 lines; tests 1.72 of source (17021 / 9899) | 2026-09-16 |
-| 2 Sensorium | not started | | | |
+| 2 Sensorium | done | score: 7 Compare done, sample 4 recall 86.4 (8 of 8 phases done)<br>bar: Phase 5 under 70 on sample 1 after $25 spent means the method is wrong.<br>dollars: 18.95 of 50, balance 31.05 (LEDGER.md)<br>runs: none live<br>last run: none<br>commitment: none declared<br>executed: none declared<br>(empty git repository) score: none declared | harness: bash 1 node, grep 0, read 0, task 0; session start 834 lines<br>harness: bash 1 node, grep 0, read 0, task 0; session start 834 lines; tests 1.72 of source (17995 / 10489) | 2026-09-16 |
 | 3 Knowledge | not started | | | |
 | 4 Run 1 | not started | | | |
 | 5 Run 2 | not started | | | |
@@ -265,5 +265,19 @@ Made 2026-09-16, in phase 1:
    warning is carried in the hook's JSON stdout.
 6. `block-merge`, `path-guard` and `redirect-guard` enforce on any non-empty `agent_type`,
    with the C-02 cost stated once.
+
+Made 2026-09-16, in phase 2:
+
+1. One composer, `sensorium.mjs`, loads every module under `hooks/sensorium/` in
+   filename order and both callers print its block first.
+2. The status table, ledger, commitments and harness readers live under `plugin/hooks/`
+   and `scripts/score/` imports them.
+3. The oracle is a status table under a Status heading with a `State` and a `Score`
+   column, and its absence prints `score: none declared`.
+4. The bar is `RULES.md`'s `Kill line` gate until `new-project` writes a separate
+   declaration.
+5. The commitment ledger is written by `plugin/scripts/commitment.mjs`, called by the
+   model, never by a hook.
+6. The session-start cost line prints processes and lines, not tests over source.
 
 No decision is open.
