@@ -171,16 +171,20 @@ describe('renderSensorium', () => {
 // ---------------------------------------------------------------------------
 
 describe('the score section, against RLM\'s own status table and Kill line', () => {
+  // renderSensorium() here uses the real sensorium/ directory (no `dir` override), so
+  // every later slice's section renders too. Neither fixture repo below has a
+  // .aeo/runs or a logs/, so 30-runs.mjs (#183) contributes its own deterministic
+  // "none live" / "none" pair right after score and bar.
   test('renderSensorium prints the score and its bar', async () => {
     const dir = makeRlmRepo();
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, [EXPECTED_SCORE, EXPECTED_BAR]);
+    assert.deepEqual(lines, [EXPECTED_SCORE, EXPECTED_BAR, 'runs: none live', 'last run: none']);
   });
 
   test('a repository with no PLAN.md prints "none declared" for both', async () => {
     const dir = makeRepo(); // no PLAN.md, no RULES.md
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, ['score: none declared', 'bar: none declared']);
+    assert.deepEqual(lines, ['score: none declared', 'bar: none declared', 'runs: none live', 'last run: none']);
   });
 });
 
