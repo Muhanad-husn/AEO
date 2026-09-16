@@ -73,15 +73,15 @@ Changed lines are `diff | grep -c '^[<>]'` against the pinned commit, measured
 | `safe-pr/SKILL.md` | 179 |
 | `safe-pr/scripts/collect-evidence.mjs` | 132 |
 | `safe-cleanup/SKILL.md` | 128 |
-| `tdd-ci/SKILL.md` | 107 |
-| `tdd-ci/references/github-actions-guide.md` | 11 |
-| `tdd-ci/assets/workflows/node-ci.yml` | 2 |
-| `tdd-ci/assets/workflows/playwright-e2e.yml` | 2 |
-| `tdd-ci/assets/workflows/python-ci.yml` | 2 |
+| `references/workflows/node-ci.yml` | 2 |
+| `references/workflows/playwright-e2e.yml` | 2 |
+| `references/workflows/python-ci.yml` | 2 |
 
-The tables above cover the three ported skills still shipped. `red-green-refactor`
-and `tdd-plan` were deleted in Phase 3; their rows went with them, and what the
-two carried that held a measurement is now in `plugin/references/`.
+Paths in this table are relative to a skill directory, except the three workflow
+templates, which Phase 3 moved to `references/workflows/` and which are given
+relative to the plugin root. `red-green-refactor`, `tdd-plan` and `tdd-ci` were
+deleted in Phase 3; their rows went with them, and what they carried that held a
+measurement is now in `plugin/references/`.
 
 ## How to re-sync with upstream
 

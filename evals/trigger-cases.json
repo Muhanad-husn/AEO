@@ -7,54 +7,15 @@
       "date": "2026-08-13",
       "issue": 95,
       "change": "wd-n2 re-framed: prompt replaced and 'expect' moved from NONE to red-green-refactor. Any number taken before this date is over a different set. See logs/2026-08-13-issue-95-trigger-residual/summary.md."
+    },
+    {
+      "date": "2026-09-16",
+      "issue": 197,
+      "change": "Sixteen cases removed: every case naming monitor-design, tdd-ci, worker-dispatch, sprint-start, triage, review or verify, which phase 3 slice 03 deleted. Nothing was rewritten and no case was added, so this set is 22 cases after slice 02 left 38, and a number taken over it is not comparable with a number taken over the 40. Slice 06 reauthors the set against the second build's roster."
     }
   ],
   "note": "Authored from what a founder would plausibly type, not derived from the skill descriptions. Wording deliberately avoids the descriptions' own vocabulary: a case set written out of the text it scores measures the case set. 'expect' is a roster skill name or NONE. NONE is correct whenever the prompt belongs to an operator lane (those carry disable-model-invocation: true and are unreachable by description) or to no skill at all.",
   "cases": [
-    {
-      "id": "md-p1",
-      "kind": "positive",
-      "expect": "monitor-design",
-      "prompt": "The nightly reindex takes about six hours and all I get is a spinner. I want a readout that tells me which stage it is on and how much of the budget it has burned.",
-      "why": "The plainest statement of the job monitor-design exists for: one named long-running job, a derived reading the generic monitor does not compute."
-    },
-    {
-      "id": "md-p2",
-      "kind": "positive",
-      "expect": "monitor-design",
-      "prompt": "For the customer import job specifically, put together a view showing how many records are left and what it has cost so far.",
-      "why": "Same intent stated as a build request rather than a complaint, to check the description is not keyed to the complaint framing."
-    },
-    {
-      "id": "md-n1",
-      "kind": "near-miss",
-      "expect": "NONE",
-      "competes": [
-        "monitor-design"
-      ],
-      "prompt": "Is the reindex still going, or has it wedged?",
-      "why": "monitor-design's description explicitly disclaims this question — it is answered by running the generic monitor, not by designing an overlay. A skill carrying an anti-trigger should be tested against it."
-    },
-    {
-      "id": "md-n2",
-      "kind": "near-miss",
-      "expect": "NONE",
-      "competes": [
-        "monitor-design"
-      ],
-      "prompt": "How far along is the migration?",
-      "why": "The second question monitor-design's description disclaims by name, phrased the way it would actually be typed."
-    },
-    {
-      "id": "md-n3",
-      "kind": "near-miss",
-      "expect": "monitor-design",
-      "competes": [
-        "worker-dispatch"
-      ],
-      "prompt": "The four-hundred-file rename is running now. Give me a progress readout for that job.",
-      "why": "Sits between monitor-design and worker-dispatch. The subject is a fan-out job, but the ask is a view of it, not a dispatch. Tests whether worker-dispatch's vocabulary pulls a monitoring request across."
-    },
     {
       "id": "rgr-p1",
       "kind": "positive",
@@ -68,16 +29,6 @@
       "expect": "build",
       "prompt": "Fix the cart total rounding, but I want the test written before the code.",
       "why": "Small change plus an explicit test-first demand. Also probes the boundary with the fix lane, which is operator-invoked: the test-first demand is what should tip it here rather than nowhere."
-    },
-    {
-      "id": "rgr-n2",
-      "kind": "near-miss",
-      "expect": "build",
-      "competes": [
-        "worker-dispatch"
-      ],
-      "prompt": "Add deleted_at handling to the three repository classes that need it.",
-      "why": "The red-green-refactor / worker-dispatch pair. Mechanical-sounding and spread across files, but three files is implementation work, not a fan-out."
     },
     {
       "id": "sc-p1",
@@ -128,16 +79,6 @@
       "why": "Same intent without naming the evidence format, so the description cannot key on the word screenshot or transcript."
     },
     {
-      "id": "pr-n1",
-      "kind": "near-miss",
-      "expect": "tdd-ci",
-      "competes": [
-        "safe-pr"
-      ],
-      "prompt": "I want these tests blocking merges, not just running on my laptop.",
-      "why": "The safe-pr / tdd-ci pair. Both concern pull requests; only one writes a workflow."
-    },
-    {
       "id": "pr-n2",
       "kind": "near-miss",
       "expect": "NONE",
@@ -157,41 +98,6 @@
       ],
       "prompt": "Merge this once it is green.",
       "why": "No roster skill merges anything, and safe-pr's description says so in as many words. Anything that fires here has read past its own limits."
-    },
-    {
-      "id": "ci-p1",
-      "kind": "positive",
-      "expect": "tdd-ci",
-      "prompt": "Add the GitHub Actions workflow so the unit tests and the browser tests both run on every pull request.",
-      "why": "The core case, named concretely."
-    },
-    {
-      "id": "ci-p2",
-      "kind": "positive",
-      "expect": "tdd-ci",
-      "prompt": "Set up continuous integration for this repo.",
-      "why": "The same ask at its vaguest. A description that only fires on the concrete phrasing is brittle."
-    },
-    {
-      "id": "ci-n1",
-      "kind": "near-miss",
-      "expect": "tdd-ci",
-      "competes": [
-        "NONE"
-      ],
-      "prompt": "Make the test job a required check on main.",
-      "why": "Phrased as a repository settings change rather than a file to write, which is where it could slide to NONE."
-    },
-    {
-      "id": "ci-n2",
-      "kind": "near-miss",
-      "expect": "NONE",
-      "competes": [
-        "tdd-ci",
-        "build"
-      ],
-      "prompt": "The end-to-end suite is flaky in CI. Work out why and fix it.",
-      "why": "Carries tdd-ci's vocabulary but asks for debugging, which is the fix lane's job and the fix lane is operator-invoked. Tests whether tdd-ci fires on the word CI alone."
     },
     {
       "id": "tp-p1",
@@ -216,47 +122,6 @@
       ],
       "prompt": "Turn section four of the spec into a backlog of GitHub issues for the coming sprint.",
       "why": "This is the sprint-plan lane, which is operator-invoked. tdd-plan's own description points here, so the question is whether it points or grabs."
-    },
-    {
-      "id": "wd-p1",
-      "kind": "positive",
-      "expect": "worker-dispatch",
-      "prompt": "Rename userId to accountId across the codebase, roughly four hundred files. Spread it over several agents and land it as one commit.",
-      "why": "The core case, with the shape and the fan-out both stated."
-    },
-    {
-      "id": "wd-p2",
-      "kind": "positive",
-      "expect": "worker-dispatch",
-      "prompt": "All eighty fixture files need regenerating to the new schema. Split the work up between agents.",
-      "why": "Same shape, different domain, so the description cannot be keyed to renames."
-    },
-    {
-      "id": "wd-p3",
-      "kind": "positive",
-      "expect": "worker-dispatch",
-      "prompt": "Strip the deprecated licence header out of every file under src. There are hundreds of them.",
-      "why": "The fan-out is implied by the volume rather than requested outright, which is how it usually arrives."
-    },
-    {
-      "id": "wd-n1",
-      "kind": "near-miss",
-      "expect": "NONE",
-      "competes": [
-        "worker-dispatch"
-      ],
-      "prompt": "Take the next four issues at the same time, each on its own branch with its own pull request.",
-      "why": "The sprint-start lane, which is operator-invoked, and the exact case worker-dispatch's description disclaims. The strongest single test of that anti-trigger."
-    },
-    {
-      "id": "wd-n2",
-      "kind": "near-miss",
-      "expect": "build",
-      "competes": [
-        "worker-dispatch"
-      ],
-      "prompt": "Rework the payment retry logic so failed charges back off instead of hammering the provider. There is a fair bit to it, so throw a bunch of agents at the job.",
-      "why": "Re-framed under issue #95; the original asked for a whole-module rewrite and expected NONE, which no roster description could deliver. Asks for a fan-out in as many words, but the units change behaviour, which worker-dispatch's description excludes and hands to red-green-refactor by name. Tests whether the request for parallelism overrides the exclusion."
     },
     {
       "id": "np-p1",

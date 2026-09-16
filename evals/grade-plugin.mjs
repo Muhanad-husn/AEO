@@ -417,7 +417,11 @@ function checkNoOrderedSteps(pluginRoot, skills, results) {
 
 function checkReferencesCite(pluginRoot, results) {
   const refsDir = path.join(pluginRoot, 'references');
-  const files = walk(refsDir);
+  // Markdown only. The claim is about prose earning its place. references/workflows/ holds
+  // GitHub Actions templates, vendored and carried unchanged; a YAML template is an asset
+  // that a reference points at, and asking it to open with an incident id would mean
+  // editing a template whose value is that it is ready to copy into a project.
+  const files = walk(refsDir).filter((f) => f.toLowerCase().endsWith('.md'));
   const uncited = [];
   for (const file of files) {
     const text = safeRead(file);
