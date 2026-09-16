@@ -3,10 +3,15 @@
 //
 // The config that governs the roles is not theirs to edit. Same asymmetry
 // block-merge enforces for git, applied to a repo's own `.claude/` directory (roster,
-// hooks, skills, settings). The main session and every non-AEO agent pass through
-// (C-02): identity is decided from the payload alone, the same as block-merge, and
-// for the same reason no `-Role` argument survives the port: there is only one
-// wiring now (C-01).
+// hooks, skills, settings). The main session passes through (C-02): identity is
+// decided from the payload alone, the same as block-merge, and for the same reason
+// no `-Role` argument survives the port: there is only one wiring now (C-01).
+//
+// FENCED ON ANY agent_type, NOT ONLY `aeo:<role>` (C-02 cost, #170). A subagent of any
+// kind, `general-purpose` included, is fenced now, because the phase-3 plan removes
+// the `aeo:` charters this gate used to key on, and a fence scoped to a name that no
+// longer occurs fences nothing. The cost: a main session launched with `--agent` also
+// carries `agent_type` and is treated as a subagent by this gate.
 //
 // WHICH DIRECTORY IS FENCED, AND WHY THE PLUGIN ROOT ISN'T (D12). The fence is a
 // project's own `.claude/`, resolved from the target file's git worktree, never
@@ -69,8 +74,8 @@ import { pathToFileURL } from 'node:url';
 
 import {
   HARNESS_DIRNAME,
+  agentIdentity,
   block,
-  isAnyAeoRole,
   isPathIntoHarness,
   normalizeHookPath,
   runGate,
@@ -110,7 +115,7 @@ const FENCE_REASON =
 export function pathGuard(payload) {
   const tool = typeof payload?.tool_name === 'string' ? payload.tool_name : '';
   if (!FENCED_TOOLS.has(tool)) return;
-  if (!isAnyAeoRole(payload)) return; // main session and non-AEO agents pass (C-02)
+  if (agentIdentity(payload) === null) return; // main session passes (C-02)
 
   // Which field carries the target is lib.mjs's to know, because the sandbox guard
   // reads the same field set and V-13 is two gates deriving one thing twice.

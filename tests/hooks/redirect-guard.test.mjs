@@ -543,26 +543,38 @@ describe('#113 carried through: a linked worktree parked under .claude/worktrees
 // ---------------------------------------------------------------------------
 
 describe('identity', () => {
-  for (const role of ['builder', 'reviewer', 'triage']) {
-    test(`aeo:${role} is fenced`, () => {
+  // C-02: the fence is presence of ANY agent_type, not membership in this plugin's own
+  // `aeo:<role>` roster. A main session launched with `--agent` also carries an
+  // agent_type and is treated as a subagent under this rule; that is the accepted cost.
+  const fenced = ['general-purpose', 'builder', 'other:builder', 'aeo:builder'];
+
+  for (const agent_type of fenced) {
+    test(`agent_type '${agent_type}' is fenced`, () => {
       const repo = makeRepo();
-      const r = runHook(bash('printf x > .claude/x.md', { cwd: repo, agent_type: `aeo:${role}` }));
+      const r = runHook(bash('printf x > .claude/x.md', { cwd: repo, agent_type }));
       assertBlocked(r, FENCE);
     });
   }
 
-  const unaffected = [
-    ['no agent_type at all, the orchestrator', NO_AGENT_TYPE],
-    ["a bare 'builder' from --agent (C-02: not this plugin's role)", 'builder'],
-    ["another plugin's builder", 'some-plugin:builder'],
-  ];
-  for (const [label, agent_type] of unaffected) {
-    test(`${label} passes through`, () => {
-      const repo = makeRepo();
-      const r = runHook(bash('printf x > .claude/x.md', { cwd: repo, agent_type }));
-      assertAllowed(r);
-    });
-  }
+  test('no agent_type at all, the orchestrator, passes through', () => {
+    const repo = makeRepo();
+    const r = runHook(bash('printf x > .claude/x.md', { cwd: repo, agent_type: NO_AGENT_TYPE }));
+    assertAllowed(r);
+  });
+
+  // agentIdentity trims to null, so whitespace-only is the same as absent.
+  test('a whitespace-only agent_type passes through, because agentIdentity trims it to null', () => {
+    const repo = makeRepo();
+    for (const agent_type of ['', '   ', '\t\n']) {
+      assertAllowed(runHook(bash('printf x > .claude/x.md', { cwd: repo, agent_type })));
+    }
+  });
+
+  test('a general-purpose subagent writing outside .claude/ through a shell still passes', () => {
+    const repo = makeRepo();
+    const r = runHook(bash('printf x > src/x.mjs', { cwd: repo, agent_type: 'general-purpose' }));
+    assertAllowed(r);
+  });
 });
 
 // ---------------------------------------------------------------------------

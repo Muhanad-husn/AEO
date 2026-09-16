@@ -7,8 +7,14 @@
 // never reached path-guard at all, because path-guard's matcher only ever sees the four
 // file tools. Demonstrated live against a real dispatched builder (#116). This gate is
 // path-guard's own KNOWN LIMIT closed: same fence, same identity scoping
-// (isAnyAeoRole -- the orchestrator and every non-AEO agent pass, C-02), reached from
-// the shell surface instead of the file-tool surface.
+// (agentIdentity(payload) !== null -- the main session passes, C-02), reached from the
+// shell surface instead of the file-tool surface.
+//
+// FENCED ON ANY agent_type, NOT ONLY `aeo:<role>` (C-02 cost, #170). A subagent of any
+// kind, `general-purpose` included, is fenced now, because the phase-3 plan removes
+// the `aeo:` charters this gate used to key on, and a fence scoped to a name that no
+// longer occurs fences nothing. The cost: a main session launched with `--agent` also
+// carries `agent_type` and is treated as a subagent by this gate.
 //
 // ORDERING IN hooks.json IS A STATED INTENT, NOT A MEASURED SAVING (review, #116). This
 // repository's own principle is measure, don't speculate, and nothing here times the
@@ -133,9 +139,9 @@ import { pathToFileURL } from 'node:url';
 
 import {
   HARNESS_DIRNAME,
+  agentIdentity,
   block,
   commandSegments,
-  isAnyAeoRole,
   isPathIntoHarness,
   isShellTool,
   normalizeHookPath,
@@ -398,7 +404,7 @@ function checkCommand(payload, command) {
 /** @param {object} payload */
 export function redirectGuard(payload) {
   if (!isShellTool(payload)) return; // Bash or PowerShell only (C-07), matches hooks.json's own matcher
-  if (!isAnyAeoRole(payload)) return; // main session and non-AEO agents pass (C-02), same scoping as path-guard
+  if (agentIdentity(payload) === null) return; // main session passes (C-02), same scoping as path-guard
 
   const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
   if (command.trim() === '') return;
