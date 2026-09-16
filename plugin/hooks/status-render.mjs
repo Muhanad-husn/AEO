@@ -28,6 +28,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
+import { renderSensorium } from './sensorium.mjs';
+
 const execFileAsync = promisify(execFile);
 
 // Same seam session-status.mjs's tests already depend on (see that file's header):
@@ -467,13 +469,19 @@ export async function renderStatusView(root) {
     return ['**Status:** not inside a git worktree; nothing to render.', ''].join('\n');
   }
 
-  const lines = [
+  // The sensorium's block (#181): score and bar today, dollars/runs/the commitment
+  // ledger/the harness cost in later slices. First, ahead of everything this renderer
+  // printed before this slice -- the consumer's own number is what a reader wants
+  // before issues, PRs or the Decision Log.
+  const lines = [...(await renderSensorium(root)), ''];
+
+  lines.push(
     '## Project status (generated just now -- nothing here is stored)',
     '',
     'Issues, PR state and the Decision Log, read fresh from git and GitHub on this run.',
     'Nothing below is cached, hand-maintained, or carried over from a previous answer.',
     '',
-  ];
+  );
 
   const [issues, prs] = await Promise.all([fetchOpenIssues(root), fetchOpenPrs(root)]);
 

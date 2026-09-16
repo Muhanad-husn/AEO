@@ -29,6 +29,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { currentBranch, git, preflight, resolveWorktree, runReporter } from './lib.mjs';
+import { renderSensorium } from './sensorium.mjs';
 import { LIVE_DATA_ROOT_ENV, resolveRoots, settingsDeclarationDir } from './sandbox-guard.mjs';
 import { ISSUE_LIMIT, OPEN_PR_LIMIT, fetchOpenIssues, fetchOpenPrs, formatPrLine, ghJson, renderSection } from './status-render.mjs';
 
@@ -243,16 +244,24 @@ async function run(payload) {
   if (!health.ok) lines.push(health.banner, '');
   else lines.push(...renderGates());
 
+  // Resolved from the session's own cwd via lib.mjs, never CLAUDE_PROJECT_DIR or this
+  // script's own location -- both are session-fixed and wrong for a worktree session,
+  // the same bug already fixed twice in commit-gate and block-merge (V-02). Resolved
+  // here (rather than just above the not-a-worktree return below, where it used to be
+  // resolved) because the sensorium needs it too.
+  const { toplevel: root } = resolveWorktree(payload ?? {});
+
+  // The sensorium's block (#181): score and bar today, dollars/runs/the commitment
+  // ledger/the harness cost in later slices. After gate health (D8 still reads first:
+  // a broken runtime outranks the consumer's own number) and before the data root.
+  lines.push(...(await renderSensorium(root)), '');
+
   // Then the sandbox guard's one precondition (D18). Both of these are facts about
   // whether enforcement is running at all, so they belong above repo state and ahead of
   // the not-a-worktree return below: an undeclared production root is worth saying even
   // in a session that has no git repository to report on.
   lines.push(...renderDataRoot(payload ?? {}));
 
-  // Resolved from the session's own cwd via lib.mjs, never CLAUDE_PROJECT_DIR or this
-  // script's own location -- both are session-fixed and wrong for a worktree session,
-  // the same bug already fixed twice in commit-gate and block-merge (V-02).
-  const { toplevel: root } = resolveWorktree(payload ?? {});
   if (!root) return lines.join('\n'); // not a git worktree; nothing more to report
 
   lines.push(
