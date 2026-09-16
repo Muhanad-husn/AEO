@@ -1,0 +1,46 @@
+{
+  "$comment": [
+    "The two answer sets issue #199's acceptance criterion names, plus the file bodies an",
+    "agent following new-project/SKILL.md would write for each. Both tests read this file:",
+    "the fast tier checks that every case answers with values scaffold-plan.json declares,",
+    "and the integration test walks the plan with these answers and asserts the tree.",
+    "",
+    "Why the bodies live here and not in scaffold-plan.json. Every file below is an authored",
+    "step: the plan declares that it must exist and what marker it must carry, and the agent",
+    "writes the words per project. A test cannot dispatch an agent, so it stands in for one,",
+    "and this fixture is that stand-in. Nothing here ships. Putting these bodies in the",
+    "plan would turn a data file into the prose template CLAUDE.md forbids.",
+    "",
+    "The bodies are deliberately ordinary rather than minimal: the sensorium reads them the",
+    "same way it reads a real consumer's, so a body that only just satisfies a marker would",
+    "prove less than one a founder might actually write."
+  ],
+  "cases": {
+    "founder-as-reader-no-money": {
+      "answers": {
+        "oracle": "founder as reader",
+        "money": "no"
+      },
+      "authored": {
+        "README.md": "# Sample Project\n\nA small tool the founder reads the output of and judges against a written checklist.\n",
+        "RULES.md": "# Rules\n\nOne page. Read before any work in this repository.\n\n## The gates\n\n1. **The product is the checklist.** The founder reads the deliverable against the\n   written checklist in `docs/checklist.md` and says whether it passes.\n2. **Merge stays with the founder.**\n3. **Cost is reported beside the change.**\n4. **Kill line.** Two phases in a row that miss the checklist mean the method is wrong,\n   not the phase. Stop and change the method before another phase runs.\n\n## Prose\n\nPlain. No marketing register. No em dashes.\n",
+        "PLAN.md": "# Plan\n\nWhat this project builds, one phase at a time.\n\n## The oracle\n\nThe founder as reader, against a written checklist. No key, no rubric, no sample set.\n\n## Phases\n\n| Phase | Artefact |\n|---|---|\n| 0 Scaffold | the repository, green, on main |\n| 1 First slice | the first behaviour the checklist names |\n\n## Status\n\nOne row per phase, written by the phase's closing pull request.\n\n| Phase | State | Score | Closed |\n| --- | --- | --- | --- |\n| 0 Scaffold | not started | | |\n| 1 First slice | not started | | |\n",
+        "COMMITMENTS.md": "# Commitments\n\nOne row per session's closing recommendation. The Executed cell holds executed,\npartial or not; a blank cell is unjudged and stays out of the denominator.\n\n| Date | Recommendation | Executed |\n| --- | --- | --- |\n"
+      }
+    },
+    "founder-as-reader-with-ceiling": {
+      "answers": {
+        "oracle": "founder as reader",
+        "money": "yes",
+        "ceiling": 50
+      },
+      "authored": {
+        "README.md": "# Sample Project\n\nA small tool the founder reads the output of and judges against a written checklist.\n",
+        "RULES.md": "# Rules\n\nOne page. Read before any work in this repository.\n\n## The gates\n\n1. **The product is the checklist.** The founder reads the deliverable against the\n   written checklist in `docs/checklist.md` and says whether it passes.\n2. **Merge stays with the founder.**\n3. **Cost is reported beside the change.**\n4. **Kill line.** Two phases in a row that miss the checklist mean the method is wrong,\n   not the phase. Stop and change the method before another phase runs.\n\n## Prose\n\nPlain. No marketing register. No em dashes.\n",
+        "PLAN.md": "# Plan\n\nWhat this project builds, one phase at a time.\n\n## The oracle\n\nThe founder as reader, against a written checklist. No key, no rubric, no sample set.\n\n## Phases\n\n| Phase | Artefact |\n|---|---|\n| 0 Scaffold | the repository, green, on main |\n| 1 First slice | the first behaviour the checklist names |\n\n## Status\n\nOne row per phase, written by the phase's closing pull request.\n\n| Phase | State | Score | Closed |\n| --- | --- | --- | --- |\n| 0 Scaffold | not started | | |\n| 1 First slice | not started | | |\n",
+        "COMMITMENTS.md": "# Commitments\n\nOne row per session's closing recommendation. The Executed cell holds executed,\npartial or not; a blank cell is unjudged and stays out of the denominator.\n\n| Date | Recommendation | Executed |\n| --- | --- | --- |\n",
+        "LEDGER.md": "Ceiling $50 for this project, set by the founder before the first phase.\n\nDollars are model spend, one row per phase. The balance column is what is left.\n\n| Phase | Dollars | Balance |\n| --- | --- | --- |\n| 0 Scaffold | 0.00 | 50 |\n"
+      }
+    }
+  }
+}
