@@ -128,7 +128,7 @@ One row per phase, written by the phase's closing pull request.
 | Phase | State | Score | Harness cost | Closed |
 |---|---|---|---|---|
 | 0 Score | done | consumer: Muhanad-husn/RLM<br>phases: 0 to 5, 2026-09-05 to 2026-09-08<br>days: 4<br>dollars: 3.50<br>prs: 48 merged<br>interventions: 1.40 per merged PR (67 messages, 41 merge decisions excluded, 38 sessions)<br>executed: none declared<br>harness: bash 1 node, grep 0, read 0, task 0; session start 839 lines; tests 0.77 of source (9534 / 12348)<br>consumer: Muhanad-husn/RLM-Challenge (from record)<br>phases: all, 2026-08-21 to 2026-09-05<br>days: 16<br>dollars: 20.58<br>prs: 117 merged of 122<br>interventions: no transcripts<br>executed: none declared<br>harness: no checkout | harness: bash 1 node, grep 0, read 0, task 0; session start 835 lines; tests 1.76 of source (17005 / 9677) | 2026-09-08 |
-| 1 Invariants | not started | | | |
+| 1 Invariants | done | consumer: none (phase 1 has no consumer) | plugin: bash 1 node, grep 0, read 0, task 0<br>harness: bash 1 node, grep 0, read 0, task 0; session start 836 lines; tests 1.72 of source (17021 / 9899) | 2026-09-16 |
 | 2 Sensorium | not started | | | |
 | 3 Knowledge | not started | | | |
 | 4 Run 1 | not started | | | |
@@ -248,5 +248,22 @@ Made 2026-09-08, in phase 0:
 5. RLM-Challenge is scored from `scripts/records/rlm-challenge.json`, a record copied from
    the first build's design mistake register, because its repository no longer exists;
    the row's first line says `(from record)`.
+
+Made 2026-09-16, in phase 1:
+
+1. One gate script, `gate.mjs`, runs every kept rule in one process per matched call, so
+   the plugin's count is one node process on a shell call, one on a write call, and none
+   on Read, Grep, Glob, Task or a forge call that is not a merge.
+2. Read and NotebookRead are not matched, because section 2 says nothing fires on Read and
+   the L-03 read incident arrived through code, which is a Bash call.
+3. The forge matcher is `^mcp__.*github.*__merge`, so a forge call that is not a merge
+   starts no process.
+4. `block-merge` judges `commandSegments` and falls back to the text match only when the
+   parser cannot read the command.
+5. `sandbox-guard` rule 3 and rule 4, a command the parser cannot read and a `cd` it
+   cannot name, judge every path they can read and then allow with a warning, and the
+   warning is carried in the hook's JSON stdout.
+6. `block-merge`, `path-guard` and `redirect-guard` enforce on any non-empty `agent_type`,
+   with the C-02 cost stated once.
 
 No decision is open.
