@@ -730,3 +730,20 @@ describe('newest run log', () => {
     assert.doesNotMatch(r.stdout, /Newest run log/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// The sensorium (#181) -- see tests/hooks/sensorium.test.mjs for the full battery
+// against RLM's own fixtures. The one assertion here is this file's own: that the
+// block session-status.mjs added starts with `score:`, immediately once the pre-
+// existing gate section (still first, D8) has finished.
+// ---------------------------------------------------------------------------
+
+describe('the sensorium (#181)', () => {
+  test('the added block leads with score:, right after the gate section', () => {
+    const repo = makeRepo(); // no PLAN.md; the score section prints "none declared"
+    const r = runHook({ payload: { cwd: repo }, env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot() }) });
+    const afterGates = r.stdout.split('not one where none was wired.\n\n')[1];
+    assert.ok(afterGates, 'the gate section is still printed ahead of the sensorium');
+    assert.ok(afterGates.startsWith('score:'), 'the sensorium block is the next thing printed after gate health');
+  });
+});
