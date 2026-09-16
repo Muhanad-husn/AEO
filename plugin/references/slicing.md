@@ -1,4 +1,4 @@
-# Slicing Guide — Thin Vertical Slices
+# Slicing Guide: Thin Vertical Slices
 
 Cut from the original 98 lines to the three parts that decide something: the INVEST bar, the walking skeleton, and L-04 in `docs/EVIDENCE.md`, where two issues checked as file-disjoint both created the same new module with incompatible content and were reconciled by hand. The splitting-pattern catalogue and the worked example are gone; they were a tutorial, not a rule.
 
@@ -6,22 +6,22 @@ Cut from the original 98 lines to the three parts that decide something: the INV
 
 Every slice must pass INVEST:
 
-- **I**ndependent — can be built and shipped without depending on a sibling slice (order is fine; entanglement is not).
-- **N**egotiable — captures intent, not a rigid spec. "A story is not a contract; it IS an invitation to a conversation."
-- **V**aluable — delivers something a user or stakeholder can perceive. "If a story does not have discernable value it should not be done. Period."
-- **E**stimable — small and clear enough that effort is obvious.
-- **S**mall — completable well within an iteration; for this harness, ideally under a day.
-- **T**estable — you can write a failing test that defines "done" before you start.
+- **I**ndependent: can be built and shipped without depending on a sibling slice (order is fine; entanglement is not).
+- **N**egotiable: captures intent, not a rigid spec. "A story is not a contract; it IS an invitation to a conversation."
+- **V**aluable: delivers something a user or stakeholder can perceive. "If a story does not have discernable value it should not be done. Period."
+- **E**stimable: small and clear enough that effort is obvious.
+- **S**mall: completable well within an iteration; for this harness, ideally under a day.
+- **T**estable: you can write a failing test that defines "done" before you start.
 
 If a slice fails **S** or **T**, split it again. If it fails **V**, drop or merge it.
 
 ## The walking skeleton (first slice of a new system)
 
-> "A walking skeleton is an implementation of the thinnest possible slice of real functionality that we can automatically build, deploy, and test end-to-end." — GOOS
+> "A walking skeleton is an implementation of the thinnest possible slice of real functionality that we can automatically build, deploy, and test end-to-end." (GOOS)
 >
-> "A tiny implementation of the system that performs a small end-to-end function. It need not use the final architecture, but it should link together the main architectural components." — Alistair Cockburn
+> "A tiny implementation of the system that performs a small end-to-end function. It need not use the final architecture, but it should link together the main architectural components." (Alistair Cockburn)
 
-For any **new** system (no working build/test/deploy path yet), the **first slice is always a walking skeleton**. Its job is to de-risk architecture and infrastructure — project setup, the boundary that runs (a page that loads, an endpoint that responds, a CLI that prints), the test harness (unit runner + Playwright), and ideally the CI pipeline — *before* any real feature content. It carries almost no business logic on purpose; its value is a proven, testable end-to-end thread you can grow.
+For any **new** system (no working build/test/deploy path yet), the **first slice is always a walking skeleton**. Its job is to de-risk architecture and infrastructure, *before* any real feature content: project setup, the boundary that runs (a page that loads, an endpoint that responds, a CLI that prints), the test harness (unit runner + Playwright), and ideally the CI pipeline. It carries almost no business logic on purpose; its value is a proven, testable end-to-end thread you can grow.
 
 A canonical walking skeleton slice: "the app starts and serves a page (or endpoint) that returns a hardcoded greeting, proven by one passing unit test and one passing Playwright e2e test." Everything real grows from there.
 
