@@ -8,7 +8,9 @@ Five skills derive by copy from:
 - **Vendored:** 2026-07-31 into `source/upstream-red-green-refactor/`.
 
 `red-green-refactor`, `safe-pr`, `safe-cleanup`, `tdd-plan` and `tdd-ci` were
-ported in Phase 2. Upstream also ships `tdd-harness`, which this plugin does not
+ported in Phase 2. `safe-pr` is gone (issue #198): its SKILL.md and its PR body
+template were deleted and its collector now lives at `pr/scripts/collect-evidence.mjs`,
+byte-identical with the file that moved. Upstream also ships `tdd-harness`, which this plugin does not
 carry.
 
 ## What the port changed
@@ -25,7 +27,7 @@ headings were dropped, and every pointer at a sibling file moved from a bare
 relative path to `${CLAUDE_PLUGIN_ROOT}/skills/<skill>/...`, which is the only
 form an installed session resolves.
 
-**New behaviour in the two scripts.** `safe-pr/scripts/collect-evidence.mjs`
+**New behaviour in the two scripts.** `pr/scripts/collect-evidence.mjs`
 gained the production-data refusal: it imports `hooks/lib.mjs` and
 `hooks/sandbox-guard.mjs`, and refuses any evidence path resolving inside
 `AEO_LIVE_DATA_ROOT`, with no override flag.
@@ -54,13 +56,12 @@ test-tier practice differs from it.
 
 ## Byte-identical with upstream
 
-One file matches upstream byte for byte. `tests/skills/vendored-manifest.test.mjs`
-reads the table below and fails if any listed file has stopped being identical,
-or if the table is empty.
-
-| Path within the skill | Kind |
-| --- | --- |
-| `safe-pr/assets/pr-body-template.md` | Asset |
+None. The last two files that matched upstream byte for byte went in Phase 3:
+`tdd-plan/references/slicing-guide.md` with `tdd-plan` (#196) and
+`safe-pr/assets/pr-body-template.md` with `safe-pr` (#198).
+`tests/skills/vendored-manifest.test.mjs` reads this section and fails if a listed
+file has stopped being identical, or if the section neither lists a file nor says
+"None".
 
 ## Diverged from upstream
 
@@ -70,8 +71,7 @@ Changed lines are `diff | grep -c '^[<>]'` against the pinned commit, measured
 | Path within the skill | Changed lines |
 | --- | --- |
 | `safe-cleanup/scripts/classify-branches.mjs` | 244 |
-| `safe-pr/SKILL.md` | 179 |
-| `safe-pr/scripts/collect-evidence.mjs` | 132 |
+| `pr/scripts/collect-evidence.mjs` | 132 |
 | `safe-cleanup/SKILL.md` | 128 |
 | `references/workflows/node-ci.yml` | 2 |
 | `references/workflows/playwright-e2e.yml` | 2 |
@@ -79,7 +79,7 @@ Changed lines are `diff | grep -c '^[<>]'` against the pinned commit, measured
 
 Paths in this table are relative to a skill directory, except the three workflow
 templates, which Phase 3 moved to `references/workflows/` and which are given
-relative to the plugin root. `red-green-refactor`, `tdd-plan` and `tdd-ci` were
+relative to the plugin root. `red-green-refactor`, `tdd-plan`, `tdd-ci` and `safe-pr` were
 deleted in Phase 3; their rows went with them, and what they carried that held a
 measurement is now in `plugin/references/`.
 

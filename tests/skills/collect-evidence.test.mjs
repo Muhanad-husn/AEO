@@ -1,5 +1,5 @@
 // Tests for the production data refusal in
-// plugin/skills/safe-pr/scripts/collect-evidence.mjs (P4.3, EN-16).
+// plugin/skills/pr/scripts/collect-evidence.mjs (P4.3, EN-16).
 //
 //   node --test tests/skills/collect-evidence.test.mjs
 //
@@ -20,7 +20,7 @@ import path from 'node:path';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-const SCRIPT = path.resolve(import.meta.dirname, '../../plugin/skills/safe-pr/scripts/collect-evidence.mjs');
+const SCRIPT = path.resolve(import.meta.dirname, '../../plugin/skills/pr/scripts/collect-evidence.mjs');
 
 const LIVE = 'AEO_LIVE_DATA_ROOT';
 const DATA = 'AEO_DATA_ROOT';
@@ -315,7 +315,15 @@ describe('the evidence folder itself', () => {
 // the terminal SUMMARY correctly named slice 04. --body-only must always overwrite --out.
 
 describe('a stale --out target (issue #131)', () => {
-  const TEMPLATE = path.resolve(import.meta.dirname, '../../plugin/skills/safe-pr/assets/pr-body-template.md');
+  // The plugin ships no PR body template any more (issue #198): `pr` says the body
+  // answers what changed, what it cost and which number it moves, written from scratch.
+  // `--template` is still the script's input, so this test supplies its own minimal one,
+  // which is all the behaviour under test needs.
+  function writeTemplate() {
+    const file = path.join(tempDir(), 'pr-body-template.md');
+    writeFileSync(file, '## Summary\n\n<one or two sentences>\n\n<!-- EVIDENCE -->\n', 'utf8');
+    return file;
+  }
 
   test('--body-only overwrites a pre-existing --out file with the current run\'s body', () => {
     const { repo, live } = world();
@@ -328,7 +336,7 @@ describe('a stale --out target (issue #131)', () => {
     writeFileSync(outPath, '## Summary\n\nSTALE CONTENT FROM A PREVIOUS SLICE — must not survive.\n', 'utf8');
 
     const bodyResult = collect(
-      ['--body-only', '--template', TEMPLATE, '--out', outPath],
+      ['--body-only', '--template', writeTemplate(), '--out', outPath],
       { cwd: repo, env: { [LIVE]: live } },
     );
     assertCollected(bodyResult, 'body-only with a stale --out file already present');

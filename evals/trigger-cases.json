@@ -12,6 +12,11 @@
       "date": "2026-09-16",
       "issue": 197,
       "change": "Sixteen cases removed: every case naming monitor-design, tdd-ci, worker-dispatch, sprint-start, triage, review or verify, which phase 3 slice 03 deleted. Nothing was rewritten and no case was added, so this set is 22 cases after slice 02 left 38, and a number taken over it is not comparable with a number taken over the 40. Slice 06 reauthors the set against the second build's roster."
+    },
+    {
+      "date": "2026-09-16",
+      "issue": 198,
+      "change": "safe-pr renamed to pr in every case that named it. status became model-invocable and had no case, so st-p1, st-p2 and st-n1 were added. The set is 25 cases."
     }
   ],
   "note": "Authored from what a founder would plausibly type, not derived from the skill descriptions. Wording deliberately avoids the descriptions' own vocabulary: a case set written out of the text it scores measures the case set. 'expect' is a roster skill name or NONE. NONE is correct whenever the prompt belongs to an operator lane (those carry disable-model-invocation: true and are unreachable by description) or to no skill at all.",
@@ -47,12 +52,12 @@
     {
       "id": "sc-n1",
       "kind": "near-miss",
-      "expect": "safe-pr",
+      "expect": "pr",
       "competes": [
         "safe-cleanup"
       ],
       "prompt": "This branch is finished. Get it in front of me.",
-      "why": "The safe-cleanup / safe-pr pair. Both are end-of-branch work; only one of them opens anything."
+      "why": "The safe-cleanup / pr pair. Both are end-of-branch work; only one of them opens anything."
     },
     {
       "id": "sc-n2",
@@ -67,14 +72,14 @@
     {
       "id": "pr-p1",
       "kind": "positive",
-      "expect": "safe-pr",
+      "expect": "pr",
       "prompt": "The slice is green. Put the pull request up with the terminal output attached.",
       "why": "The core case for a service-shaped slice."
     },
     {
       "id": "pr-p2",
       "kind": "positive",
-      "expect": "safe-pr",
+      "expect": "pr",
       "prompt": "Everything passes locally. Raise it for review and include the proof.",
       "why": "Same intent without naming the evidence format, so the description cannot key on the word screenshot or transcript."
     },
@@ -83,21 +88,45 @@
       "kind": "near-miss",
       "expect": "NONE",
       "competes": [
-        "safe-pr",
+        "pr",
         "build"
       ],
       "prompt": "Go over my diff and tell me what is wrong with it before I open anything.",
-      "why": "This is the review lane, which is operator-invoked and not in the roster. If safe-pr takes it, a description-triggered skill is poaching a lane's prompt."
+      "why": "This is the review lane, which is operator-invoked and not in the roster. If pr takes it, a description-triggered skill is poaching a lane's prompt."
     },
     {
       "id": "pr-n3",
       "kind": "near-miss",
       "expect": "NONE",
       "competes": [
-        "safe-pr"
+        "pr"
       ],
       "prompt": "Merge this once it is green.",
-      "why": "No roster skill merges anything, and safe-pr's description says so in as many words. Anything that fires here has read past its own limits."
+      "why": "No roster skill merges anything, and pr's description stops at opening the pull request. Anything that fires here has read past its own limits."
+    },
+    {
+      "id": "st-p1",
+      "kind": "positive",
+      "expect": "status",
+      "prompt": "Where are we? Give me the open issues and what is waiting on a merge.",
+      "why": "The core case: the founder wants the record read, not recalled."
+    },
+    {
+      "id": "st-p2",
+      "kind": "positive",
+      "expect": "status",
+      "prompt": "Before I decide anything, show me the score, the budget left and what is still running.",
+      "why": "Same intent named by the sensorium's own fields rather than by the word status, so the description cannot key on one word."
+    },
+    {
+      "id": "st-n1",
+      "kind": "near-miss",
+      "expect": "NONE",
+      "competes": [
+        "status"
+      ],
+      "prompt": "Update the tracker to say the login slice is done.",
+      "why": "status renders and writes nothing. A prompt asking for a record to be edited by hand is the drift it exists to stop, and a skill that takes it has read past its own limits."
     },
     {
       "id": "tp-p1",
