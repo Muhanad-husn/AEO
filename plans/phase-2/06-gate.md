@@ -54,8 +54,8 @@ and the CI battery on the closing commit is green, and `PLAN.md` section 5a's ro
   `plugin/hooks/sensorium/`, `status-table.mjs`, `ledger.mjs`, `commitments.mjs`,
   `harness-cost.mjs`, `session-status.mjs` and `status-render.mjs` over the founder's
   `~/.claude/hooks/` so the global `/status` and session start print the same fields in
-  RLM, and record RLM's first commitment there with `commitment.mjs record` at the next
-  RLM session so phase 4 starts with a ledger row.
+  RLM, and record RLM's first commitment there with `commitment.mjs record` at RLM's
+  next session. RLM shipped 2026-09-12 with no further phases; this did not happen.
 
 ## Files
 

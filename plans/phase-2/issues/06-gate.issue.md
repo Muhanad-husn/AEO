@@ -10,7 +10,7 @@
 
 ## Mechanism
 
-Prose written by hand from the script's output and the CI log, quoted verbatim in the pull request body. No model call. Sonnet builds. The pull request also writes PLAN.md section 11's "Made <date>, in phase 2" block (six decisions, listed in the plan) and carries one recommendation, not a file change: copy the sensorium files over the founder's `~/.claude/hooks/` so the global `/status` and session start print the same fields in RLM, and record RLM's first commitment there with `commitment.mjs record` at the next RLM session.
+Prose written by hand from the script's output and the CI log, quoted verbatim in the pull request body. No model call. Sonnet builds. The pull request also writes PLAN.md section 11's "Made <date>, in phase 2" block (six decisions, listed in the plan) and carries one recommendation, not a file change: copy the sensorium files over the founder's `~/.claude/hooks/` so the global `/status` and session start print the same fields in RLM, and record RLM's first commitment there with `commitment.mjs record` at RLM's next session. RLM shipped 2026-09-12 with no further phases; this did not happen.
 
 ## Acceptance criterion
 
