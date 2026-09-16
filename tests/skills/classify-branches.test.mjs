@@ -256,7 +256,7 @@ describe('a failed gh pr list is missing data, never "no PRs"', () => {
     const before = branchesIn(dir);
     const r = run(dir, ['--apply', '--yes', '--delete-merged'], { gh: true });
     assert.equal(r.status, 4, `expected the PR-failure refusal\n${r.stdout}${r.stderr}`);
-    assert.match(r.stderr, /REFUSING: the PR query failed/);
+    assert.match(r.stderr, /STOPPING: the PR query failed/);
     assert.deepEqual(branchesIn(dir), before, 'a refusing run must delete nothing');
   });
 
@@ -424,7 +424,7 @@ describe('a refused delete reports why, and where, instead of a generic message'
 
     const r = run(dir, ['--apply', '--yes', '--delete-merged']);
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /FAILED feat\/held \(git branch -d refused: /);
+    assert.match(r.stdout, /FAILED feat\/held \(git branch -d failed: /);
     // git's own reason is present, not a paraphrase of it.
     assert.match(r.stdout, /cannot delete branch 'feat\/held'/);
     // and the worktree is named, resolved the same way the script resolves it.
@@ -442,7 +442,7 @@ describe('a refused delete reports why, and where, instead of a generic message'
 
     const r = run(dir, ['--apply', '--yes', '--delete-merged']);
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /FAILED locked \(git branch -d refused: /);
+    assert.match(r.stdout, /FAILED locked \(git branch -d failed: /);
     assert.match(r.stdout, /cannot lock ref 'refs\/heads\/locked'/);
     assert.doesNotMatch(r.stdout, /checked out in worktree/);
     assert.match(r.stdout, /left intact/);
@@ -463,7 +463,7 @@ describe('the pre-existing safety guarantees still hold', () => {
     const dir = makeRepo({ branches: [{ name: 'feat/merged' }, { name: 'feat/wip', ahead: true }] });
     const r = run(dir, ['--apply', '--delete-merged']);
     assert.equal(r.status, 2);
-    assert.match(r.stderr, /REFUSING: --apply requires --yes/);
+    assert.match(r.stderr, /STOPPING: --apply requires --yes/);
     assert.equal(branchesIn(dir).length, 3);
   });
 
@@ -570,7 +570,7 @@ describe('worktreeSuffix — the appended text does not duplicate what git alrea
     const cause = "error: cannot lock ref 'refs/heads/feat/held': unable to resolve reference";
     const suffix = worktreeSuffix(cause, HELD_BY);
     assert.notEqual(suffix, '', 'the path is genuinely absent from cause, so it must be appended');
-    const failedLine = `FAILED feat/held (git branch -d refused: ${cause}${suffix} — left intact)`;
+    const failedLine = `FAILED feat/held (git branch -d failed: ${cause}${suffix} — left intact)`;
     assert.equal(countOccurrences(failedLine, HELD_BY), 1, `expected the path exactly once:\n${failedLine}`);
   });
 

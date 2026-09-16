@@ -103,5 +103,5 @@ existing labels before creating any.
 - GitHub issues are the record; nothing here duplicates them by hand
   ([D5](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)).
 - A draft with no Files block is undeclared, not safe. `independence.mjs`
-  refuses it; the backlog table must show it as not parallel-safe with
+  rejects it; the backlog table must show it as not parallel-safe with
   the reason, not paper over it with a guess.

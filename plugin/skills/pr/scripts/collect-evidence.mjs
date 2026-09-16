@@ -49,8 +49,8 @@
  *   - Copied text artifacts (transcripts included) are scanned for likely secrets; a match prints
  *     a loud "SECRETS SUSPECTED" report (file + pattern only, never the value) so the human reviews
  *     BEFORE committing.
- *   - Anything resolving inside the declared production data root (AEO_LIVE_DATA_ROOT) is REFUSED,
- *     not warned about, with no override flag. See "The production data refusal" below.
+ *   - Anything resolving inside the declared production data root (AEO_LIVE_DATA_ROOT) is BLOCKED,
+ *     not warned about, with no override flag. See "The production data block" below.
  *   - The body phase (--body-only, and the body write in a single-shot run) ALWAYS overwrites --out.
  *     The body is regenerated output — cheap to recreate from --feature/--slice and the evidence
  *     folder — while a stale file left at the expected name is what an agent reads before
@@ -168,7 +168,7 @@ function scanForSecrets(files) {
 }
 
 // ---------------------------------------------------------------------------
-// The production data refusal (EN-16)
+// The production data block (EN-16)
 // ---------------------------------------------------------------------------
 //
 // Everything this script touches is one commit away from being published: evidence is
@@ -178,7 +178,7 @@ function scanForSecrets(files) {
 // where that data is — L-03's environment-variable seam, AEO_LIVE_DATA_ROOT — so the two
 // can never disagree about what they are protecting.
 //
-// REFUSE, NEVER WARN, AND NO OVERRIDE FLAG (L-05). A warning here is advice printed
+// BLOCK, NEVER WARN, AND NO OVERRIDE FLAG (L-05). A warning here is advice printed
 // beside data that has already been copied, and advice is what cost 19,000 documents.
 //
 // Paths are compared RESOLVED, through symlinks, junctions and `..`, because a link into
@@ -187,8 +187,8 @@ function scanForSecrets(files) {
 const NO_OVERRIDE =
   'There is no override flag. That is deliberate (L-05): an override is what you reach for at 2am.';
 
-function refuse(lines) {
-  console.error('\n============ PRODUCTION DATA IN EVIDENCE — REFUSED ============');
+function block(lines) {
+  console.error('\n============ PRODUCTION DATA IN EVIDENCE — BLOCKED ============');
   for (const line of lines) console.error(line);
   console.error(NO_OVERRIDE);
   console.error('==============================================================\n');
@@ -198,16 +198,16 @@ function refuse(lines) {
 /**
  * The declared production data root, fully resolved, or null when none is declared.
  *
- * UNSET IS A LOUD SKIP. It is not a refusal and it is not silence. A project with no
+ * UNSET IS A LOUD SKIP. It is not a block and it is not silence. A project with no
  * production data directory declares nothing, which is the normal and correct state for
- * most repositories; refusing every run there would make the collector unusable and get
+ * most repositories; blocking every run there would make the collector unusable and get
  * it deleted, and a guard that is deleted protects nothing. Skipping quietly is the
  * fail-open case this check exists to prevent, so the skip is announced on stderr and
  * again in the summary, where the operator and the safe-pr skill both read. That is the
  * same answer P1.5's guard and sandbox-session already give for the same variable, so all
  * three behave alike.
  *
- * SET BUT NOT ABSOLUTE IS A REFUSAL. That is a misconfiguration rather than an absence:
+ * SET BUT NOT ABSOLUTE IS A BLOCK. That is a misconfiguration rather than an absence:
  * a relative root resolves against whatever directory this process happens to run in, so
  * the check would be comparing against a place nobody named.
  */
@@ -222,7 +222,7 @@ function productionDataRoot(env = process.env) {
   }
   const declared = normalizeHookPath(raw);
   if (!path.isAbsolute(declared)) {
-    refuse([
+    block([
       `${LIVE_DATA_ROOT_ENV} is ${JSON.stringify(raw)}, which is not an absolute path.`,
       'A relative root resolves against whatever directory this process happens to run in, so the collector',
       'cannot tell whether an evidence path sits inside production data. Set it to an absolute path, or unset',
@@ -233,7 +233,7 @@ function productionDataRoot(env = process.env) {
 }
 
 /**
- * Refuse every candidate resolving inside the production data root.
+ * Block every candidate resolving inside the production data root.
  *
  * Called on the sources before the copy and on the evidence folder after it, and both
  * calls carry their own weight. Before: copying out of production data is already the
@@ -246,7 +246,7 @@ function refuseProductionPaths(candidates, liveRoot, what) {
   for (const candidate of candidates) {
     const resolved = realpathDeep(path.resolve(candidate));
     if (!isPathInside(liveRoot, resolved)) continue;
-    refuse([
+    block([
       // Printed raw, not JSON-quoted: on Windows every separator doubles and the reader
       // is a person deciding what to delete.
       `${what}: ${candidate}`,
@@ -324,9 +324,9 @@ function main() {
 
   // Every source the copy would read, each tree's entries included: a source directory
   // outside production data can still hold a link into it. Checked BEFORE the evidence
-  // folder is created: a refusal that has to undo its own mkdir is a refusal with a
+  // folder is created: a block that has to undo its own mkdir is a block with a
   // partial-failure mode, so the check comes first and the folder is never touched on a
-  // refused run.
+  // blocked run.
   if (!bodyOnly) {
     const sources = [];
     for (const srcAbs of [reportAbs, resultsAbs]) if (fs.existsSync(srcAbs)) sources.push(srcAbs, ...walk(srcAbs));
