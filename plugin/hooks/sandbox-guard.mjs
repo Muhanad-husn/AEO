@@ -24,9 +24,24 @@
 // half of L-02's own hazard, so deleting it removes that half of the risk rather than
 // reopening it.
 //
-// REFUSE, NEVER WARN. Advice is what cost 19,000 documents. There is no override flag
+// WHICH RULES REFUSE, AND WHICH WARN. A rule that has read production data in the call
+// refuses: the seam, a path named inside the production root, the directory the command
+// runs in, and the project's suite invoked over a live job. Advice is what cost 19,000
+// documents, so where the guard can see the reach it stops it. There is no override flag
 // and the absence of one is the point (L-05): an override is what you reach for at 2am,
 // and a guard with a bypass is a guard that reports safety it does not provide.
+//
+// Two rules used to refuse without having read anything (#169): a command the parser
+// could not finish, and a `cd` whose target could not be named. Both refused `echo
+// "unterminated` and `cd $DIR && ls`, which reach no data at all, and a guard that
+// refuses harmless commands is a guard people delete, which is the same L-05 failure
+// arriving from the other side. Both now run every rule that does not need the piece
+// that went missing, and warn about the piece. Little is given up: a token that names a
+// path names it whether or not its quote closes, the directory a call runs in comes from
+// the payload rather than from the parse, and the sentinel rule matches on tokens. What
+// is given up is the reach hidden inside the part that could not be read -- an
+// expansion, a backtick substitution, a `cd` to a computed directory. The warning names
+// that, so a session is told which judgement it got.
 //
 // THE TWO VARIABLES, AND WHY TWO.
 //
@@ -82,7 +97,7 @@ import { readFileSync, realpathSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { block, commandSegments, isPathInside, normalizeHookPath, operationDirs, runGate, toolFilePath } from './lib.mjs';
+import { block, commandSegments, isPathInside, normalizeHookPath, operationDirs, runGate, toolFilePath, warn } from './lib.mjs';
 import { projectAnchor, runInProgress, worktreeAnchor } from './sentinel.mjs';
 import { resolveTestPlan } from './stack.mjs';
 
@@ -598,25 +613,37 @@ export function sandboxGuard(payload) {
     );
   }
 
-  // 3. A command the guard could not read all the way through. Everything below decides
-  //    from the directories a command runs in and the paths it names, so a construct that
-  //    hides either one hides the decision itself. This project's production data cannot
-  //    be un-deleted, so an unreadable command is refused rather than guessed at. It is
-  //    confined to sessions that declared production data, above, because a guard that
-  //    refused every backtick in a project with nothing to protect is a guard people
-  //    delete (L-05).
+  // 3. A command the guard could not read all the way through, and a `cd` whose target it
+  //    could not name (#169). Neither refuses on its own any more. The rules below run on
+  //    what the guard did read, and the warning says which piece it did not, so a session
+  //    that gets an allow knows what the allow was worth. Both are confined to sessions
+  //    that declared production data, above: a guard that narrated every backtick in a
+  //    project with nothing to protect is a guard people delete (L-05).
+  //
+  //    On a parse error the walk yields no segments, so the directory list is the
+  //    payload's own directory and rule 6 judges that. Rule 5 reads tokens, which the
+  //    parser was never asked for, so it judges every path-shaped token: absolute ones as
+  //    they are, relative ones against that same directory.
   if (walk.parseError !== null) {
-    block(
-      `this command was not run because ${walk.parseError}, and this session declares production data at ` +
-        `${live.root}. A command the guard cannot read is a command it cannot clear. Rewrite it, or split ` +
-        `it into commands that can be read one at a time. ${NO_OVERRIDE}`,
+    warn(
+      `sandbox-guard: \`${command}\` ${walk.parseError}, and this session declares production data at ` +
+        `${live.root}. It was allowed on what could be read: the paths its tokens name, resolved against ` +
+        `${dirs[0] ?? 'nothing'}, the directory it runs in, the seam, and the live-run rule, all of which ` +
+        `read tokens rather than the parse. Reach hidden inside the part that could not be read was not ` +
+        `judged. Split it into commands that can be read one at a time to get the full judgement.`,
     );
-  }
-  if (walk.unresolved) {
-    block(
-      `this command changes directory to somewhere the guard cannot name — an expansion, a glob, a bare ` +
-        `\`cd\`, or \`cd -\` — and this session declares production data at ${live.root}. The guard cannot ` +
-        `tell whether what follows runs inside it, so it refuses. Give the directory literally. ${NO_OVERRIDE}`,
+  } else if (walk.unresolved) {
+    // A `cd` the guard cannot name. The directories the walk DID resolve are still
+    // judged, and so is every absolute path named. A relative token is not: it would
+    // resolve against a directory the command has already left, which is a claim about a
+    // location the guard does not have. That is what the warning is for.
+    warn(
+      `sandbox-guard: \`${command}\` changes directory to somewhere the guard cannot name (an expansion, a ` +
+        `glob, a bare \`cd\`, or \`cd -\`), and this session declares production data at ${live.root}. It was ` +
+        `allowed on what could be named: the directories the walk did resolve, the absolute paths it names, ` +
+        `the seam, and the live-run rule. Whether what follows the \`cd\` runs inside ${live.root} was not ` +
+        `judged, and a relative path after it was not resolved. Give the directory literally to get the ` +
+        `full judgement.`,
     );
   }
 
@@ -646,7 +673,11 @@ export function sandboxGuard(payload) {
   // guard that refuses those is a guard that gets deleted. The limit is real: the
   // 19,000-document incident was a sweeper run from the wrong root. What covers it is
   // the seam, which the sweeper reads to decide where to sweep.
-  const operationDir = dirs[0] ?? null;
+  // A relative token resolves against the directory the command runs in, except when a
+  // `cd` the guard could not name has already moved it somewhere else (#169). Resolving
+  // against the pre-`cd` directory there would refuse, or clear, a path that never
+  // resolves to what the guard tested. An absolute token is unaffected and still judged.
+  const operationDir = walk.unresolved && walk.parseError === null ? null : (dirs[0] ?? null);
   const liveReal = realise(live.root);
   // A file tool names exactly one location and names it plainly. A Bash command names as
   // many as its tokens do, and which of them is a path has to be guessed at.
