@@ -109,10 +109,10 @@ the gate passes. A gap found later is fixed in the phase that owns it.
 | 5 Run 2 | The live consumer from `new-project` to its first gated artefact | Scaffold to first green commit in one session; oracle declared or `none declared` printed; score row exists | live consumer | 1 to 2 |
 | 6 Removal | Each surviving rule taken out in turn, the live consumer rerun, the rule deleted if the score holds | The plugin ships with only rules that failed the removal test. `v1.0.0` tagged with the live consumer's score row and the reference numbers | live consumer | 2 |
 
-**The bar.** Phase 4 is the bar: the live consumer under the plugin must produce no lockout and no
-false refusal, and must not cost more founder interventions per merged pull request than
-RLM's record of 1.40. If the plugin adds nothing over the live consumer's own record under
-the first build, the record is the product and the plugin is the installer for it.
+**The bar.** Phase 4 is the bar: the live consumer under the plugin must produce no
+lockout and no false refusal, and must not cost more founder interventions per merged
+pull request than RLM's record of 1.40 under one hook and two skills. If the plugin costs
+more than that record, the record is the product and the plugin is the installer for it.
 
 **Kill line.** If phase 4 misses the bar, or phase 4 or 5 produces a lockout or a refusal of
 legitimate work, the layer that caused it is removed, not fixed, before another phase
