@@ -44,7 +44,9 @@ import path from 'node:path';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { HEADER_LINE, parseCommitments } from '../../plugin/hooks/commitments.mjs';
 import { resolveTestPlan } from '../../plugin/hooks/stack.mjs';
+import { parseStatusTable } from '../../plugin/hooks/status-table.mjs';
 
 const PLAN_PATH = path.resolve(
   import.meta.dirname,
@@ -54,7 +56,14 @@ const PLAN_PATH = path.resolve(
 /** P6.2 (issue #64): the guard the blank placeholder has to leave inert, unmodified. */
 const GUARD_PATH = path.resolve(import.meta.dirname, '../../plugin/hooks/sandbox-guard.mjs');
 
+/** issue #199: the answer sets and the bodies this test stands in for the agent with. */
+const ANSWERS_PATH = path.resolve(import.meta.dirname, '../fixtures/new-project/oracle-answers.json');
+
 const plan = JSON.parse(readFileSync(PLAN_PATH, 'utf8'));
+const CASES = JSON.parse(readFileSync(ANSWERS_PATH, 'utf8')).cases;
+
+/** session-status.mjs, run below against a scaffolded project the way a session would. */
+const SESSION_STATUS_PATH = path.resolve(import.meta.dirname, '../../plugin/hooks/session-status.mjs');
 
 /** The directory whose presence EN-14 is about. */
 const OBSERVABILITY_DIR = 'logs';
@@ -84,8 +93,20 @@ function tempDir(prefix = 'aeo-p61-') {
 // The scaffolder, run the way SKILL.md tells the agent to run it
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether a step applies under an answer set (issue #199). A step with no `when` always
+ * applies; a step with one applies only when every key's answer is in its list. This is
+ * the whole of the condition mechanism, and it is deliberately that small: the plan
+ * declares which files a project gets, and the answers decide, with no expression
+ * language to learn or to get wrong.
+ */
+function stepApplies(step, answers) {
+  if (!step.when) return true;
+  return Object.entries(step.when).every(([key, values]) => values.includes(answers[key]));
+}
+
 /** Resolve one step against the chosen stack's seed: its path, and its bytes. */
-function materialize(step, seed) {
+function materialize(step, seed, authoredBodies) {
   if (step.from) {
     const entry = seed[step.from];
     assert.ok(entry, `scaffold-plan.json step declares from="${step.from}", which the seed does not define`);
@@ -93,9 +114,17 @@ function materialize(step, seed) {
   }
   if (step.authored) {
     // Authored files carry no content in the manifest and never will — that is the rule
-    // keeping prose out of a data file. Standing in for the agent here is honest and
-    // deliberate: nothing below asserts anything about what these two files say.
-    return { path: step.path, content: `<!-- authored per project, placeholder for ${step.path} -->\n` };
+    // keeping prose out of a data file. The agent writes them per project; this test
+    // stands in for the agent with a body from tests/fixtures/new-project/
+    // oracle-answers.json, which is where the words live so that the shipped plan stays
+    // data. Nothing below asserts a sentence: what is asserted is the marker each step's
+    // `requires` declares, which is what a sensorium reader matches on.
+    const body = authoredBodies[step.path];
+    assert.ok(
+      body !== undefined,
+      `the answer fixture supplies no body for authored step "${step.path}"`,
+    );
+    return { path: step.path, content: body };
   }
   const extra = step.appendSeed ? (seed[step.appendSeed] ?? '') : '';
   return { path: step.path, content: `${step.content}${extra}` };
@@ -144,7 +173,7 @@ function discoverFounderDocs(root, founderPlan) {
  * Stage 0 step 3 instructs. Returns the write log and the observability observations
  * made during the walk, both of which the ordering assertions read.
  */
-function scaffoldStage0(root, stackId) {
+function scaffoldStage0(root, stackId, answers = CASES['founder-as-reader-no-money'].answers, authoredBodies = CASES['founder-as-reader-no-money'].authored) {
   const seed = plan.seeds[stackId];
   assert.ok(seed, `scaffold-plan.json seeds no "${stackId}" stack`);
 
@@ -152,10 +181,15 @@ function scaffoldStage0(root, stackId) {
 
   const writeLog = [];
   const productWritesWithoutLogs = [];
+  const skipped = [];
 
   for (const step of plan.steps) {
     if (step.stage !== 0) continue;
-    const { path: rel, content } = materialize(step, seed);
+    if (!stepApplies(step, answers)) {
+      skipped.push(step.path ?? `from=${step.from}`);
+      continue;
+    }
+    const { path: rel, content } = materialize(step, seed, authoredBodies);
 
     if (step.role === 'product' && !existsSync(path.join(root, OBSERVABILITY_DIR))) {
       // Asked of the filesystem at the moment the product file is about to appear, not
@@ -169,7 +203,7 @@ function scaffoldStage0(root, stackId) {
     writeLog.push({ path: rel, role: step.role });
   }
 
-  return { writeLog, productWritesWithoutLogs, founderDocs };
+  return { writeLog, productWritesWithoutLogs, founderDocs, skipped };
 }
 
 function git(root, args) {
@@ -183,9 +217,11 @@ function git(root, args) {
 }
 
 /** Stage 0 steps 4 through 6: confirm detection, run the suite, one commit on main. */
-function world() {
-  const root = tempDir();
-  const emitted = scaffoldStage0(root, 'node');
+function world(caseName = 'founder-as-reader-no-money', prefix = 'aeo-p61-') {
+  const root = tempDir(prefix);
+  const answerCase = CASES[caseName];
+  assert.ok(answerCase, `the answer fixture declares no case "${caseName}"`);
+  const emitted = scaffoldStage0(root, 'node', answerCase.answers, answerCase.authored);
 
   // A throwaway fixture repository, so identity and signing are pinned locally rather
   // than inherited from whatever the machine has configured.
@@ -200,7 +236,7 @@ function world() {
 
   const detected = resolveTestPlan({ toplevel: root, files: [] });
 
-  return { root, ...emitted, detected };
+  return { root, ...emitted, detected, answers: answerCase.answers };
 }
 
 const scaffolded = world();
@@ -596,5 +632,196 @@ describe('the emitted tree records a test command, and that command is green', (
       0,
       `${command} exited ${result.status}\n${result.stdout}\n${result.stderr}`,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// issue #199 — the oracle answer, the four files it writes, and what the
+// sensorium reads back out of the scaffolded project
+// ---------------------------------------------------------------------------
+//
+// The scaffold is where the goal enters the project (PLAN.md section 3). Before this
+// slice a scaffolded repository had no status table, no kill line, no ledger and no
+// commitment file, so its first session start printed "none declared" on every line the
+// sensorium exists to fill. These tests walk the plan with each of the two answer sets
+// the acceptance criterion names and then run the real hook against the tree, because
+// the tree is only half the claim: what matters is that the readers in plugin/hooks/
+// find what the scaffold left them.
+//
+// `scaffolded` above is already the founder-as-reader, no-money case, so the ordering,
+// shape, commit and sandbox assertions earlier in this file all run over a tree that
+// carries the four files too.
+
+/** The four files, and the reader in plugin/hooks/ that each one exists for. */
+const ORACLE_FILES = ['RULES.md', 'PLAN.md', 'LEDGER.md', 'COMMITMENTS.md'];
+
+const withCeiling = world('founder-as-reader-with-ceiling', 'aeo-199-');
+
+/**
+ * session-status.mjs run against a scaffolded project the way a session start runs it.
+ * gh is pointed at a command that does not exist, so the live repo sections report
+ * "could not tell" rather than reaching the network; the sensorium block does not touch
+ * gh at all and is what these tests read.
+ */
+function sessionStatus(root) {
+  const env = { ...process.env };
+  env.CLAUDE_PROJECT_DIR = '';
+  env.CLAUDE_PLUGIN_ROOT = path.resolve(import.meta.dirname, '../../plugin');
+  env.AEO_GH_COMMAND = 'aeo-gh-that-does-not-exist';
+  delete env.AEO_GH_PREFIX_ARGS;
+  delete env.AEO_LIVE_DATA_ROOT;
+  delete env.AEO_DATA_ROOT;
+
+  const r = spawnSync(process.execPath, [SESSION_STATUS_PATH], {
+    input: '',
+    encoding: 'utf8',
+    cwd: root,
+    env,
+    windowsHide: true,
+  });
+  assert.notEqual(r.stdout, '', `session-status.mjs produced no stdout (exited ${r.status}): ${r.stderr}`);
+  return r.stdout.split(/\r?\n/);
+}
+
+/**
+ * The sensorium block's own lines, from the first `score:` line to the end of the
+ * unbroken run of sensorium lines after it. The gate-health section prints first (D8
+ * outranks the consumer's number), so "begins with" in the acceptance criterion is about
+ * this block, which is the same reading tests/skills/status-render-smoke.test.mjs
+ * already takes for the other caller.
+ */
+function sensoriumBlock(lines) {
+  const start = lines.findIndex((line) => line.startsWith('score:'));
+  assert.notEqual(start, -1, `no score: line in session-status output:\n${lines.join('\n')}`);
+  const end = lines.indexOf('', start);
+  return lines.slice(start, end === -1 ? undefined : end);
+}
+
+describe('the scaffold writes the files the sensorium reads (issue #199)', () => {
+  test('RULES.md holds a line starting with the Kill line label', () => {
+    const rules = readFileSync(path.join(scaffolded.root, 'RULES.md'), 'utf8').split(/\r?\n/);
+    assert.ok(
+      rules.some((line) => line.trimStart().startsWith('**Kill line.**')),
+      'RULES.md has no **Kill line.** item, so the sensorium prints "bar: none declared"',
+    );
+  });
+
+  test('PLAN.md holds a status table under a Status heading with Phase, State and Score', () => {
+    const table = parseStatusTable(readFileSync(path.join(scaffolded.root, 'PLAN.md'), 'utf8'));
+    assert.ok(table, 'PLAN.md has no table under a Status heading whose header starts with Phase');
+    const headers = table.headers.map((h) => h.toLowerCase());
+    for (const column of ['phase', 'state', 'score']) {
+      assert.ok(headers.includes(column), `the status table has no ${column} column: ${table.headers.join(' | ')}`);
+    }
+    assert.ok(table.rows.length > 0, 'the status table has no rows, so there are no phases to score');
+  });
+
+  test('COMMITMENTS.md exists with the phase 0 decision 4 header and no rows yet', () => {
+    const markdown = readFileSync(path.join(scaffolded.root, 'COMMITMENTS.md'), 'utf8');
+    assert.ok(markdown.includes(HEADER_LINE), `COMMITMENTS.md does not carry ${HEADER_LINE}`);
+    assert.deepEqual(parseCommitments(markdown), [], 'a freshly scaffolded commitment ledger already has rows');
+  });
+
+  test('LEDGER.md is not written when the founder answers that money does not move', () => {
+    assert.equal(scaffolded.answers.money, 'no');
+    assert.equal(
+      existsSync(path.join(scaffolded.root, 'LEDGER.md')),
+      false,
+      'LEDGER.md was written for a project whose answers say no money moves; the when condition did nothing',
+    );
+    assert.ok(
+      scaffolded.skipped.includes('LEDGER.md'),
+      `the walk did not report skipping LEDGER.md: ${scaffolded.skipped.join(', ')}`,
+    );
+  });
+
+  test('every required marker a step declares is in the file that was written', () => {
+    // The plan declares markers rather than bodies, so this is the one check that keeps
+    // an authored file honest without pinning a sentence (D20).
+    const declared = plan.steps.filter((s) => s.stage === 0 && Array.isArray(s.requires));
+    assert.ok(declared.length > 0, 'no step declares requires markers, so this check measures nothing');
+    for (const step of declared) {
+      if (!scaffolded.writeLog.some((w) => w.path === step.path)) continue;
+      const body = readFileSync(path.join(scaffolded.root, ...step.path.split('/')), 'utf8');
+      for (const marker of step.requires) {
+        assert.ok(body.includes(marker), `${step.path} does not carry its required marker ${JSON.stringify(marker)}`);
+      }
+    }
+  });
+
+  test('all four files land in the one commit on main', () => {
+    const tracked = git(scaffolded.root, ['ls-files']).split(/\r?\n/);
+    for (const name of ['RULES.md', 'PLAN.md', 'COMMITMENTS.md']) {
+      assert.ok(tracked.includes(name), `${name} is not in the first commit: ${tracked.join(', ')}`);
+    }
+    assert.ok(!tracked.includes('LEDGER.md'), 'LEDGER.md is tracked in a project whose answers say no money moves');
+    assert.equal(git(scaffolded.root, ['log', '--oneline']).split(/\r?\n/).filter(Boolean).length, 1);
+    assert.equal(git(scaffolded.root, ['rev-parse', '--abbrev-ref', 'HEAD']), 'main');
+  });
+});
+
+describe('the sensorium reads the scaffolded project, not "none declared" (issue #199)', () => {
+  const lines = sessionStatus(scaffolded.root);
+  const block = sensoriumBlock(lines);
+
+  test('the block begins with the score, counted out of the scaffolded phases', () => {
+    assert.match(
+      block[0],
+      /^score: 0 of \d+ phases done$/,
+      `the sensorium's first line is "${block[0]}", not a score out of the scaffolded phases`,
+    );
+  });
+
+  test('the bar is the kill line’s own sentence', () => {
+    const bar = block.find((line) => line.startsWith('bar:'));
+    assert.ok(bar, `no bar: line in the sensorium block:\n${block.join('\n')}`);
+
+    // Read out of the file the scaffold wrote, so this pins the mechanism rather than a
+    // sentence: change the fixture's kill line and this still holds.
+    const rules = readFileSync(path.join(scaffolded.root, 'RULES.md'), 'utf8');
+    const after = rules.slice(rules.indexOf('**Kill line.**') + '**Kill line.**'.length);
+    const paragraph = after.split(/\r?\n[ \t]*\r?\n/)[0].replace(/\s+/g, ' ').trim();
+    const sentence = /^(.*?[.!?])(\s|$)/.exec(paragraph)[1];
+    assert.equal(bar, `bar: ${sentence}`);
+  });
+
+  test('the commitment ledger is present and empty, so the newest row is none declared', () => {
+    assert.ok(
+      block.includes('commitment: none declared'),
+      `the sensorium does not print "commitment: none declared":\n${block.join('\n')}`,
+    );
+  });
+
+  test('dollars stay none declared while the answers say no money moves', () => {
+    assert.ok(
+      block.includes('dollars: none declared'),
+      `the sensorium reports dollars for a project with no LEDGER.md:\n${block.join('\n')}`,
+    );
+  });
+});
+
+describe('a money answer of yes writes the ledger and the sensorium reads it (issue #199)', () => {
+  test('LEDGER.md exists and its first line carries the declared ceiling', () => {
+    const first = readFileSync(path.join(withCeiling.root, 'LEDGER.md'), 'utf8').split(/\r?\n/)[0];
+    assert.ok(
+      first.includes(`Ceiling $${withCeiling.answers.ceiling}`),
+      `LEDGER.md's first line is "${first}", which does not carry Ceiling $${withCeiling.answers.ceiling}`,
+    );
+  });
+
+  test('the sensorium prints nothing spent against that ceiling', () => {
+    const block = sensoriumBlock(sessionStatus(withCeiling.root));
+    const dollars = block.find((line) => line.startsWith('dollars:'));
+    assert.ok(dollars, `no dollars: line in the sensorium block:\n${block.join('\n')}`);
+    // Two decimals is 20-dollars.mjs's shipped rendering (phase 2) and is not this
+    // slice's to change; what is asserted is zero spent of the declared ceiling.
+    assert.match(dollars, /^dollars: 0(\.00)? of 50\b/, `the sensorium printed "${dollars}"`);
+  });
+
+  test('the ledger lands in the one commit on main', () => {
+    const tracked = git(withCeiling.root, ['ls-files']).split(/\r?\n/);
+    assert.ok(tracked.includes('LEDGER.md'), `LEDGER.md is not in the first commit: ${tracked.join(', ')}`);
+    assert.equal(git(withCeiling.root, ['log', '--oneline']).split(/\r?\n/).filter(Boolean).length, 1);
+    assert.equal(git(withCeiling.root, ['rev-parse', '--abbrev-ref', 'HEAD']), 'main');
   });
 });
