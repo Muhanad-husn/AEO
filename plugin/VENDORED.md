@@ -54,14 +54,13 @@ test-tier practice differs from it.
 
 ## Byte-identical with upstream
 
-Two files match upstream byte for byte. `tests/skills/vendored-manifest.test.mjs`
+One file matches upstream byte for byte. `tests/skills/vendored-manifest.test.mjs`
 reads the table below and fails if any listed file has stopped being identical,
 or if the table is empty.
 
 | Path within the skill | Kind |
 | --- | --- |
 | `safe-pr/assets/pr-body-template.md` | Asset |
-| `tdd-plan/references/slicing-guide.md` | Reference |
 
 ## Diverged from upstream
 
@@ -74,19 +73,15 @@ Changed lines are `diff | grep -c '^[<>]'` against the pinned commit, measured
 | `safe-pr/SKILL.md` | 179 |
 | `safe-pr/scripts/collect-evidence.mjs` | 132 |
 | `safe-cleanup/SKILL.md` | 128 |
-| `red-green-refactor/SKILL.md` | 125 |
 | `tdd-ci/SKILL.md` | 107 |
-| `tdd-plan/SKILL.md` | 94 |
-| `tdd-plan/assets/plan-template.md` | 18 |
 | `tdd-ci/references/github-actions-guide.md` | 11 |
-| `red-green-refactor/references/test-strategy.md` | 8 |
 | `tdd-ci/assets/workflows/node-ci.yml` | 2 |
 | `tdd-ci/assets/workflows/playwright-e2e.yml` | 2 |
 | `tdd-ci/assets/workflows/python-ci.yml` | 2 |
-| `red-green-refactor/references/red-green-refactor-philosophy.md` | 2 |
 
-The plugin ships no file in these five skills that upstream lacks, and drops
-none.
+The tables above cover the three ported skills still shipped. `red-green-refactor`
+and `tdd-plan` were deleted in Phase 3; their rows went with them, and what the
+two carried that held a measurement is now in `plugin/references/`.
 
 ## How to re-sync with upstream
 
