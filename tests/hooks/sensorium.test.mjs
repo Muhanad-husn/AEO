@@ -174,13 +174,16 @@ describe('the score section, against RLM\'s own status table and Kill line', () 
   test('renderSensorium prints the score and its bar', async () => {
     const dir = makeRlmRepo();
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, [EXPECTED_SCORE, EXPECTED_BAR]);
+    // makeRlmRepo() holds no LEDGER.md, so the dollars section (#182) that now
+    // shares this real sensorium/ directory renders "none declared" after these
+    // two lines; that section's own tests are tests/hooks/sensorium-dollars.test.mjs.
+    assert.deepEqual(lines, [EXPECTED_SCORE, EXPECTED_BAR, 'dollars: none declared']);
   });
 
   test('a repository with no PLAN.md prints "none declared" for both', async () => {
-    const dir = makeRepo(); // no PLAN.md, no RULES.md
+    const dir = makeRepo(); // no PLAN.md, no RULES.md, no LEDGER.md
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, ['score: none declared', 'bar: none declared']);
+    assert.deepEqual(lines, ['score: none declared', 'bar: none declared', 'dollars: none declared']);
   });
 });
 
