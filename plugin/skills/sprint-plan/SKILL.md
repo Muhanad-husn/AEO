@@ -19,9 +19,12 @@ disk first, then created through the GitHub issue tools.
    the outcome in two sentences and confirm with the founder if it's at
    all ambiguous.
 
-2. **Slice.** Run `tdd-plan` for each feature: thin vertical slices,
+2. **Slice.** Cut each feature into thin vertical slices,
    INVEST-checked, a walking-skeleton slice first where infrastructure
-   doesn't exist yet. Each slice plan states its mechanism, in this
+   doesn't exist yet. The bar, the skeleton rule and why a plan declares
+   the files it will create are in
+   `${CLAUDE_PLUGIN_ROOT}/references/slicing.md`.
+   Each slice plan states its mechanism, in this
    order: an existing skill or plugin, then a first-party MCP, then a
    library, then a single model call. Only reach past one option when the
    one before it doesn't fit.
