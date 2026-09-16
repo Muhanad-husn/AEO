@@ -186,13 +186,16 @@ describe('the score section, against RLM\'s own status table and Kill line', () 
   test('renderSensorium prints the score and its bar', async () => {
     const dir = makeRlmRepo();
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, [EXPECTED_SCORE, EXPECTED_BAR, EXPECTED_HARNESS]);
+    // makeRlmRepo() holds no LEDGER.md, so the dollars section (#182) that now
+    // shares this real sensorium/ directory renders "none declared" after these
+    // two lines; that section's own tests are tests/hooks/sensorium-dollars.test.mjs.
+    assert.deepEqual(lines, [EXPECTED_SCORE, EXPECTED_BAR, 'dollars: none declared', EXPECTED_HARNESS]);
   });
 
   test('a repository with no PLAN.md prints "none declared" for both', async () => {
-    const dir = makeRepo(); // no PLAN.md, no RULES.md
+    const dir = makeRepo(); // no PLAN.md, no RULES.md, no LEDGER.md
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, ['score: none declared', 'bar: none declared', EXPECTED_HARNESS]);
+    assert.deepEqual(lines, ['score: none declared', 'bar: none declared', 'dollars: none declared', EXPECTED_HARNESS]);
   });
 });
 
@@ -221,7 +224,7 @@ describe('session-status.mjs prints the sensorium after gate health and before t
     // between.
     const between = stdout.slice(gateIndex, dataRootIndex);
     assert.ok(
-      between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\n${EXPECTED_HARNESS}\n`),
+      between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\ndollars: none declared\n${EXPECTED_HARNESS}\n`),
       'score then bar then harness, as their own three lines, right after the gate section',
     );
   });
@@ -232,7 +235,7 @@ describe('session-status.mjs prints the sensorium after gate health and before t
     assert.match(
       stdout,
       new RegExp(
-        `not one where none was wired\\.\\n\\nscore: none declared\\nbar: none declared\\n${EXPECTED_HARNESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`,
+        `not one where none was wired\\.\\n\\nscore: none declared\\nbar: none declared\\ndollars: none declared\\n${EXPECTED_HARNESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`,
       ),
     );
   });
