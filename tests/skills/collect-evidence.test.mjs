@@ -109,7 +109,7 @@ function collect(argv, { cwd, env = {} } = {}) {
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 
-const REFUSAL = 'PRODUCTION DATA IN EVIDENCE — REFUSED';
+const REFUSAL = 'PRODUCTION DATA IN EVIDENCE — BLOCKED';
 
 function assertRefused(result, mustName, why) {
   const shown = `\n--- stdout ---\n${result.stdout}\n--- stderr ---\n${result.stderr}`;

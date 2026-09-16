@@ -7,7 +7,7 @@
  * plus the category flag(s) you approve.
  *
  * Safety guarantees:
- *   - Refuses to run on a detached HEAD (the "current branch" must be well-defined to protect it).
+ *   - Stops rather than run on a detached HEAD (the "current branch" must be well-defined to protect it).
  *   - An OPEN PR always wins — such a branch is never deletable, even if it is an ancestor of the base.
  *   - A branch is only "merged" (safe) if its commits are genuinely in the base: an ancestor, or
  *     `git cherry` shows every commit is patch-present in the base, or the forge recorded that this
@@ -16,9 +16,9 @@
  *     branch-name reuse and post-merge commits.
  *   - Force-delete (`-D`) is re-verified at delete time; recovery SHAs are logged to a file BEFORE
  *     any deletion, and deletion aborts if that log cannot be written.
- *   - A failed PR query is missing data, not "no PRs": apply mode refuses rather than delete
+ *   - A failed PR query is missing data, not "no PRs": apply mode stops rather than delete
  *     under a guarantee it can no longer honour.
- *   - Apply mode refuses when every evaluated branch came out deletable — nothing kept on
+ *   - Apply mode stops when every evaluated branch came out deletable — nothing kept on
  *     evidence is what a wrong repository or an all-containing base looks like. No override flag.
  *
  * Cross-platform (Windows/macOS/Linux). Requires Node 18+ and git. Uses `gh` if available to detect
@@ -262,7 +262,7 @@ function main() {
   const base = detectBase(args);
   if (!base) { console.error('ERROR: could not determine a base branch to compare against. Pass --base <branch>.'); process.exit(1); }
 
-  // Detached HEAD breaks "never delete the current branch" — refuse rather than protect the literal "HEAD".
+  // Detached HEAD breaks "never delete the current branch" — stop rather than protect the literal "HEAD".
   const current = git(['symbolic-ref', '--quiet', '--short', 'HEAD']);
   if (!current) { console.error('ERROR: detached HEAD — check out a branch before running cleanup.'); process.exit(1); }
 
@@ -422,16 +422,16 @@ function main() {
   }
 
   // Apply mode.
-  if (!yes) { console.error('\nREFUSING: --apply requires --yes as an explicit go-ahead. Nothing deleted.'); process.exit(2); }
+  if (!yes) { console.error('\nSTOPPING: --apply requires --yes as an explicit go-ahead. Nothing deleted.'); process.exit(2); }
 
   // The PR query failed, so "no open PR on this branch" is a thing we did not learn
   // rather than a thing we checked. The open-PR-always-wins guarantee cannot be honoured
   // on data we do not have, and the branches it protects are exactly the ones still being
-  // worked on. Refuse the whole run rather than delete under a guarantee that is not
+  // worked on. Stop the whole run rather than delete under a guarantee that is not
   // holding. Dry-run still reports, because that is how the operator sees this.
   if (prQueryFailed) {
     console.error(
-      '\nREFUSING: the PR query failed, so PR state is unknown for every branch — not empty.\n' +
+      '\nSTOPPING: the PR query failed, so PR state is unknown for every branch — not empty.\n' +
       '  Deleting now would apply the ancestor-merged rule to branches whose open PR would\n' +
       '  otherwise protect them. Fix gh (check `gh auth status` and connectivity) and re-run.\n' +
       '  Nothing deleted.',
@@ -466,7 +466,7 @@ function main() {
   const keptOnEvidence = rows.filter(r => ['open-pr', 'ahead-of-merged-pr', 'local-only'].includes(r.status));
   if (!keptOnEvidence.length) {
     console.error(
-      `\nREFUSING: every branch this run evaluated came out deletable (${toDelete.length} selected, 0 kept on evidence).\n` +
+      `\nSTOPPING: every branch this run evaluated came out deletable (${toDelete.length} selected, 0 kept on evidence).\n` +
       '  Nothing was kept for a substantive reason — no open PR, no unmerged local work, no\n' +
       '  commits beyond a merged PR. That is what running from the wrong repository, or against\n' +
       `  a base branch that already contains everything, looks like. Base was "${base}".\n` +
@@ -497,19 +497,19 @@ function main() {
     if (!['merged', 'abandoned'].includes(r.status)) { console.log(`  skip   ${r.name} (${r.status} — not eligible)`); skipped++; continue; }
     // Re-verify force-deletes at the moment of deletion to catch any drift since
     // classification. Re-ask the question the branch was classified on: a squash-merged
-    // branch would fail a cherry check by construction, so re-running that one would refuse
+    // branch would fail a cherry check by construction, so re-running that one would stop
     // every branch this fix exists to release. Head identity is the drift check there — if
     // the branch has moved off the commit the forge merged, it is no longer that branch.
     if (r.delFlag === '-D' && r.status === 'merged') {
       if (r.mergedHeadOid) {
         const nowSha = git(['rev-parse', r.name]);
         if (nowSha !== r.mergedHeadOid) {
-          console.log(`  SKIP   ${r.name} (head moved to ${nowSha ? nowSha.slice(0, 7) : 'unknown'} since classification — refusing force-delete)`);
+          console.log(`  SKIP   ${r.name} (head moved to ${nowSha ? nowSha.slice(0, 7) : 'unknown'} since classification — stopping force-delete)`);
           skipped++; continue;
         }
       } else {
         const ahead = cherryAhead(r.name, base);
-        if (ahead !== 0) { console.log(`  SKIP   ${r.name} (now has ${ahead == null ? 'undetermined' : ahead} commit(s) not in ${base} — refusing force-delete)`); skipped++; continue; }
+        if (ahead !== 0) { console.log(`  SKIP   ${r.name} (now has ${ahead == null ? 'undetermined' : ahead} commit(s) not in ${base} — stopping force-delete)`); skipped++; continue; }
       }
     }
     const del = gitBranchDelete(r.delFlag, r.name);
@@ -518,7 +518,7 @@ function main() {
       const cause = firstLine(del.stderr) || '(git gave no reason on stderr)';
       const heldBy = worktreeHoldingBranch(r.name);
       const where = worktreeSuffix(cause, heldBy);
-      console.log(`  FAILED ${r.name} (git branch ${r.delFlag} refused: ${cause}${where} — left intact)`);
+      console.log(`  FAILED ${r.name} (git branch ${r.delFlag} failed: ${cause}${where} — left intact)`);
       skipped++;
     }
   }
