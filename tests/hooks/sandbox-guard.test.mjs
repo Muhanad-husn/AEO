@@ -1051,6 +1051,23 @@ describe('a command the guard cannot read is judged on what it can read (#169)',
     assertBlockedBecause(guard({ payload: bash(command, base), env }), NAMES_LIVE_DATA, command);
   });
 
+  // The adversarial read on this slice: a quote is not a way past the token judgement.
+  // The token regex takes no opinion from an opening quote it never sees closed, so the
+  // path inside it is still a token. A path with a space in it splits at the space, and
+  // the left half is still inside the production root, which is what blocks.
+  test('an unterminated quote does not hide a path inside production data', () => {
+    const { base, live, env } = setup();
+    mkdirSync(path.join(live, 'my data'), { recursive: true });
+    for (const command of [
+      `cat "${path.join(live, 'index.json')}`,
+      `cat '${path.join(live, 'index.json')}`,
+      `cat "${path.join(live, 'my data', 'index.json')}`,
+      `cat "unterminated ${path.join(live, 'index.json')} and more`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, base), env }), NAMES_LIVE_DATA, command);
+    }
+  });
+
   test('an unreadable command still blocks on the directory it runs in', () => {
     const { live, env } = setup();
     assertBlockedBecause(guard({ payload: bash('echo "unterminated', live), env }), OPERATES_IN, 'run from inside');
@@ -1086,6 +1103,26 @@ describe('a command the guard cannot read is judged on what it can read (#169)',
   test('a cd the guard cannot name still blocks on a directory the walk did resolve', () => {
     const { live, env } = setup();
     assertBlockedBecause(guard({ payload: bash('cd $DIR && ls', live), env }), OPERATES_IN, 'started inside');
+  });
+
+  // A KNOWN MISS, pinned rather than claimed as covered. The tokeniser splits on a space
+  // it sees outside a quote, so an unterminated quote around a path whose PRODUCTION ROOT
+  // ITSELF contains a space leaves two tokens, and neither of them resolves inside that
+  // root. The command reaches production data and gets a warning instead of a refusal. A
+  // space below the root is caught, because the token left of it is still inside the root
+  // (the test above). What still covers the ordinary shape of this is the seam rule,
+  // which needs no parse; what escapes is one command naming one path by hand.
+  test('an unterminated quote around a production root whose own path contains a space is not caught', () => {
+    const base = tempDir();
+    const live = path.join(base, 'live data');
+    const sandbox = path.join(base, 'sandbox');
+    mkdirSync(live, { recursive: true });
+    mkdirSync(sandbox, { recursive: true });
+    assertWarned(
+      guard({ payload: bash(`cat "${path.join(live, 'index.json')}`, base), env: { [LIVE]: live, [DATA]: sandbox } }),
+      WARNS_UNREADABLE,
+      'a space inside the production root defeats the token split',
+    );
   });
 
   // With nothing declared there is nothing to protect and nothing to say. A guard that
