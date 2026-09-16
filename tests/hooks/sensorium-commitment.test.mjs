@@ -211,7 +211,7 @@ describe('pipe escaping', () => {
     assert.equal(unescapeCell(escapeCell(text)), text);
   });
 
-  test('a recommendation holding a pipe survives record, mark and both readers intact', () => {
+  test('a recommendation holding a pipe survives record, mark and both readers intact', async () => {
     const dir = tempDir();
     const text = 'Ship phase 2 | 4 issues | $0';
     const r = record(dir, text);
@@ -224,9 +224,7 @@ describe('pipe escaping', () => {
     mark(dir, 'executed');
     const counts = countCommitmentsFromInterventions(ledgerText(dir));
     assert.deepEqual(counts, { marked: 1, total: 1 });
-    const lines = renderCommitment({ root: dir });
-    return lines.then((out) => {
-      assert.ok(out.includes(`commitment: ${TODAY} "${text}" executed`));
-    });
+    const out = await renderCommitment({ root: dir });
+    assert.ok(out.includes(`commitment: ${TODAY} "${text}" executed`));
   });
 });

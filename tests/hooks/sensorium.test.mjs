@@ -171,16 +171,22 @@ describe('renderSensorium', () => {
 // ---------------------------------------------------------------------------
 
 describe('the score section, against RLM\'s own status table and Kill line', () => {
-  test('renderSensorium prints the score and its bar', async () => {
+  // Both repos here carry no COMMITMENTS.md, so the commitment section (#184, added
+  // after this slice) always declares none; its two lines are asserted against
+  // directly in tests/hooks/sensorium-commitment.test.mjs. This checks the score
+  // section's own two lines still come first, not that they are the whole block --
+  // directory discovery means later slices append sections here without this file
+  // needing to enumerate them.
+  test('renderSensorium prints the score and its bar first', async () => {
     const dir = makeRlmRepo();
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, [EXPECTED_SCORE, EXPECTED_BAR]);
+    assert.deepEqual(lines.slice(0, 2), [EXPECTED_SCORE, EXPECTED_BAR]);
   });
 
-  test('a repository with no PLAN.md prints "none declared" for both', async () => {
+  test('a repository with no PLAN.md prints "none declared" for both, first', async () => {
     const dir = makeRepo(); // no PLAN.md, no RULES.md
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, ['score: none declared', 'bar: none declared']);
+    assert.deepEqual(lines.slice(0, 2), ['score: none declared', 'bar: none declared']);
   });
 });
 
