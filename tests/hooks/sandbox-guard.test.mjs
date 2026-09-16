@@ -1068,6 +1068,25 @@ describe('a command the guard cannot read is judged on what it can read (#169)',
     }
   });
 
+  // The shape that does escape, pinned rather than claimed as fixed: a production root
+  // whose OWN path contains a space. The split then leaves a left half that is a sibling
+  // of the root rather than a child of it, and a right half that is relative. The seam
+  // rule still covers the ordinary way a run reaches production data; what escapes here
+  // is one command naming one path by hand inside a quote that never closes.
+  test('a production root whose own path contains a space is a known miss', () => {
+    const base = tempDir();
+    const live = path.join(base, 'my production');
+    const sandbox = path.join(base, 'sandbox');
+    mkdirSync(live, { recursive: true });
+    mkdirSync(sandbox, { recursive: true });
+    const command = `cat "${path.join(live, 'index.json')}`;
+    assertWarned(
+      guard({ payload: bash(command, base), env: { [LIVE]: live, [DATA]: sandbox } }),
+      WARNS_UNREADABLE,
+      command,
+    );
+  });
+
   test('an unreadable command still blocks on the directory it runs in', () => {
     const { live, env } = setup();
     assertBlockedBecause(guard({ payload: bash('echo "unterminated', live), env }), OPERATES_IN, 'run from inside');
