@@ -86,7 +86,7 @@ different shape on purpose.
 
 | # | Project | Shape | Oracle | Baseline on record |
 |---|---|---|---|---|
-| 1 | `D:\RLM` | Python pipeline, model calls, money | key, rubric, spread | phases 0 to 5: 4 days, $3.50, 48 PRs under one hook and two skills. `RLM-Challenge`: 16 days, $20.58, 122 PRs, no report, under the first build |
+| 1 | `D:\RLM` | Python pipeline, model calls, money | key, rubric, spread | reference only, not a live consumer: RLM shipped and went public 2026-09-12, no further phases. phases 0 to 5: 4 days, $3.50, 48 PRs under one hook and two skills. `RLM-Challenge`: 16 days, $20.58, 122 PRs, no report, under the first build |
 | 2 | `D:\CIP-code` | service with production data at `D:\CIP-data`, 7,000 tests | acceptance suite, founder as reader | filed #127, #130, #133, #134 against the first build: an hour lost to a flaky gate, a day to harness noise, two lockouts |
 | 3 | a fresh project from `new-project` | whatever the founder names; a UI is the useful case | founder as reader with a checklist | none; this is the generalisation test |
 
@@ -107,17 +107,17 @@ the gate passes. A gap found later is fixed in the phase that owns it.
 | 1 Invariants | `hooks/` at the keep-list of section 3; `hooks.json` with matchers that fire nothing on read tools | `block-merge` structural on the first build's false-positive list. Node processes per call: Grep 0, Bash 1 unarmed, 2 armed. Existing hook tests pass minus the deleted | none | 1 |
 | 2 Sensorium | `session-status` and `/status` printing the section 2 fields, plus the commitment ledger read and write | Against RLM: prints its status row, ledger balance, last recommendation with its executed word. Against a repo with no oracle: prints `score: none declared` | 1 | 1 to 2 |
 | 3 Knowledge | `skills/` rewritten advisory; agents deleted; `new-project` asks the oracle question; references carry every surviving incident | `grade-plugin` finds no `refuses`, no `disable-model-invocation` outside `sprint-plan`, no step-ordered lane. Session-start read budget under 150 lines. Every reference cites an incident or a measurement | none | 2 |
-| 4 Run 1 | RLM phases 6 and 7 built with the plugin installed, replacing the global copies | Score row for phases 6 and 7 beside the row for 0 to 5. Not slower, not more interventions | 1 | RLM's own |
-| 5 Run 2 | CIP's next milestone built under the plugin, `AEO_LIVE_DATA_ROOT` declared | No lockout, no false refusal, sentinel and data rules hold live. Score row beside CIP's record under the first build | 2 | CIP's own |
-| 6 Run 3 | A fresh project from `new-project` to its first gated artefact | Scaffold to first green commit in one session; oracle declared or `none declared` printed; score row exists | 3 | 1 to 2 |
-| 7 Removal | Each surviving rule taken out in turn, the cheapest consumer rerun, the rule deleted if the score holds | The plugin ships with only rules that failed the removal test. `v1.0.0` tagged with the three score rows in the release notes | all | 2 |
+| 4 Run 1 | CIP's next milestone built under the plugin, `AEO_LIVE_DATA_ROOT` declared | No lockout, no false refusal, sentinel and data rules hold live. Score row beside CIP's record under the first build | 2 | CIP's own |
+| 5 Run 2 | A fresh project from `new-project` to its first gated artefact | Scaffold to first green commit in one session; oracle declared or `none declared` printed; score row exists | 3 | 1 to 2 |
+| 6 Removal | Each surviving rule taken out in turn, the cheapest consumer rerun, the rule deleted if the score holds | The plugin ships with only rules that failed the removal test. `v1.0.0` tagged with the three score rows in the release notes | all | 2 |
 
-**The bar.** Phase 4 is the bar: RLM under the plugin must not be slower or cost more
-founder interventions per PR than RLM under one hook and two skills. If the plugin adds
-nothing over three files, the three files are the product and the plugin is the
-installer for them.
+**The bar.** Phase 4 is the bar: CIP under the plugin must produce no lockout and no
+false refusal, and must not cost more founder interventions per merged pull request than
+CIP's record under the first build (#127, #130, #133, #134: an hour lost to a flaky gate,
+a day to harness noise, two lockouts). If the plugin adds nothing over CIP's record under
+the first build, that record is the product and the plugin is the installer for it.
 
-**Kill line.** If phase 4 misses the bar, or phase 5 produces a lockout or a refusal of
+**Kill line.** If phase 4 misses the bar, or phase 4 produces a lockout or a refusal of
 legitimate work, the layer that caused it is removed, not fixed, before another phase
 runs. Two misses on the same layer and the layer is gone from the plan.
 
@@ -133,8 +133,7 @@ One row per phase, written by the phase's closing pull request.
 | 3 Knowledge | not started | | | |
 | 4 Run 1 | not started | | | |
 | 5 Run 2 | not started | | | |
-| 6 Run 3 | not started | | | |
-| 7 Removal | not started | | | |
+| 6 Removal | not started | | | |
 
 **How a phase becomes issues.** The founder types `/sprint-plan` for the phase. Three to
 six issues, each a vertical piece that leaves an artefact a test checks, the closing issue
@@ -279,5 +278,9 @@ Made 2026-09-16, in phase 2:
 5. The commitment ledger is written by `plugin/scripts/commitment.mjs`, called by the
    model, never by a hook.
 6. The session-start cost line prints processes and lines, not tests over source.
+
+Made 2026-09-16: RLM shipped and went public; no further RLM phases run. Phase 4 moves
+to CIP's next milestone under the plugin; RLM's phases 0 to 5 row (section 5a, phase 0)
+stays the reference score, not a live bar.
 
 No decision is open.
