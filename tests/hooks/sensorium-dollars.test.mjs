@@ -153,14 +153,14 @@ describe('renderSensorium composes the dollars line with the rest of the block',
     const dir = tempDir();
     writeLedger(dir, LEDGER_WITH_TABLE);
     const lines = await renderSensorium(dir);
-    assert.equal(lines.at(-1), 'dollars: 18.12 of 50, balance 31.88 (LEDGER.md)');
+    assert.equal(lines.find((l) => l.startsWith("dollars:")), 'dollars: 18.12 of 50, balance 31.88 (LEDGER.md)');
     assert.deepEqual(lines.slice(0, 2), ['score: none declared', 'bar: none declared']);
   });
 
   test('a repository with no LEDGER.md prints "none declared" for dollars', async () => {
     const dir = tempDir();
     const lines = await renderSensorium(dir);
-    assert.equal(lines.at(-1), 'dollars: none declared');
+    assert.equal(lines.find((l) => l.startsWith("dollars:")), 'dollars: none declared');
   });
 
   test('against a faithful excerpt of RLM\'s own real LEDGER.md', async () => {
@@ -172,6 +172,6 @@ describe('renderSensorium composes the dollars line with the rest of the block',
     assert.equal(parsed.ceiling, 50);
     assert.equal(parsed.balance, 49.4578); // the excerpt's last row, RLM's real number
     const lines = await renderSensorium(dir);
-    assert.equal(lines.at(-1), 'dollars: 0.54 of 50, balance 49.46 (LEDGER.md)');
+    assert.equal(lines.find((l) => l.startsWith("dollars:")), 'dollars: 0.54 of 50, balance 49.46 (LEDGER.md)');
   });
 });
