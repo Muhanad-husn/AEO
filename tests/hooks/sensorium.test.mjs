@@ -27,6 +27,11 @@ const fixturesDir = path.join(repoRoot, 'tests', 'fixtures', 'sensorium');
 
 const EXPECTED_SCORE = 'score: 7 Compare done, sample 4 recall 86.4 (8 of 8 phases done)';
 const EXPECTED_BAR = 'bar: Phase 5 under 70 on sample 1 after $25 spent means the method is wrong.';
+// Slice 05 (#185) added plugin/hooks/sensorium/50-harness.mjs, a third real section
+// that reads AEO_HOME_DIR when set. This file points it at an empty, controlled
+// directory (below) so every render here reports this fixed, machine-independent
+// line instead of whichever developer's or CI runner's real ~/.claude.
+const EXPECTED_HARNESS = 'harness: bash 0 node, grep 0, read 0, task 0; session start 0 lines';
 
 // ---------------------------------------------------------------------------
 // scratch space
@@ -41,6 +46,13 @@ function tempDir(prefix = 'aeo-sensorium-') {
 after(() => {
   for (const dir of scratch) rmSync(dir, { recursive: true, force: true });
 });
+
+// An empty home directory for 50-harness.mjs: no settings.json, no CLAUDE.md, no
+// plugins/, so measureCost reports all zeroes regardless of machine. Set for this
+// whole file's process (node --test gives each test file its own process) so the
+// spawned session-status.mjs subprocess (which inherits process.env) sees it too.
+const controlledHomeDir = tempDir('aeo-sensorium-harness-home-');
+process.env.AEO_HOME_DIR = controlledHomeDir;
 
 function gitRun(cwd, ...args) {
   const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', windowsHide: true });
@@ -171,20 +183,22 @@ describe('renderSensorium', () => {
 // ---------------------------------------------------------------------------
 
 describe('the score section, against RLM\'s own status table and Kill line', () => {
-  // renderSensorium() here uses the real sensorium/ directory (no `dir` override), so
-  // every later slice's section renders too. Neither fixture repo below has a
-  // .aeo/runs or a logs/, so 30-runs.mjs (#183) contributes its own deterministic
-  // "none live" / "none" pair right after score and bar.
-  test('renderSensorium prints the score and its bar', async () => {
+  // Both repos here carry no COMMITMENTS.md, so the commitment section (#184, added
+  // after this slice) always declares none; its two lines are asserted against
+  // directly in tests/hooks/sensorium-commitment.test.mjs. This checks the score
+  // section's own two lines still come first, not that they are the whole block --
+  // directory discovery means later slices append sections here without this file
+  // needing to enumerate them.
+  test('renderSensorium prints the score and its bar first', async () => {
     const dir = makeRlmRepo();
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, [EXPECTED_SCORE, EXPECTED_BAR, 'runs: none live', 'last run: none']);
+    assert.deepEqual(lines.slice(0, 2), [EXPECTED_SCORE, EXPECTED_BAR]);
   });
 
-  test('a repository with no PLAN.md prints "none declared" for both', async () => {
+  test('a repository with no PLAN.md prints "none declared" for both, first', async () => {
     const dir = makeRepo(); // no PLAN.md, no RULES.md
     const lines = await renderSensorium(dir);
-    assert.deepEqual(lines, ['score: none declared', 'bar: none declared', 'runs: none live', 'last run: none']);
+    assert.deepEqual(lines.slice(0, 2), ['score: none declared', 'bar: none declared']);
   });
 });
 
@@ -202,20 +216,31 @@ describe('session-status.mjs prints the sensorium after gate health and before t
     assert.notEqual(gateIndex, -1, 'the pre-existing gate section is still printed');
     const scoreIndex = stdout.indexOf(EXPECTED_SCORE);
     const barIndex = stdout.indexOf(EXPECTED_BAR);
+    const harnessIndex = stdout.indexOf(EXPECTED_HARNESS);
     const dataRootIndex = stdout.indexOf('Production data root:');
     assert.ok(scoreIndex > gateIndex, 'the score line follows the gate section');
     assert.ok(barIndex > scoreIndex, 'the bar line follows the score line');
-    assert.ok(dataRootIndex > barIndex, 'the data root section follows the sensorium block');
-    // The sensorium block is its own two lines, score then bar, immediately after the
-    // gate section's last line -- no caller-added header in between.
+    assert.ok(harnessIndex > barIndex, 'the harness line follows the bar line');
+    assert.ok(dataRootIndex > harnessIndex, 'the data root section follows the sensorium block');
+    // The sensorium block is its own three lines, score then bar then harness,
+    // immediately after the gate section's last line -- no caller-added header in
+    // between.
     const between = stdout.slice(gateIndex, dataRootIndex);
-    assert.ok(between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\n`), 'score then bar, as their own two lines, right after the gate section');
+    assert.ok(
+      between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\ndollars: none declared\nruns: none live\nlast run: none\ncommitment: none declared\nexecuted: none declared\n${EXPECTED_HARNESS}\n`),
+      'score then bar then harness, as their own three lines, right after the gate section',
+    );
   });
 
   test('a repository with no PLAN.md prints "none declared" for both, still after gate health', () => {
     const dir = makeRepo();
     const stdout = runSessionStatus(dir);
-    assert.match(stdout, /not one where none was wired\.\n\nscore: none declared\nbar: none declared\n/);
+    assert.match(
+      stdout,
+      new RegExp(
+        `not one where none was wired\\.\\n\\nscore: none declared\\nbar: none declared\\ndollars: none declared\\nruns: none live\\nlast run: none\\ncommitment: none declared\\nexecuted: none declared\\n${EXPECTED_HARNESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`,
+      ),
+    );
   });
 
   test('the rest of the output is unchanged: branch and HEAD still print', () => {

@@ -1,8 +1,16 @@
 // Founder messages per merged pull request, and the commitment ledger's rate.
 // Nothing here reads a home directory or a project path; the caller passes the
 // file paths in, and line() formats from the snapshot alone.
+//
+// countCommitments moved to plugin/hooks/commitments.mjs (#184), which the
+// sensorium's commitment section also reads. Re-exported here, unchanged in
+// contract, so this module's own callers and tests/scripts/score-interventions.test.mjs
+// see no difference.
 import { readFileSync } from 'node:fs';
-import { calendarDate, mergedPullRequests, splitRow } from './consumer.mjs';
+import { calendarDate, mergedPullRequests } from './consumer.mjs';
+import { countCommitments } from '../../plugin/hooks/commitments.mjs';
+
+export { countCommitments };
 
 const DECISION = /\b(approve|approved|merge|lgtm)\b/i;
 const DECISION_WORDS = 12;
@@ -66,33 +74,6 @@ export function scanTranscripts(paths, window) {
     totals.sessions += 1;
   }
   return totals;
-}
-
-// The commitment ledger's Executed column. A row holds executed, partial or
-// not; executed counts as done. A blank cell is unmarked and stays out of the
-// denominator. Returns { marked: done rows, total: rows carrying a word }.
-export function countCommitments(markdown) {
-  let column = null;
-  let marked = 0;
-  let total = 0;
-  for (const line of markdown.split(/\r?\n/)) {
-    if (!line.trimStart().startsWith('|')) {
-      column = null;
-      continue;
-    }
-    const cells = splitRow(line);
-    if (/^[\s:-]+$/.test(cells.join(''))) continue;
-    if (column === null) {
-      const index = cells.findIndex((cell) => /^executed$/i.test(cell));
-      if (index >= 0) column = index;
-      continue;
-    }
-    const word = (cells[column] ?? '').toLowerCase();
-    if (!/^(executed|partial|not)$/.test(word)) continue;
-    total += 1;
-    if (word === 'executed') marked += 1;
-  }
-  return { marked, total };
 }
 
 function plural(count, word) {
