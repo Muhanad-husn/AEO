@@ -19,6 +19,10 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import {
   parseDecisionLog,
   renderIssueTriage,
@@ -27,6 +31,13 @@ import {
   formatPrLine,
   summarizeChecks,
 } from '../../plugin/hooks/status-render.mjs';
+// The sensorium (#181): renderStatusView now prepends this block ahead of everything
+// tested above. Imported straight from sensorium.mjs, not through renderStatusView,
+// because renderStatusView's own path also calls gh -- exactly the process-spawning,
+// network-touching cost this file's header says it exists to avoid. The full
+// integration, gh included, is tests/hooks/sensorium.test.mjs's job (fast tier too,
+// via a faked gh, but a separate file since it does spawn processes).
+import { renderSensorium } from '../../plugin/hooks/sensorium.mjs';
 
 // The gh answer shape both callers pass in, small enough to read at a glance. `ok: true`
 // with data is the populated path; the unknown and empty paths are the integration
@@ -78,5 +89,17 @@ describe('each renderer produces output against a fixture', () => {
   test('decision headings parse into identifier and title', () => {
     const decisions = parseDecisionLog('### D5 — GitHub issues are the single source of truth\n\nbody\n');
     assert.deepEqual(decisions, [{ id: 'D5', number: 5, title: 'GitHub issues are the single source of truth' }]);
+  });
+});
+
+describe('the sensorium (#181) leads renderStatusView\'s output', () => {
+  test('its block, on its own, begins with score:', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'aeo-status-render-smoke-'));
+    try {
+      const out = (await renderSensorium(dir)).join('\n');
+      assert.ok(out.startsWith('score:'), `expected the sensorium block to start with "score:", got: ${out}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
