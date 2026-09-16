@@ -128,8 +128,9 @@ function finish(code, message) {
  * `hookSpecificOutput.additionalContext` is the field the running Claude Code surfaces
  * to the model, confirmed live on 2.1.270 against a probe that put a different string in
  * each field. `systemMessage` carries the same text to the user's transcript, so the
- * person reading along sees what the model was told. The decision is stated as `allow`
- * because a hook that says nothing says nothing: the object exists to carry the text.
+ * person reading along sees what the model was told. No permission decision is stated:
+ * a control run showed the warning is delivered without one, and stating `allow` could
+ * skip the user's own permission prompt for a command the gate could not read.
  */
 function finishWithWarning(name, payload, text) {
   const event = typeof payload?.hook_event_name === 'string' && payload.hook_event_name !== ''
@@ -138,8 +139,6 @@ function finishWithWarning(name, payload, text) {
   const body = {
     hookSpecificOutput: {
       hookEventName: event,
-      permissionDecision: 'allow',
-      permissionDecisionReason: `${name}: allowed, with something the gate could not read.`,
       additionalContext: text,
     },
     systemMessage: text,

@@ -982,9 +982,8 @@ describe('warn (#169)', () => {
     assert.equal(r.status, 0, r.stderr);
     const parsed = JSON.parse(r.stdout);
     assert.equal(parsed.hookSpecificOutput.hookEventName, 'PreToolUse');
-    assert.equal(parsed.hookSpecificOutput.permissionDecision, 'allow');
-    assert.equal(typeof parsed.hookSpecificOutput.permissionDecisionReason, 'string');
-    assert.notEqual(parsed.hookSpecificOutput.permissionDecisionReason, '');
+    assert.equal(parsed.hookSpecificOutput.permissionDecision, undefined, 'a warning must not decide permission');
+    assert.equal(parsed.hookSpecificOutput.permissionDecisionReason, undefined);
   });
 
   test('the warning text reaches additionalContext and systemMessage', () => {

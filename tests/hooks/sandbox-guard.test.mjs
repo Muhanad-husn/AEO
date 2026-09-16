@@ -187,7 +187,7 @@ function assertWarned(result, pattern, message) {
   } catch {
     assert.fail(`${message}: stdout is not one JSON object: ${JSON.stringify(result.stdout)}`);
   }
-  assert.equal(parsed.hookSpecificOutput.permissionDecision, 'allow', `${message}: not an allow decision`);
+  assert.equal(parsed.hookSpecificOutput.permissionDecision, undefined, `${message}: a warning must not decide permission`);
   assert.match(
     parsed.hookSpecificOutput.additionalContext,
     pattern,
