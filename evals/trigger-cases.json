@@ -10,6 +10,11 @@
     },
     {
       "date": "2026-09-16",
+      "issue": 196,
+      "change": "The minimum remap npm test needs after fix, red-green-refactor and tdd-plan merged into build: every case expecting one of the three now expects build. No case added or removed. The set is 38 cases."
+    },
+    {
+      "date": "2026-09-16",
       "issue": 197,
       "change": "Sixteen cases removed: every case naming monitor-design, tdd-ci, worker-dispatch, sprint-start, triage, review or verify, which phase 3 slice 03 deleted. Nothing was rewritten and no case was added, so this set is 22 cases after slice 02 left 38, and a number taken over it is not comparable with a number taken over the 40. Slice 06 reauthors the set against the second build's roster."
     },
@@ -17,6 +22,11 @@
       "date": "2026-09-16",
       "issue": 198,
       "change": "safe-pr renamed to pr in every case that named it. status became model-invocable and had no case, so st-p1, st-p2 and st-n1 were added. The set is 25 cases."
+    },
+    {
+      "date": "2026-09-16",
+      "issue": 200,
+      "change": "Reauthored against the closing roster (build, pr, safe-cleanup, status, new-project, sprint-plan): checked every expect against the shipped skills, none named a deleted lane, and the five 'why' rationales still naming red-green-refactor, the fix lane, tdd-plan or the review lane were rewritten to name the skill that now owns that ground. No case, expect or competes value changed. The set is still 25 cases. The number this run prints is reported in the pull request, never tuned toward."
     }
   ],
   "note": "Authored from what a founder would plausibly type, not derived from the skill descriptions. Wording deliberately avoids the descriptions' own vocabulary: a case set written out of the text it scores measures the case set. 'expect' is a roster skill name or NONE. NONE is correct whenever the prompt belongs to an operator lane (those carry disable-model-invocation: true and are unreachable by description) or to no skill at all.",
@@ -26,14 +36,14 @@
       "kind": "positive",
       "expect": "build",
       "prompt": "Here is the slice plan for token refresh. Build it.",
-      "why": "The handoff red-green-refactor is specified to receive: an existing plan, now execute it."
+      "why": "The handoff `build` is specified to receive: an existing plan, now execute it."
     },
     {
       "id": "rgr-p2",
       "kind": "positive",
       "expect": "build",
       "prompt": "Fix the cart total rounding, but I want the test written before the code.",
-      "why": "Small change plus an explicit test-first demand. Also probes the boundary with the fix lane, which is operator-invoked: the test-first demand is what should tip it here rather than nowhere."
+      "why": "Small change with an explicit test-first demand. `build` is the merged skill for exactly this: a fix, named or not as test-first, still reads as a change to code that already exists."
     },
     {
       "id": "sc-p1",
@@ -92,7 +102,7 @@
         "build"
       ],
       "prompt": "Go over my diff and tell me what is wrong with it before I open anything.",
-      "why": "This is the review lane, which is operator-invoked and not in the roster. If pr takes it, a description-triggered skill is poaching a lane's prompt."
+      "why": "The second build ships no reviewer skill; a second reader is the model's own call (PLAN.md section 9), never a lane. If pr takes it, a description-triggered skill is grabbing a prompt nothing on the roster owns."
     },
     {
       "id": "pr-n3",
@@ -150,7 +160,7 @@
         "build"
       ],
       "prompt": "Turn section four of the spec into a backlog of GitHub issues for the coming sprint.",
-      "why": "This is the sprint-plan lane, which is operator-invoked. tdd-plan's own description points here, so the question is whether it points or grabs."
+      "why": "This is the sprint-plan lane, which is operator-invoked. `build`'s own description points here (spec decomposition is not a change to existing code), so the question is whether it points away or grabs anyway."
     },
     {
       "id": "np-p1",
@@ -181,7 +191,7 @@
         "new-project"
       ],
       "prompt": "The repo already exists. Cut the payments feature into pieces before we start on it.",
-      "why": "The new-project / tdd-plan pair, on the side new-project's last sentence points away from. Both answer start some work; only one of them assumes there is nothing there yet."
+      "why": "The new-project / build pair, on the side new-project's last sentence points away from. Both answer start some work; only one of them assumes there is nothing there yet."
     },
     {
       "id": "np-n2",
