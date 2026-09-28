@@ -83,9 +83,9 @@ function renderDataRoot(payload) {
 
   return [
     `**Production data root: declared** at \`${live.root}\` (\`${LIVE_DATA_ROOT_ENV}\`). The sandbox`,
-    "guard is comparing every run's data root against it. That the declaration exists is",
-    'what is being reported here; whether it names the right directory is not something',
-    'this hook can check.',
+    'guard refuses a command that names a path inside it, runs inside it, or sets',
+    '`AEO_DATA_ROOT` into it. That the declaration exists is what is being reported here;',
+    'whether it names the right directory is not something this hook can check.',
     '',
   ];
 }

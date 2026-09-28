@@ -50,8 +50,8 @@
 //
 // One variable cannot do this. The guard has to compare an effective location against a
 // declared one, and a single variable gives it nothing to compare against. In ordinary
-// operator use outside Claude Code the two are equal; in a session they must differ, and
-// this gate is what makes "must" mean something.
+// operator use outside Claude Code the two are equal; in a session that sets the seam
+// they must differ, and this gate refuses a session where they do not.
 //
 // AEO_DATA_ROOT is an environment variable because in-process monkeypatching never
 // reaches a subprocess CLI child and integration tests shell out. That is L-03's second
@@ -72,13 +72,15 @@
 // AEO_DATA_ROOT is unaffected: it still has to reach a subprocess, so it stays exactly
 // where it was.
 //
-// WHY THE ENVIRONMENT RULE FIRES ON EVERY COMMAND AND NOT ONLY ON TEST COMMANDS. A gate
-// that had to recognise "this command runs the project's code" would be a classifier
-// whose failure mode is silent under-blocking, which is the L-08 shape this project is
-// most alert to. There is nothing to classify here. A session whose declared seam points
-// into production data is misconfigured as a whole, and blocking at its first Bash call
-// with a message naming the fix is a one-time setup block, not a per-command tax. Once
-// the project sets both variables in .claude/settings.json the rule never fires again.
+// THE SEAM RULE JUDGES A SEAM THAT IS SET, ON EVERY COMMAND. A seam that is relative, or
+// that overlaps production data, is refused whatever the command is, because there is
+// nothing to classify: a seam pointed into production data is misconfigured for every
+// command that inherits it. A seam that is NOT set is not refused (#214). That refusal
+// read no production data. It refused `gh issue view` in Axial, and refused it again
+// behind the prefix its own message prescribed, because the `cd` before it was judged
+// against the unset session seam. A session with no seam is judged by the rules that read
+// evidence: a path named inside production data, the directory a command runs in, and
+// the live-run sentinel.
 //
 // The sentinel rule does need to recognise a suite, and it takes that from the project's
 // own recorded test command (stack.mjs) rather than from a table of its own. A project
@@ -183,8 +185,8 @@ function overlaps(a, b) {
 // A token is a run of non-space characters with quoted spans allowed inside it, so
 // `--data-dir="D:/corpus one"` is one token rather than two. Shell parsing beyond this
 // is deliberately not attempted: the tokens feed a containment test whose false
-// positives cost a message and whose false negatives are covered by the environment
-// rule, which needs no parsing at all.
+// positives cost a message. Its false negatives are not covered when no seam is set
+// (#214).
 const TOKEN = /(?:"[^"]*"|'[^']*'|[^\s"']+)+/g;
 
 /** The command split into tokens, with quotes removed. */
@@ -492,8 +494,9 @@ export function settingsDeclarationDir(payload, env) {
  *
  * A segment that runs no program sets nothing a child can inherit — a bare assignment
  * makes a shell variable, not an exported one — so it contributes no seam and is not
- * judged. A command with no segments at all still gets the session's own seam, because
- * the environment rule fires whether or not there is a command to read.
+ * judged. A command with no segments at all still gets the session's own seam, so a
+ * session seam that is relative or overlaps production data is refused whether or not
+ * there is a command to read. A seam that is not set is not refused (#214).
  *
  * @returns {{live: object, seams: Array<{data: object, dataSource: string}>}}
  */
@@ -526,18 +529,14 @@ export function resolveRoots({ command = '', env = process.env, platform = proce
 // The gate
 // ---------------------------------------------------------------------------
 
-/** The three ways one command's seam can be wrong. Blocks; returns only when it is fine. */
+/**
+ * The two ways a seam that is set can be wrong. Blocks; returns when it is fine.
+ *
+ * A seam that is not set is not judged (#214). That refusal read no production data: it
+ * refused `gh issue view` in Axial, and again behind the prefix its own message named.
+ */
 function checkSeam(live, data, dataSource) {
-  if (!data.set) {
-    block(
-      `this session declares production data at ${live.root} (${LIVE_DATA_ROOT_ENV}) and sets no ` +
-        `${DATA_ROOT_ENV}, so anything it runs resolves its data through its own defaults. A lookup ` +
-        `falling through to a default directory is how six test call-sites read a live 49,674-entry ` +
-        `index (L-03), and a gate cannot see inside a child process to check. Set ${DATA_ROOT_ENV} to a ` +
-        `directory outside ${live.root} for this session, or prefix this one command with ` +
-        `${DATA_ROOT_ENV}=<sandbox>. ${NO_OVERRIDE}`,
-    );
-  }
+  if (!data.set) return;
 
   if (data.root === null) {
     block(
@@ -648,16 +647,13 @@ export function sandboxGuard(payload) {
   }
 
   // 4. Every command on the line gets its own seam, because a prefix assignment binds to
-  //    the one command it prefixes.
+  //    the one command it prefixes. A seam that is set is refused when it is relative or
+  //    overlaps production data. A seam that is not set is allowed (#214): that refusal
+  //    read no production data and refused `gh issue view` in a live consumer.
   //
-  //    BASH ONLY, AND DELIBERATELY. This rule exists because a gate cannot see inside a
-  //    child process: it refuses when a child would resolve its data through its own
-  //    defaults, since the guard has no way to check afterwards. A file tool spawns no
-  //    child and passes nothing on. Its target is the single path in the payload, which
-  //    rule 5 reads and judges directly, so the rule's own stated rationale does not
-  //    reach it. Applying it anyway would also make the block unfixable from inside the
-  //    session: what this rule tells you to do is set AEO_DATA_ROOT in
-  //    .claude/settings.json, and writing that file is an Edit.
+  //    BASH ONLY, AND DELIBERATELY. The seam is what a child process inherits, and a
+  //    file tool spawns no child and passes nothing on. Its target is the single path in
+  //    the payload, which rule 5 reads and judges directly.
   if (!fileTool) {
     for (const { data, dataSource } of seams) {
       checkSeam(live, data, dataSource);
@@ -687,8 +683,7 @@ export function sandboxGuard(payload) {
   for (const candidate of candidates) {
     const named = normalizeHookPath(candidate);
     // A relative token with no directory to resolve against names no location, so there
-    // is nothing to test. The environment rule above already governs where the child
-    // resolves its own relative paths.
+    // is nothing to test.
     const resolved = path.isAbsolute(named) ? named : operationDir && path.resolve(operationDir, named);
     if (!resolved) continue;
     if (!isPathInside(liveReal, realise(resolved))) continue;
