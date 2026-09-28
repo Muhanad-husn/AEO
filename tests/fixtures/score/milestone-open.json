@@ -1,0 +1,29 @@
+{
+  "recordedAt": "2026-09-28T10:00:00+00:00",
+  "consumer": "Muhanad-husn/axial",
+  "milestone": {
+    "title": "DEC-75",
+    "createdAt": "2026-09-28T01:06:01Z",
+    "closedAt": null
+  },
+  "ledger": {
+    "present": false,
+    "rows": []
+  },
+  "pullRequests": [],
+  "interventions": null,
+  "commitments": null,
+  "harness": {
+    "processes": {
+      "bash": 1,
+      "grep": 0,
+      "read": 0,
+      "task": 0
+    },
+    "sessionStartLines": 120,
+    "tests": {
+      "testLines": 400,
+      "sourceLines": 900
+    }
+  }
+}

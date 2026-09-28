@@ -85,6 +85,30 @@ function readLedger(dir) {
   return { present: true, rows };
 }
 
+// The ledger's Dollars column alone, with no phase filtering: a milestone has
+// no phase range, so a milestone-scored consumer's ledger needs only a
+// Dollars column, not a Phase one, to be read here.
+function readMilestoneLedger(dir) {
+  const path = join(dir, 'LEDGER.md');
+  if (!existsSync(path)) return { present: false, rows: [] };
+  const lines = readFileSync(path, 'utf8').split(/\r?\n/);
+  const rows = [];
+  let headers = null;
+  for (const line of lines) {
+    if (!line.trimStart().startsWith('|')) { headers = null; continue; }
+    const cells = splitRow(line);
+    if (/^[\s:-]+$/.test(cells.join(''))) continue;
+    if (!headers) {
+      if (cells.some((c) => /^dollars$/i.test(c))) headers = cells.map((c) => c.toLowerCase());
+      continue;
+    }
+    const dollars = Number(cells[headers.indexOf('dollars')]);
+    if (!Number.isFinite(dollars)) continue;
+    rows.push({ dollars });
+  }
+  return { present: true, rows };
+}
+
 // The directory name Claude Code writes a project's sessions under: the
 // project path with every character outside [A-Za-z0-9] replaced by '-'.
 export function projectSlug(dir) {
@@ -110,6 +134,56 @@ export function readInterventions(dir, window, homeDir = homedir()) {
 
 function ghJson(args, dir) {
   return JSON.parse(run('gh', args, dir));
+}
+
+// A GitHub milestone's own window: the earliest issue's creation, and the
+// latest issue's close only once every issue in it is closed.
+function milestoneOfIssues(title, issues) {
+  const createdAt = issues.map((i) => i.createdAt).sort()[0];
+  const open = issues.some((i) => i.state !== 'CLOSED');
+  const closedAt = open ? null : issues.map((i) => i.closedAt).sort().at(-1);
+  return { title, createdAt, closedAt };
+}
+
+// The merged pull requests that close one of the milestone's issues, read
+// from each pull request's closing references rather than from its body text.
+function milestonePullRequests(dir, issueNumbers) {
+  const prs = ghJson(
+    ['pr', 'list', '--state', 'merged', '--limit', '500', '--json', 'number,mergedAt,closingIssuesReferences'],
+    dir,
+  );
+  return prs
+    .filter((pr) => pr.mergedAt && (pr.closingIssuesReferences ?? []).some((ref) => issueNumbers.has(ref.number)))
+    .map((pr) => ({ number: pr.number, mergedAt: pr.mergedAt }))
+    .sort((a, b) => a.number - b.number);
+}
+
+// One plain object holding every live read for a milestone, the same shape
+// consumer.row(), interventions.line() and harness.line() already read for a
+// `--phases` snapshot. There is no PLAN.md status table and no phase range:
+// the milestone names its own window.
+export function readMilestone(dir, title) {
+  const issues = ghJson(
+    ['issue', 'list', '--milestone', title, '--state', 'all', '--limit', '500', '--json', 'number,createdAt,closedAt,state'],
+    dir,
+  );
+  if (issues.length === 0) {
+    throw new Error(`no issues found for milestone "${title}" in ${dir}`);
+  }
+  const snapshot = {
+    recordedAt: nowWithOffset(),
+    consumer: consumerName(run('git', ['remote', 'get-url', 'origin'], dir)),
+    milestone: milestoneOfIssues(title, issues),
+    ledger: readMilestoneLedger(dir),
+    pullRequests: milestonePullRequests(dir, new Set(issues.map((i) => i.number))),
+    harness: measure(dir),
+  };
+  // Derived counts, not transcripts: a replay reads these and never a session
+  // file. Appended after the keys the window itself is computed from.
+  const window = windowOf(snapshot);
+  snapshot.interventions = readInterventions(dir, window);
+  snapshot.commitments = readCommitments(dir);
+  return snapshot;
 }
 
 // One plain object holding every live read, keys in a stable order.
