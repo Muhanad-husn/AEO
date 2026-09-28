@@ -1,0 +1,53 @@
+{
+  "recordedAt": "2026-08-19T12:00:00+00:00",
+  "consumer": "Muhanad-husn/axial",
+  "milestone": {
+    "title": "Phase D",
+    "createdAt": "2026-08-17T14:27:21Z",
+    "closedAt": "2026-08-19T06:55:14Z"
+  },
+  "ledger": {
+    "present": true,
+    "rows": [
+      {
+        "dollars": 1.2
+      },
+      {
+        "dollars": 0.85
+      }
+    ]
+  },
+  "pullRequests": [
+    {
+      "number": 788,
+      "mergedAt": "2026-08-17T18:27:18Z"
+    },
+    {
+      "number": 789,
+      "mergedAt": "2026-08-17T19:21:58Z"
+    },
+    {
+      "number": 801,
+      "mergedAt": "2026-08-19T06:55:13Z"
+    }
+  ],
+  "interventions": {
+    "messages": 6,
+    "mergeDecisions": 3,
+    "sessions": 3
+  },
+  "commitments": null,
+  "harness": {
+    "processes": {
+      "bash": 1,
+      "grep": 0,
+      "read": 0,
+      "task": 0
+    },
+    "sessionStartLines": 60,
+    "tests": {
+      "testLines": 0,
+      "sourceLines": 0
+    }
+  }
+}
