@@ -455,6 +455,19 @@ describe('a session with no seam (#214)', () => {
     }
   });
 
+  // From the founder's comment on #214: the prefix-first form still failed on a pipe and
+  // on `;`, because the unprefixed segment after it was judged against the unset seam.
+  test('a pipe or a `;` after a prefixed command does not turn it into a refusal', () => {
+    const { repo, sandbox } = setup();
+    for (const command of [
+      `${DATA}=${sandbox} npm test | tail -5`,
+      `${DATA}=${sandbox} npm test ; echo done`,
+      'git status ; gh issue view 853',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, repo), env: {} }), command);
+    }
+  });
+
   test('the suite runs with no seam', () => {
     const { repo } = setup();
     assertAllowed(guard({ payload: bash('npm test', repo), env: {} }), 'npm test, no seam');
@@ -471,6 +484,11 @@ describe('a session with no seam (#214)', () => {
       guard({ payload: bash(`${DATA}=relative/dir npm test`, repo), env: {} }),
       SEAM_RELATIVE,
       'inline relative seam',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash(`${DATA}=${path.join(live, 'x')} npm test | tail -5`, repo), env: {} }),
+      SEAM_OVERLAPS,
+      'inline seam inside production data, piped',
     );
   });
 
@@ -969,9 +987,8 @@ describe('the file tools', () => {
     }
   });
 
-  // The three Bash-only rules, each pinned in both directions. Each block message tells
-  // the reader to edit .claude/settings.json, so a gate that also refused the Edit would
-  // be unfixable from inside the session.
+  // The three Bash-only rules, each pinned in both directions. A file tool spawns no
+  // child and runs no suite, and its one target is judged by the rule that reads a path.
   test('the seam rule does not hold a file tool, and still holds Bash', () => {
     const { live, sandbox } = roots();
     const repo = makeRepo();
