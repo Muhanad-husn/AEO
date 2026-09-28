@@ -105,7 +105,7 @@ the gate passes. A gap found later is fixed in the phase that owns it.
 | 1 Invariants | `hooks/` at the keep-list of section 3; `hooks.json` with matchers that fire nothing on read tools | `block-merge` structural on the first build's false-positive list. Node processes per call: Grep 0, Bash 1 unarmed, 2 armed. Existing hook tests pass minus the deleted | none | 1 |
 | 2 Sensorium | `session-status` and `/status` printing the section 2 fields, plus the commitment ledger read and write | Against past record: prints its status row, ledger balance, last recommendation with its executed word. Against a repo with no oracle: prints `score: none declared` | past record | 1 to 2 |
 | 3 Knowledge | `skills/` rewritten advisory; agents deleted; `new-project` asks the oracle question; references carry every surviving incident | `grade-plugin` finds no `refuses`, no `disable-model-invocation` outside `sprint-plan`, no step-ordered lane. Session-start read budget under 150 lines. Every reference cites an incident or a measurement | none | 2 |
-| 4 Run 1 | The live consumer's first real milestone built under the plugin, `AEO_LIVE_DATA_ROOT` declared | No lockout, no false refusal, sentinel and data rules hold live. Founder interventions per merged pull request at or under RLM's record of 1.40 | live consumer | live consumer's phase duration |
+| 4 Run 1 | The live consumer's first real milestone built under the plugin, `AEO_LIVE_DATA_ROOT` declared | No lockout, no false refusal, sentinel and data rules hold live. Founder interventions per merged pull request at or under RLM's record of 1.40 | Axial | live consumer's phase duration |
 | 5 Run 2 | The live consumer from `new-project` to its first gated artefact | Scaffold to first green commit in one session; oracle declared or `none declared` printed; score row exists | live consumer | 1 to 2 |
 | 6 Removal | Each surviving rule taken out in turn, the live consumer rerun, the rule deleted if the score holds | The plugin ships with only rules that failed the removal test. `v1.0.0` tagged with the live consumer's score row and the reference numbers | live consumer | 2 |
 
@@ -308,5 +308,10 @@ Made 2026-09-16, in phase 3:
    machine.
 
 Made 2026-09-16: RLM and CIP are finished projects and neither is a consumer or a benchmark; phase 4 and 5 run on the fresh project from `new-project`, phase 6 reruns it. This supersedes the 2026-09-16 line that moved phase 4 to CIP.
+
+Made 2026-09-28: phase 4 runs on Axial's DEC-75 milestone (`Muhanad-husn/axial`, milestone 6,
+issues #853 to #860), `AEO_LIVE_DATA_ROOT` declared as Axial's `data/`; phase 5 waits for a
+fresh project from `new-project`. This supersedes the 2026-09-16 line that put phase 4 and 5
+on the fresh project.
 
 No decision is open.
