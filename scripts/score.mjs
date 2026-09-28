@@ -4,6 +4,9 @@
 //   node scripts/score.mjs <dir> --phases 0-5
 //   node scripts/score.mjs <dir> --phases 0-5 --snapshot <path>   record, then print
 //   node scripts/score.mjs <dir> --phases 0-5 --from <path>       replay, no network
+//   node scripts/score.mjs <dir> --milestone <title>              a GitHub milestone, no PLAN.md needed
+//   node scripts/score.mjs <dir> --milestone <title> --snapshot <path>
+//   node scripts/score.mjs <dir> --milestone <title> --from <path>
 //   node scripts/score.mjs --record <path>                        a consumer scored from a hand-copied record
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -14,12 +17,14 @@ import * as harness from './score/harness.mjs';
 import * as record from './score/record.mjs';
 
 function parseArgv(argv) {
-  const options = { dir: null, phases: null, snapshot: null, from: null, record: null };
+  const options = { dir: null, phases: null, milestone: null, snapshot: null, from: null, record: null };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--phases') {
       const [from, to] = argv[i += 1].split('-').map(Number);
       options.phases = { from, to };
+    } else if (arg === '--milestone') {
+      options.milestone = argv[i += 1];
     } else if (arg === '--snapshot') {
       options.snapshot = argv[i += 1];
     } else if (arg === '--from') {
@@ -35,8 +40,9 @@ function parseArgv(argv) {
 
 function main(argv) {
   const options = parseArgv(argv);
-  if (!options.record && !options.phases) {
+  if (!options.record && !options.phases && !options.milestone) {
     process.stderr.write('usage: score.mjs <dir> --phases <from>-<to> [--snapshot <path>] [--from <path>]\n');
+    process.stderr.write('       score.mjs <dir> --milestone <title> [--snapshot <path>] [--from <path>]\n');
     process.stderr.write('       score.mjs --record <path>\n');
     return 2;
   }
@@ -46,7 +52,9 @@ function main(argv) {
   } else if (options.from) {
     snapshot = sources.load(options.from);
   } else {
-    snapshot = sources.read(options.dir, options.phases);
+    snapshot = options.milestone
+      ? sources.readMilestone(options.dir, options.milestone)
+      : sources.read(options.dir, options.phases);
     if (options.snapshot) {
       mkdirSync(dirname(options.snapshot), { recursive: true });
       writeFileSync(options.snapshot, sources.serialise(snapshot));

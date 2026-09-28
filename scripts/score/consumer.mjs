@@ -44,10 +44,30 @@ function sumDollars(rows, from, to) {
   return total;
 }
 
+// A GitHub milestone's own window: the earliest issue's creation to the
+// latest issue's close, or open (closing at the snapshot's own recording
+// time) while any issue in it still is.
+function milestoneWindowOf(snapshot) {
+  const { title, createdAt, closedAt } = snapshot.milestone;
+  const closingTime = closedAt ?? snapshot.recordedAt;
+  const offset = closingTime.slice(-6);
+  return {
+    milestone: title,
+    open: !closedAt,
+    closingTime,
+    offset,
+    start: calendarDate(createdAt, offset),
+    end: calendarDate(closingTime, offset),
+  };
+}
+
 // The window a snapshot covers: the phase range, the offset its dates are read
 // in, and the first and last calendar dates. An open last phase closes the
-// window at the time the snapshot was taken.
+// window at the time the snapshot was taken. A snapshot scored by
+// `--milestone` has no phase range; its window comes from the milestone's own
+// issues instead.
 export function windowOf(snapshot) {
+  if (snapshot.milestone) return milestoneWindowOf(snapshot);
   const gate = snapshot.gateCommit;
   const closingTime = gate ? gate.date : snapshot.recordedAt;
   const offset = closingTime.slice(-6);
@@ -88,9 +108,36 @@ function recordRow(snapshot) {
   return lines.join('\n');
 }
 
+// A snapshot scored by `--milestone` rather than `--phases`: no phase range,
+// no status table, its window read from the milestone's own issues.
+function isMilestoneSnapshot(snapshot) {
+  return Boolean(snapshot.milestone);
+}
+
+// The first five lines of the row, for a snapshot scored by `--milestone`. A
+// milestone consumer has no phase-scoped ledger, so dollars sum every row the
+// ledger has rather than a phase range, and print "none declared" only when
+// there is no `LEDGER.md` at all.
+function milestoneRow(snapshot) {
+  const window = windowOf(snapshot);
+  const lines = [`consumer: ${snapshot.consumer}`];
+  lines.push(window.open
+    ? `milestone: ${window.milestone}, open`
+    : `milestone: ${window.milestone}, ${window.start} to ${window.end}`);
+  lines.push(`days: ${inclusiveDays(window.start, window.end)}`);
+
+  lines.push(snapshot.ledger?.present
+    ? `dollars: ${snapshot.ledger.rows.reduce((sum, r) => sum + r.dollars, 0).toFixed(2)}`
+    : 'dollars: none declared');
+
+  lines.push(`prs: ${mergedPullRequests(snapshot, window).length} merged`);
+  return lines.join('\n');
+}
+
 // The first five lines of the row.
 export function row(snapshot) {
   if (isRecord(snapshot)) return recordRow(snapshot);
+  if (isMilestoneSnapshot(snapshot)) return milestoneRow(snapshot);
 
   const window = windowOf(snapshot);
   const { from, to, start, end } = window;
