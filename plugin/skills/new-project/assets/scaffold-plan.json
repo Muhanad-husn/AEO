@@ -31,7 +31,7 @@
     "",
     "The .claude/settings.json step (P6.2, issue #64) declares AEO_LIVE_DATA_ROOT and",
     "AEO_DATA_ROOT both blank. sandbox-guard.mjs reads an empty string as not-set and stays",
-    "inert until both are filled in, so a blank pair is the safe default rather than an",
+    "inert until AEO_LIVE_DATA_ROOT is filled in, so a blank pair is the safe default rather than an",
     "accidentally-enabled one. It is Claude Code's own settings file, not the project config",
     "file D10 forbids, and it is tracked in git: .gitignore excludes only settings.local.json.",
     "",

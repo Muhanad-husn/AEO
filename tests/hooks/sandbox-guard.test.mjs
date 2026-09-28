@@ -198,7 +198,6 @@ function assertWarned(result, pattern, message) {
 
 // The rule each block message names. Asserting on these is what stops a mutation from
 // leaving the battery green because something else happened to block.
-const NO_SEAM = /sets no AEO_DATA_ROOT/;
 const SEAM_OVERLAPS = /One contains the other, so this run is pointed at production data/;
 const SEAM_RELATIVE = /is not an absolute\s+path\./;
 const LIVE_RELATIVE = /AEO_LIVE_DATA_ROOT is set to .*which is not an absolute path/;
@@ -238,13 +237,9 @@ describe('the verify line', () => {
       'suite run with the seam inside production data',
     );
 
-    // Pointed at production because the seam is absent, so the project's own defaults
-    // decide. That is L-03's second incident and it is a block, not a warning.
-    assertBlockedBecause(
-      guard({ payload: bash('npm test', repo), env: { [LIVE]: live } }),
-      NO_SEAM,
-      'suite run with no seam at all',
-    );
+    // No seam at all is not a run pointed at production data: the guard has read nothing
+    // that says so, and refusing it refused legitimate work in Axial (#214).
+    assertAllowed(guard({ payload: bash('npm test', repo), env: { [LIVE]: live } }), 'suite run with no seam at all');
 
     // Pointed at production because the command says so outright.
     assertBlockedBecause(
@@ -290,16 +285,15 @@ describe('the seam', () => {
     }
   });
 
-  test('a declared production root with no seam blocks every command', () => {
+  test('a declared production root with no seam allows a command that reaches nothing inside it (#214)', () => {
     const { live } = roots();
     const repo = makeRepo();
     for (const command of ['npm test', 'ls', 'git status', 'cat README.md']) {
-      assertBlockedBecause(guard({ payload: bash(command, repo), env: { [LIVE]: live } }), NO_SEAM, command);
+      assertAllowed(guard({ payload: bash(command, repo), env: { [LIVE]: live } }), command);
     }
     for (const value of ['', '   ', '\t']) {
-      assertBlockedBecause(
+      assertAllowed(
         guard({ payload: bash('npm test', repo), env: { [LIVE]: live, [DATA]: value } }),
-        NO_SEAM,
         `blank seam ${JSON.stringify(value)} reads as unset`,
       );
     }
@@ -426,6 +420,94 @@ describe('the seam', () => {
 });
 
 // ---------------------------------------------------------------------------
+// A session with no seam (#214)
+// ---------------------------------------------------------------------------
+//
+// Axial declared AEO_LIVE_DATA_ROOT in its settings file and set no AEO_DATA_ROOT, and the
+// guard refused `gh issue view`, then refused it again behind the prefix its own message
+// prescribed, because the `cd` before it was judged against the unset session seam. That
+// refusal read no production data. It is removed (PLAN section 5, kill line). A seam that
+// is set is still judged, and so are the rules that read a path.
+
+describe('a session with no seam (#214)', () => {
+  const setup = () => {
+    const { base, live, sandbox } = roots();
+    mkdirSync(path.join(live, 'index'), { recursive: true });
+    const repo = makeRepo();
+    // Axial's shape: the declaration lives in the settings file, the seam nowhere.
+    mkdirSync(path.join(repo, '.claude'), { recursive: true });
+    writeFileSync(path.join(repo, '.claude', 'settings.json'), JSON.stringify({ env: { [LIVE]: live } }));
+    return { base, live, sandbox, repo };
+  };
+
+  test('a read-only lookup runs', () => {
+    const { repo } = setup();
+    assertAllowed(guard({ payload: bash('gh issue view 853', repo), env: {} }), 'gh issue view 853');
+  });
+
+  test('a cd before the lookup does not turn it into a refusal', () => {
+    const { repo, sandbox } = setup();
+    for (const command of [
+      `cd ${sandbox} && gh issue view 853 && gh issue view 855`,
+      `cd ${sandbox} && ${DATA}=${sandbox} gh issue view 853`,
+    ]) {
+      assertAllowed(guard({ payload: bash(command, repo), env: {} }), command);
+    }
+  });
+
+  // From the founder's comment on #214: the prefix-first form still failed on a pipe and
+  // on `;`, because the unprefixed segment after it was judged against the unset seam.
+  test('a pipe or a `;` after a prefixed command does not turn it into a refusal', () => {
+    const { repo, sandbox } = setup();
+    for (const command of [
+      `${DATA}=${sandbox} npm test | tail -5`,
+      `${DATA}=${sandbox} npm test ; echo done`,
+      'git status ; gh issue view 853',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, repo), env: {} }), command);
+    }
+  });
+
+  test('the suite runs with no seam', () => {
+    const { repo } = setup();
+    assertAllowed(guard({ payload: bash('npm test', repo), env: {} }), 'npm test, no seam');
+  });
+
+  test('a seam that is set is still judged', () => {
+    const { live, repo } = setup();
+    assertBlockedBecause(
+      guard({ payload: bash(`${DATA}=${path.join(live, 'x')} npm test`, repo), env: {} }),
+      SEAM_OVERLAPS,
+      'inline seam inside production data',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash(`${DATA}=relative/dir npm test`, repo), env: {} }),
+      SEAM_RELATIVE,
+      'inline relative seam',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash(`${DATA}=${path.join(live, 'x')} npm test | tail -5`, repo), env: {} }),
+      SEAM_OVERLAPS,
+      'inline seam inside production data, piped',
+    );
+  });
+
+  test('the rules that read a path still refuse', () => {
+    const { live, repo } = setup();
+    assertBlockedBecause(
+      guard({ payload: bash(`cat ${path.join(live, 'x')}`, repo), env: {} }),
+      NAMES_LIVE_DATA,
+      'a path named inside production data',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash('gh issue view 853', live), env: { [LIVE]: live } }),
+      OPERATES_IN,
+      'a command run from inside production data',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The declaration file (#133)
 // ---------------------------------------------------------------------------
 //
@@ -446,21 +528,25 @@ describe('the declaration file (#133)', () => {
     return file;
   }
 
+  // The probe for "armed": a command naming a path inside the declared root. With no
+  // declaration that path is an ordinary directory and the command runs.
+  const probe = (live) => `cat ${path.join(live, 'index.json')}`;
+
   test('a declaration in the file alone arms the guard, with nothing in the environment', () => {
     const { live } = roots();
     const repo = makeRepo();
     writeSettings(repo, { live });
-    assertBlockedBecause(guard({ payload: bash('npm test', repo), env: {} }), NO_SEAM, 'file-only declaration, no seam');
+    assertBlockedBecause(guard({ payload: bash(probe(live), repo), env: {} }), NAMES_LIVE_DATA, 'file-only declaration');
   });
 
   test('the file is re-read on every invocation: a blank rewrite disarms the very next call', () => {
     const { live } = roots();
     const repo = makeRepo();
     const settingsFile = writeSettings(repo, { live });
-    assertBlockedBecause(guard({ payload: bash('npm test', repo), env: {} }), NO_SEAM, 'armed by the file');
+    assertBlockedBecause(guard({ payload: bash(probe(live), repo), env: {} }), NAMES_LIVE_DATA, 'armed by the file');
 
     writeFileSync(settingsFile, JSON.stringify({ env: { [LIVE]: '', [DATA]: '' } }, null, 2));
-    assertAllowed(guard({ payload: bash('npm test', repo), env: {} }), 'the same call, after the file was edited back to blank');
+    assertAllowed(guard({ payload: bash(probe(live), repo), env: {} }), 'the same call, after the file was edited back to blank');
   });
 
   // The regression the issue was filed from: the environment carries a stale
@@ -484,25 +570,29 @@ describe('the declaration file (#133)', () => {
   test('a missing or malformed settings.json defers to the environment, not to a block of its own', () => {
     const { live } = roots();
     const repo = makeRepo(); // no .claude/settings.json at all
-    assertBlockedBecause(guard({ payload: bash('npm test', repo), env: { [LIVE]: live } }), NO_SEAM, 'no settings file: env still arms it');
+    assertBlockedBecause(
+      guard({ payload: bash(probe(live), repo), env: { [LIVE]: live } }),
+      NAMES_LIVE_DATA,
+      'no settings file: env still arms it',
+    );
 
     const file = path.join(repo, '.claude', 'settings.json');
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, '{not json');
     assertBlockedBecause(
-      guard({ payload: bash('npm test', repo), env: { [LIVE]: live } }),
-      NO_SEAM,
+      guard({ payload: bash(probe(live), repo), env: { [LIVE]: live } }),
+      NAMES_LIVE_DATA,
       'malformed settings file: env still arms it',
     );
   });
 
   test('AEO_DATA_ROOT in the file is never read; the seam stays environment-only', () => {
-    const { live, sandbox } = roots();
+    const { live } = roots();
     const repo = makeRepo();
-    writeSettings(repo, { live, data: sandbox }); // both declared in the file
-    // No AEO_DATA_ROOT anywhere in the environment or the command: the seam rule still
-    // sees no seam at all, proving the file's AEO_DATA_ROOT was not read.
-    assertBlockedBecause(guard({ payload: bash('npm test', repo), env: {} }), NO_SEAM, 'AEO_DATA_ROOT in the file does nothing');
+    // The file's seam points inside production data. Were it read, the seam rule would
+    // refuse; it is not, so the command sees no seam and runs.
+    writeSettings(repo, { live, data: path.join(live, 'scratch') });
+    assertAllowed(guard({ payload: bash('npm test', repo), env: {} }), 'AEO_DATA_ROOT in the file does nothing');
   });
 
   test('payload.cwd outranks CLAUDE_PROJECT_DIR when locating the declaration file', () => {
@@ -531,11 +621,11 @@ describe('the declaration file (#133)', () => {
     const { live } = roots();
     const repo = makeRepo();
     writeSettings(repo, { live });
-    const payload = bash('npm test', repo);
+    const payload = bash(probe(live), repo);
     delete payload.cwd;
     assertBlockedBecause(
       guard({ payload, env: { CLAUDE_PROJECT_DIR: repo } }),
-      NO_SEAM,
+      NAMES_LIVE_DATA,
       'CLAUDE_PROJECT_DIR is the only directory offered',
     );
   });
@@ -556,22 +646,28 @@ describe('the declaration file (#133)', () => {
     git(main, 'worktree', 'add', '-q', '-b', 'feat/declaration-wt', worktree);
 
     // Freshly created from the same commit: the worktree sees the SAME declaration.
-    const rBefore = guard({ payload: bash('npm test', worktree), env: {} });
-    assertBlockedBecause(rBefore, NO_SEAM, 'worktree, same declaration as main, immediately after creation');
-    assert.ok(rBefore.stderr.includes(liveMain), "a freshly created worktree matches the main checkout's declaration");
+    assertBlockedBecause(
+      guard({ payload: bash(probe(liveMain), worktree), env: {} }),
+      NAMES_LIVE_DATA,
+      'worktree, same declaration as main, immediately after creation',
+    );
 
     // Editing the worktree's own copy does not touch main's, and vice versa: each
     // resolves independently, which is the guarantee #133 was filed over.
     writeSettings(worktree, { live: liveWt });
-    const rWt = guard({ payload: bash('npm test', worktree), env: {} });
-    assertBlockedBecause(rWt, NO_SEAM, 'worktree, its own edited declaration');
-    assert.ok(rWt.stderr.includes(liveWt), "the worktree's block names its own declared root");
-    assert.ok(!rWt.stderr.includes(liveMain), "the worktree's block must not name main's declared root");
+    assertBlockedBecause(
+      guard({ payload: bash(probe(liveWt), worktree), env: {} }),
+      NAMES_LIVE_DATA,
+      'worktree, its own edited declaration',
+    );
+    assertAllowed(guard({ payload: bash(probe(liveMain), worktree), env: {} }), "the worktree no longer reads main's declared root");
 
-    const rMain = guard({ payload: bash('npm test', main), env: {} });
-    assertBlockedBecause(rMain, NO_SEAM, "main checkout is unaffected by the worktree's edit");
-    assert.ok(rMain.stderr.includes(liveMain), "main's block still names its own declared root");
-    assert.ok(!rMain.stderr.includes(liveWt), "main's block must not have picked up the worktree's edit");
+    assertBlockedBecause(
+      guard({ payload: bash(probe(liveMain), main), env: {} }),
+      NAMES_LIVE_DATA,
+      "main checkout is unaffected by the worktree's edit",
+    );
+    assertAllowed(guard({ payload: bash(probe(liveWt), main), env: {} }), "main has not picked up the worktree's edit");
   });
 });
 
@@ -891,17 +987,17 @@ describe('the file tools', () => {
     }
   });
 
-  // The three Bash-only rules, each pinned in both directions. Each block message tells
-  // the reader to edit .claude/settings.json, so a gate that also refused the Edit would
-  // be unfixable from inside the session.
+  // The three Bash-only rules, each pinned in both directions. A file tool spawns no
+  // child and runs no suite, and its one target is judged by the rule that reads a path.
   test('the seam rule does not hold a file tool, and still holds Bash', () => {
     const { live, sandbox } = roots();
     const repo = makeRepo();
+    const env = { [LIVE]: live, [DATA]: path.join(live, 'scratch') };
     assertAllowed(
-      guard({ payload: fileCall('Edit', path.join(sandbox, 'settings.json'), repo), env: { [LIVE]: live } }),
-      'an Edit outside production data with no seam declared',
+      guard({ payload: fileCall('Edit', path.join(sandbox, 'settings.json'), repo), env }),
+      'an Edit outside production data with the session seam inside it',
     );
-    assertBlockedBecause(guard({ payload: bash('ls', repo), env: { [LIVE]: live } }), NO_SEAM, 'the Bash control');
+    assertBlockedBecause(guard({ payload: bash('ls', repo), env }), SEAM_OVERLAPS, 'the Bash control');
   });
 
   test('the sentinel does not hold a file tool, and still holds Bash', () => {
@@ -1092,12 +1188,21 @@ describe('a command the guard cannot read is judged on what it can read (#169)',
     assertBlockedBecause(guard({ payload: bash('echo "unterminated', live), env }), OPERATES_IN, 'run from inside');
   });
 
-  test('an unreadable command still blocks on a missing seam', () => {
+  test('an unreadable command still blocks on a seam inside production data', () => {
     const { base, live } = setup();
     assertBlockedBecause(
-      guard({ payload: bash('echo "unterminated', base), env: { [LIVE]: live, [DATA]: undefined } }),
-      NO_SEAM,
+      guard({ payload: bash('echo "unterminated', base), env: { [LIVE]: live, [DATA]: path.join(live, 'scratch') } }),
+      SEAM_OVERLAPS,
       'the seam rule needs no parse',
+    );
+  });
+
+  test('an unreadable command with no seam warns and runs (#214)', () => {
+    const { base, live } = setup();
+    assertWarned(
+      guard({ payload: bash('echo "unterminated', base), env: { [LIVE]: live, [DATA]: undefined } }),
+      WARNS_UNREADABLE,
+      'no seam, nothing named inside production data',
     );
   });
 
@@ -1514,8 +1619,8 @@ describe('no override', () => {
     for (const name of disablers) {
       for (const value of ['1', 'true']) {
         assertBlockedBecause(
-          guard({ payload: bash('npm test', repo), env: { [LIVE]: live, [name]: value } }),
-          NO_SEAM,
+          guard({ payload: bash(`cat ${path.join(live, 'index.json')}`, repo), env: { [LIVE]: live, [name]: value } }),
+          NAMES_LIVE_DATA,
           `${name}=${value}`,
         );
       }
@@ -1537,8 +1642,8 @@ describe('no override', () => {
     for (const flag of ['--no-sandbox', '--allow-live-data', '--force', '--aeo-skip', '--no-verify', '-f']) {
       assertBlockedBecause(guard({ payload: bash(`npm test ${flag}`, repo) }), LIVE_RUN, `sentinel with ${flag}`);
       assertBlockedBecause(
-        guard({ payload: bash(`ls ${flag}`, repo), env: { [LIVE]: live } }),
-        NO_SEAM,
+        guard({ payload: bash(`ls ${flag} ${path.join(live, 'index')}`, repo), env: { [LIVE]: live } }),
+        NAMES_LIVE_DATA,
         `data rule with ${flag}`,
       );
     }
@@ -1551,8 +1656,8 @@ describe('no override', () => {
     const extra = { permission_mode: 'bypassPermissions' };
     assertBlockedBecause(guard({ payload: bash('npm test', repo, extra) }), LIVE_RUN, 'bypassPermissions, sentinel');
     assertBlockedBecause(
-      guard({ payload: bash('ls', repo, extra), env: { [LIVE]: live } }),
-      NO_SEAM,
+      guard({ payload: bash(`ls ${path.join(live, 'index')}`, repo, extra), env: { [LIVE]: live } }),
+      NAMES_LIVE_DATA,
       'bypassPermissions, data rule',
     );
   });
@@ -1568,8 +1673,8 @@ describe('no override', () => {
       const extra = agent_type === undefined ? {} : { agent_type };
       assertBlockedBecause(guard({ payload: bash('npm test', repo, extra) }), LIVE_RUN, `sentinel, ${agent_type}`);
       assertBlockedBecause(
-        guard({ payload: bash('ls', repo, extra), env: { [LIVE]: live } }),
-        NO_SEAM,
+        guard({ payload: bash(`ls ${path.join(live, 'index')}`, repo, extra), env: { [LIVE]: live } }),
+        NAMES_LIVE_DATA,
         `data rule, ${agent_type}`,
       );
     }
@@ -1588,7 +1693,9 @@ describe('malformed payloads', () => {
       const payload = bash('placeholder', repo);
       if (tool_input === undefined) delete payload.tool_input;
       else payload.tool_input = tool_input;
-      assertBlockedBecause(guard({ payload, env: { [LIVE]: live } }), NO_SEAM, `tool_input ${JSON.stringify(tool_input)}`);
+      const label = `tool_input ${JSON.stringify(tool_input)}`;
+      assertBlockedBecause(guard({ payload, env: { [LIVE]: live, [DATA]: path.join(live, 'x') } }), SEAM_OVERLAPS, label);
+      assertAllowed(guard({ payload, env: { [LIVE]: live } }), `${label}, no seam (#214)`);
     }
   });
 
@@ -1597,8 +1704,10 @@ describe('malformed payloads', () => {
     for (const cwd of [undefined, '', 42]) {
       const payload = bash('npm test', cwd);
       if (cwd === undefined) delete payload.cwd;
-      assertBlockedBecause(guard({ payload, env: { [LIVE]: live } }), NO_SEAM, `cwd ${JSON.stringify(cwd)}`);
-      assertAllowed(guard({ payload, env: { [LIVE]: live, [DATA]: sandbox } }), `cwd ${JSON.stringify(cwd)}, good seam`);
+      const label = `cwd ${JSON.stringify(cwd)}`;
+      assertBlockedBecause(guard({ payload, env: { [LIVE]: live, [DATA]: path.join(live, 'x') } }), SEAM_OVERLAPS, label);
+      assertAllowed(guard({ payload, env: { [LIVE]: live } }), `${label}, no seam (#214)`);
+      assertAllowed(guard({ payload, env: { [LIVE]: live, [DATA]: sandbox } }), `${label}, good seam`);
     }
   });
 
@@ -1607,7 +1716,11 @@ describe('malformed payloads', () => {
     const repo = makeRepo();
     const extra = { unknown_future_field: { nested: [1, 2, 3] }, effort: { level: 'max' } };
     assertAllowed(guard({ payload: bash('npm test', repo, extra), env: { [LIVE]: live, [DATA]: sandbox } }), 'extra fields');
-    assertBlockedBecause(guard({ payload: bash('npm test', repo, extra), env: { [LIVE]: live } }), NO_SEAM, 'extra fields, no seam');
+    assertBlockedBecause(
+      guard({ payload: bash('npm test', repo, extra), env: { [LIVE]: live, [DATA]: path.join(live, 'x') } }),
+      SEAM_OVERLAPS,
+      'extra fields, seam inside production data',
+    );
   });
 
   // Inherited from runGate and deliberately not overridden. An unreadable payload allows,
