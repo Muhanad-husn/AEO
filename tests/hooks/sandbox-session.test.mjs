@@ -256,18 +256,18 @@ describe('the fixture satisfies the guard', () => {
       });
       assert.equal(r.status, 0, `the guard rejected the fixture's own sandbox:\n${r.stderr}`);
 
-      // And the same call without the fixture is refused, so the pass above is the
-      // fixture's doing rather than the guard being asleep.
-      const without = { ...childEnv };
-      delete without[DATA];
+      // And the same call with the seam pointed inside production data is refused, so the
+      // pass above is the fixture's doing rather than the guard being asleep. A call with
+      // no seam at all runs (#214), so it cannot be this control.
+      const inside = { ...childEnv, [DATA]: path.join(live, 'scratch') };
       const r2 = spawnSync(process.execPath, [GUARD], {
         input: JSON.stringify(payload),
         encoding: 'utf8',
         cwd: operationDir,
-        env: without,
+        env: inside,
         windowsHide: true,
       });
-      assert.equal(r2.status, 2, 'the guard allowed a run with no seam at all');
+      assert.equal(r2.status, 2, 'the guard allowed a run with its seam inside production data');
     } finally {
       sandbox.leave();
     }
