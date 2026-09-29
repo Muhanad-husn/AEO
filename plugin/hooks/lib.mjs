@@ -724,6 +724,10 @@ function segmentCdTarget(segment) {
   return /[$*?]/.test(target) ? null : target;
 }
 
+// Global options that read their value from the next word. The `=` form is one word and
+// needs no entry; `--exec-path` and `--list-cmds` take a value only through `=`.
+const GIT_OPTIONS_WITH_VALUE = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--super-prefix', '--config-env']);
+
 /**
  * The `-C` targets of a `git` segment, in the order git applies them: an array of strings,
  * with `null` for one that cannot be named (an expansion or a glob), or `undefined` when
@@ -738,8 +742,8 @@ function segmentGitTargets(segment) {
     if (args[i] === '-C') {
       const target = args[++i];
       targets.push(target === undefined || /[$*?]/.test(target) ? null : target);
-    } else if (args[i] === '-c') {
-      i++; // takes a value, which is not a directory
+    } else if (GIT_OPTIONS_WITH_VALUE.has(args[i])) {
+      i++; // takes its value as the next word, which is not one of the -C targets
     }
   }
   return targets.length > 0 ? targets : undefined;
