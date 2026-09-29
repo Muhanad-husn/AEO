@@ -54,7 +54,8 @@ request writes its row into `PLAN.md`'s status table. `docs/DECISIONS.md` is the
 build's log and is closed at D35; a new decision is one line in `PLAN.md`, dated.
 
 **Tests.** `npm test` is the fast tier and runs locally. `npm run test:integration` runs
-in CI only; a tier CI already ran on a commit is cited, never re-run. A harness red gets
+in CI only; a tier CI already ran on a commit is cited, never re-run. A builder runs
+`npm run test:changed` locally, and CI runs the rest. A harness red gets
 minutes. A logic red gets two attempts.
 
 **Worktrees and branches.** Cut from `main`, one per issue, deleted after merge. Nothing
