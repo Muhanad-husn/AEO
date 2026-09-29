@@ -785,29 +785,37 @@ export function sandboxGuard(payload) {
   // guard that refuses those is a guard that gets deleted. The limit is real: the
   // 19,000-document incident was a sweeper run from the wrong root. What covers it is
   // the seam, which the sweeper reads to decide where to sweep.
-  // A relative token resolves against the directory the command runs in, except when a
-  // `cd` the guard could not name has already moved it somewhere else (#169). Resolving
-  // against the pre-`cd` directory there would refuse, or clear, a path that never
+  // A relative token resolves against the directory its own command runs in (#218):
+  // after `cd <other checkout> &&`, `data/x` is that checkout's `data/x`, not the
+  // session's. After a `cd` the guard could not name there is no such directory (#169),
+  // and resolving against the pre-`cd` one would refuse, or clear, a path that never
   // resolves to what the guard tested. An absolute token is unaffected and still judged.
   //
   // A line whose every command only reads (#216) is judged on every word except those
   // commands' own arguments: `ls <live>` and `du -sh <live>` run, `ls <live> > <live>/x`
   // does not. The parse error above gets no exemption: with no segments there is nothing
-  // to tell an argument from a redirection target, so every token is judged as before.
-  const operationDir = walk.unresolved && walk.parseError === null ? null : (dirs[0] ?? null);
+  // to tell an argument from a redirection target, so every token is judged as before,
+  // against the directory the call starts in.
   const liveReal = realise(live.root);
   const parsed = commandSegments(command);
   const readOnly = !fileTool && readOnlyLine(command, parsed);
+  const absolute = (d) => (typeof d === 'string' && path.isAbsolute(d) ? d : null);
   // A file tool names exactly one location and names it plainly. A Bash command names as
   // many as its tokens do, and which of them is a path has to be guessed at.
-  const candidates = fileTool
-    ? [toolFilePath(payload)].filter((p) => p !== null)
-    : pathCandidates(readOnly ? judgedWords(parsed.segments) : shellTokens(command));
-  for (const candidate of candidates) {
-    const named = normalizeHookPath(candidate);
+  const named = fileTool
+    ? [{ candidates: [toolFilePath(payload)].filter((p) => p !== null), dir: dirs[0] ?? null }]
+    : walk.parseError !== null
+      ? [{ candidates: pathCandidates(shellTokens(command)), dir: dirs[0] ?? null }]
+      : parsed.segments.map((s, i) => ({
+          candidates: pathCandidates(readOnly ? judgedWords([s]) : s.tokens),
+          dir: absolute(walk.segmentDirs[i]),
+        }));
+  const checks = named.flatMap(({ candidates, dir }) => candidates.map((candidate) => ({ candidate, dir })));
+  for (const { candidate, dir } of checks) {
+    const p = normalizeHookPath(candidate);
     // A relative token with no directory to resolve against names no location, so there
     // is nothing to test.
-    const resolved = path.isAbsolute(named) ? named : operationDir && path.resolve(operationDir, named);
+    const resolved = path.isAbsolute(p) ? p : dir && path.resolve(dir, p);
     if (!resolved) continue;
     if (!isPathInside(liveReal, realise(resolved))) continue;
     block(

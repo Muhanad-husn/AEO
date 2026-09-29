@@ -993,11 +993,19 @@ describe('PowerShell reaches the same rules as Bash', () => {
   });
 
   test('a cd into production data is honoured on the PowerShell arm too', () => {
-    const { live, sandbox } = roots();
+    // A relative target, so no token names the root and the directory rule is the one
+    // under test. An absolute `cd <live>;` is refused one rule earlier, for naming it (#218).
+    const { base, live, sandbox } = roots();
+    const env = { [LIVE]: live, [DATA]: sandbox };
     assertBlockedBecause(
-      guard({ payload: pwsh(`cd ${live}; Remove-Item -Recurse corpus`, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
+      guard({ payload: pwsh(`cd ${path.basename(live)}; Remove-Item -Recurse corpus`, base), env }),
       OPERATES_IN,
       'a cd through the PowerShell statement separator',
+    );
+    assertBlockedBecause(
+      guard({ payload: pwsh(`cd ${live}; Remove-Item -Recurse corpus`, tempDir()), env }),
+      NAMES_LIVE_DATA,
+      'an absolute cd target through the PowerShell statement separator',
     );
   });
 
