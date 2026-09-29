@@ -796,12 +796,29 @@ export function resolveOperationDir(payload, options) {
  * target could not be named or the command could not be parsed, and a fail-closed gate
  * blocks on it rather than enforcing against the directories it did manage to see.
  *
- * @returns {{dirs: string[], unresolved: boolean, parseError: string|null}}
+ * `segmentDirs` is the directory each segment of commandSegments(command) runs in, index
+ * for index, so a relative path can be resolved where its own command runs (#218): `cd
+ * <other checkout> && tool data/x` names `<other checkout>/data/x`, not the session's
+ * `data/x`. A segment before any `cd` runs in the directory the call started in, found by
+ * steps 2 to 4 above; one after a `cd` that could not be named gets null.
+ *
+ * @returns {{dirs: string[], segmentDirs: Array<string|null>, unresolved: boolean, parseError: string|null}}
  */
 export function operationDirs(payload, options) {
   const w = walkOperation(payload, options);
   const dirs = [...w.dirs, w.dir].filter((d) => typeof d === 'string' && d !== '');
-  return { dirs: [...new Set(dirs)], unresolved: w.unresolved, parseError: w.parseError };
+  const start = w.source === 'cd' ? startDir(payload, options) : w.dir;
+  const segmentDirs = w.segmentDirs.map((d) => (d === undefined ? start : d));
+  return { dirs: [...new Set(dirs)], segmentDirs, unresolved: w.unresolved, parseError: w.parseError };
+}
+
+/** Steps 2 to 4 of resolveOperationDir: where the call starts, before any `cd` in it. */
+function startDir(payload, { env = process.env, cwd = process.cwd, platform = process.platform } = {}) {
+  const fromPayload = typeof payload?.cwd === 'string' ? payload.cwd.trim() : '';
+  const fromEnv = typeof env?.CLAUDE_PROJECT_DIR === 'string' ? env.CLAUDE_PROJECT_DIR.trim() : '';
+  const fromProcess = typeof cwd === 'function' ? cwd() : '';
+  const found = fromPayload || fromEnv || fromProcess;
+  return found ? normalizeHookPath(found, { platform }) : null;
 }
 
 function resolveCdTarget(target, current, p, platform) {
@@ -831,16 +848,22 @@ function walkOperation(payload, { env = process.env, cwd = process.cwd, platform
   let cdApplied = false;
   let unresolved = error !== null;
   const scopes = [];
+  // Where each segment runs. `undefined` until a `cd` moves the shell: the start directory,
+  // which operationDirs fills in from the same fallbacks resolveOperationDir uses.
+  const segmentDirs = [];
+  let moved = false;
 
   for (const segment of segments) {
     if (segment.tokens.length > 0) dirs.push(current);
+    segmentDirs.push(moved ? current : undefined);
     const target = segmentCdTarget(segment);
     if (target !== undefined) {
       if (CD_SURVIVES.has(segment.followedBy)) {
-        const moved = target === null ? null : resolveCdTarget(target, current, p, platform);
-        if (moved === null) unresolved = true;
-        current = moved;
+        const next = target === null ? null : resolveCdTarget(target, current, p, platform);
+        if (next === null) unresolved = true;
+        current = next;
         cdApplied = true;
+        moved = true;
         dirs.push(current);
       }
     } else if (segment.tokens.length > 0 && operationDir === undefined) {
@@ -850,8 +873,8 @@ function walkOperation(payload, { env = process.env, cwd = process.cwd, platform
     // A subshell's `cd` dies with the subshell, so `(` banks the outer directory and `)`
     // restores it. Without this, `( cd prod && rm -rf x ) && ls` would report `ls` as
     // running in prod.
-    if (segment.followedBy === '(') scopes.push(current);
-    else if (segment.followedBy === ')' && scopes.length > 0) current = scopes.pop();
+    if (segment.followedBy === '(') scopes.push({ current, moved });
+    else if (segment.followedBy === ')' && scopes.length > 0) ({ current, moved } = scopes.pop());
   }
   if (operationDir === undefined && segments.length > 0) {
     operationDir = current;
@@ -864,24 +887,24 @@ function walkOperation(payload, { env = process.env, cwd = process.cwd, platform
   // that is not the one the command names, and it would enforce confidently against the
   // wrong tree. `source` stays `cd` so the failure is attributable to the command rather
   // than reading as "nothing was found anywhere".
-  if (fromCd) return { dir: operationDir ?? null, source: 'cd', dirs: keep, unresolved, parseError: error };
+  if (fromCd) return { dir: operationDir ?? null, source: 'cd', dirs: keep, segmentDirs, unresolved, parseError: error };
 
   const fromPayload = typeof payload?.cwd === 'string' ? payload.cwd.trim() : '';
   if (fromPayload) {
-    return { dir: normalizeHookPath(fromPayload, { platform }), source: 'payload.cwd', dirs: keep, unresolved, parseError: error };
+    return { dir: normalizeHookPath(fromPayload, { platform }), source: 'payload.cwd', dirs: keep, segmentDirs, unresolved, parseError: error };
   }
 
   const fromEnv = typeof env?.CLAUDE_PROJECT_DIR === 'string' ? env.CLAUDE_PROJECT_DIR.trim() : '';
   if (fromEnv) {
-    return { dir: normalizeHookPath(fromEnv, { platform }), source: 'CLAUDE_PROJECT_DIR', dirs: keep, unresolved, parseError: error };
+    return { dir: normalizeHookPath(fromEnv, { platform }), source: 'CLAUDE_PROJECT_DIR', dirs: keep, segmentDirs, unresolved, parseError: error };
   }
 
   const fromProcess = typeof cwd === 'function' ? cwd() : '';
   if (fromProcess) {
-    return { dir: normalizeHookPath(fromProcess, { platform }), source: 'process.cwd', dirs: keep, unresolved, parseError: error };
+    return { dir: normalizeHookPath(fromProcess, { platform }), source: 'process.cwd', dirs: keep, segmentDirs, unresolved, parseError: error };
   }
 
-  return { dir: null, source: 'none', dirs: keep, unresolved, parseError: error };
+  return { dir: null, source: 'none', dirs: keep, segmentDirs, unresolved, parseError: error };
 }
 
 /**
