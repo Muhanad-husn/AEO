@@ -724,6 +724,27 @@ function segmentCdTarget(segment) {
   return /[$*?]/.test(target) ? null : target;
 }
 
+/**
+ * The `-C` targets of a `git` segment, in the order git applies them: an array of strings,
+ * with `null` for one that cannot be named (an expansion or a glob), or `undefined` when
+ * the segment is not `git` or carries no `-C`. Only git's own options before the
+ * subcommand are read, so `git commit -C HEAD` (reuse a commit's message) is not one.
+ */
+function segmentGitTargets(segment) {
+  if (segment.program === null || !/^(?:.*[\\/])?git(?:\.exe)?$/i.test(segment.program)) return undefined;
+  const targets = [];
+  const args = segment.args;
+  for (let i = 0; i < args.length && args[i].startsWith('-'); i++) {
+    if (args[i] === '-C') {
+      const target = args[++i];
+      targets.push(target === undefined || /[$*?]/.test(target) ? null : target);
+    } else if (args[i] === '-c') {
+      i++; // takes a value, which is not a directory
+    }
+  }
+  return targets.length > 0 ? targets : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Worktree resolution
 // ---------------------------------------------------------------------------
@@ -855,7 +876,16 @@ function walkOperation(payload, { env = process.env, cwd = process.cwd, platform
 
   for (const segment of segments) {
     if (segment.tokens.length > 0) dirs.push(current);
-    segmentDirs.push(moved ? current : undefined);
+    // `git -C <dir>` runs its one command in <dir>, each `-C` relative to the one before
+    // it (#220). It moves nothing after it, so `current` stays as it was.
+    const gitTargets = segmentGitTargets(segment);
+    if (gitTargets === undefined) segmentDirs.push(moved ? current : undefined);
+    else {
+      let where = moved ? current : startDir(payload, { env, cwd, platform });
+      for (const t of gitTargets) where = t === null || where === null ? null : resolveCdTarget(t, where, p, platform);
+      if (where === null) unresolved = true;
+      segmentDirs.push(where);
+    }
     const target = segmentCdTarget(segment);
     if (target !== undefined) {
       if (CD_SURVIVES.has(segment.followedBy)) {
