@@ -1553,6 +1553,30 @@ describe('a relative path after git -C resolves against the -C target (#220)', (
     }
   });
 
+  // A global option that takes its value as a separate word must not end the scan for -C:
+  // a scan that stops at the value sees no -C and resolves against the session directory,
+  // which allows a write into the live root.
+  test('a -C after a global option with a separate value is still read', () => {
+    const { base, axial, runs, env } = setup();
+    for (const opt of ['--git-dir .git', '--work-tree .', '--namespace ns', '--super-prefix p/', '--config-env core.x=VAR']) {
+      assertBlockedBecause(
+        guard({ payload: bash(`git ${opt} -C ../axial add ${spec}`, runs), env }),
+        NAMES_LIVE_DATA,
+        opt,
+      );
+      assertAllowed(guard({ payload: bash(`git ${opt} -C ${runs} add ${spec}`, axial), env }), opt);
+    }
+    assertAllowed(
+      guard({ payload: bash(`git --git-dir ${msys(runs)}/.git -C ${msys(runs)} add ${spec}`, axial), env }),
+      'a --git-dir inside the runs checkout',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash(`git --git-dir=.git -C axial add ${spec}`, base), env }),
+      NAMES_LIVE_DATA,
+      'the = form',
+    );
+  });
+
   test('a -C does not reach the commands around it', () => {
     const { axial, runs, env } = setup();
     for (const command of [`git -C ${runs} status && git add ${spec}`, `git add ${spec} && git -C ${runs} status`]) {
