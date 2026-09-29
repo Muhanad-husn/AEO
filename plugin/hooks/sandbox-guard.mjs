@@ -31,6 +31,13 @@
 // and the absence of one is the point (L-05): an override is what you reach for at 2am,
 // and a guard with a bypass is a guard that reports safety it does not provide.
 //
+// A line whose every command only reads is not an override (#216). `ls`, `du`, `stat`,
+// `find` without an action that writes or runs, `git status` and `robocopy /L` may name
+// production data and run inside it, because none of them can write it or run project
+// code over it. Axial could not confirm a copy into its live root without them. Anything
+// else on the same line, a redirection into the root, or an interpreter, and the line is
+// judged as before.
+//
 // Two rules used to refuse without having read anything (#169): a command the parser
 // could not finish, and a `cd` whose target could not be named. Both refused `echo
 // "unterminated` and `cd $DIR && ls`, which reach no data at all, and a guard that
@@ -385,6 +392,115 @@ export function invokesDeclaredSuite(command, declared) {
 }
 
 // ---------------------------------------------------------------------------
+// Read-only commands (#216)
+// ---------------------------------------------------------------------------
+
+/**
+ * Programs that cannot write a file or run project code, whatever arguments they get.
+ * None of them has a flag that writes: `sort -o` would, and `sort` is not here.
+ */
+const READS_ONLY = new Set(['ls', 'dir', 'du', 'stat', 'wc', 'cat', 'head', 'tail', 'sha256sum', 'md5sum']);
+
+/** The `find` primaries that delete, run a program, or write a file. */
+const FIND_ACTIONS = new Set(['-delete', '-exec', '-execdir', '-ok', '-okdir', '-fprint', '-fprint0', '-fprintf', '-fls']);
+
+/** The `git` subcommands that read. `git status` may refresh `.git/index`, which is the repository's, not data. */
+const GIT_READS = new Set(['status', 'ls-files', 'diff']);
+
+/** Global options that change nothing `git` runs. `-c` is not one: `core.fsmonitor` runs a program. */
+const GIT_QUIET_GLOBALS = new Set(['--no-pager', '-P', '--no-optional-locks', '--literal-pathspecs']);
+
+/**
+ * `git diff` options that write or run a program. Git takes any unambiguous prefix of a
+ * long option, so `--outp=x` is `--output=x` and is matched as one.
+ */
+const GIT_DIFF_UNSAFE = ['output', 'ext-diff', 'textconv'];
+
+/** robocopy options that write a file even with `/L`, or read options from one. */
+const ROBOCOPY_WRITES = /^\/(?:(?:UNI)?LOG\+?:|SAVE:|JOB:|CREATE$)/i;
+
+/**
+ * The name a program is known by: its basename with `.exe` dropped, so `/usr/bin/ls` and
+ * `du.exe` are `ls` and `du`. A relative path such as `./ls` is a file in the project,
+ * not the system program, and gets no name.
+ */
+function programName(program) {
+  if (/[\\/]/.test(program) && !path.isAbsolute(normalizeHookPath(program))) return null;
+  return program.split(/[\\/]/).pop().replace(/\.exe$/i, '');
+}
+
+function gitReadsOnly(args) {
+  let i = 0;
+  while (i < args.length && args[i].startsWith('-')) {
+    if (args[i] === '-C') i += 2;
+    else if (GIT_QUIET_GLOBALS.has(args[i]) || /^--(?:git-dir|work-tree)=/.test(args[i])) i += 1;
+    else return false;
+  }
+  if (!GIT_READS.has(args[i])) return false;
+  // `git diff` also runs a diff driver or textconv filter that the repository's own config
+  // names. That is the repository's code, not the command line's, and is not judged here.
+  return !args.slice(i + 1).some((a) => {
+    const name = a.startsWith('--') ? a.slice(2).split('=')[0] : '';
+    return name !== '' && GIT_DIFF_UNSAFE.some((o) => o.startsWith(name));
+  });
+}
+
+/** True when a segment runs a program on the list, with no argument that writes or executes. */
+function readsOnly(segment) {
+  const name = programName(segment.program);
+  const args = segment.args;
+  if (READS_ONLY.has(name)) return true;
+  if (name === 'find') return !args.some((a) => FIND_ACTIONS.has(a));
+  if (name === 'robocopy') return args.some((a) => a.toUpperCase() === '/L') && !args.some((a) => ROBOCOPY_WRITES.test(a));
+  if (name === 'git') return gitReadsOnly(args);
+  return false;
+}
+
+/**
+ * True when every command on the line reads and nothing more (#216). Axial could not
+ * confirm a copy into its live root because `ls`, `du -sh`, `dir` and `git ls-files` of it
+ * were refused for naming it, and none of them can write.
+ *
+ * THE WHOLE LINE, NOT ONE SEGMENT. `find <live> -name '*.tmp' | xargs rm` names production
+ * data only in a segment that reads, and deletes it in one that names nothing. A command
+ * off the list anywhere on the line takes the exemption away from every command on it.
+ *
+ * A `cd` or `pushd` writes nothing and moves the shell, so it may sit on the line. A
+ * segment with no program (a bare assignment, a bare redirection, a brace) runs nothing;
+ * its assignment values and redirection targets are still judged by rule 5.
+ *
+ * NEVER ON A LINE THE GUARD COULD NOT READ, and never on one carrying `$(` or a process
+ * substitution: the parser does not look inside a double-quoted `"$(rm -rf x)"`, so an
+ * argument to `ls` there is a command nobody judged.
+ */
+function readOnlyLine(command, parsed) {
+  if (parsed.error !== null || parsed.segments.length === 0) return false;
+  if (/\$\(|[<>]\(/.test(command)) return false;
+  return parsed.segments.every(
+    (s) => s.program === null || s.program === 'cd' || s.program === 'pushd' || readsOnly(s),
+  );
+}
+
+/**
+ * The tokens rule 5 still judges on a read-only line: every word except a program's own
+ * arguments. The program itself stays judged, so `<live>/bin/ls` is refused; so do leading
+ * assignments, since `PATH=<live>/bin ls` runs what production data holds; and so do
+ * redirection targets, since `ls > <live>/x` writes there.
+ */
+function judgedWords(segments) {
+  const out = [];
+  for (const segment of segments) {
+    const args = [...segment.args];
+    for (const word of segment.tokens) {
+      const i = args.indexOf(word);
+      if (i === -1) out.push(word);
+      else args.splice(i, 1);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // The two roots
 // ---------------------------------------------------------------------------
 
@@ -673,13 +789,20 @@ export function sandboxGuard(payload) {
   // `cd` the guard could not name has already moved it somewhere else (#169). Resolving
   // against the pre-`cd` directory there would refuse, or clear, a path that never
   // resolves to what the guard tested. An absolute token is unaffected and still judged.
+  //
+  // A line whose every command only reads (#216) is judged on every word except those
+  // commands' own arguments: `ls <live>` and `du -sh <live>` run, `ls <live> > <live>/x`
+  // does not. The parse error above gets no exemption: with no segments there is nothing
+  // to tell an argument from a redirection target, so every token is judged as before.
   const operationDir = walk.unresolved && walk.parseError === null ? null : (dirs[0] ?? null);
   const liveReal = realise(live.root);
+  const parsed = commandSegments(command);
+  const readOnly = !fileTool && readOnlyLine(command, parsed);
   // A file tool names exactly one location and names it plainly. A Bash command names as
   // many as its tokens do, and which of them is a path has to be guessed at.
   const candidates = fileTool
     ? [toolFilePath(payload)].filter((p) => p !== null)
-    : pathCandidates(shellTokens(command));
+    : pathCandidates(readOnly ? judgedWords(parsed.segments) : shellTokens(command));
   for (const candidate of candidates) {
     const named = normalizeHookPath(candidate);
     // A relative token with no directory to resolve against names no location, so there
@@ -713,7 +836,14 @@ export function sandboxGuard(payload) {
   //    relative. Running this rule as well would refuse a Write to an absolute path
   //    OUTSIDE production data purely because the session happened to be sitting inside
   //    it, and no production data is behind that refusal.
+  //
+  //    A line whose every command only reads may run in there too (#216), so a session
+  //    sitting in the live root can `ls` it. Not when it redirects to a relative target:
+  //    `ls > out.txt` writes into the directory it runs in, and rule 5 only judges a
+  //    target that carries a separator. An absolute target, `/dev/null` included, rule 5
+  //    has already judged.
   if (fileTool) return;
+  if (readOnly && parsed.segments.every((s) => s.redirects.every((r) => path.isAbsolute(normalizeHookPath(r))))) return;
   for (const dir of dirs) {
     if (isPathInside(liveReal, realise(dir))) {
       block(
