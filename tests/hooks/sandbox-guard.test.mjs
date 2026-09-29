@@ -1408,6 +1408,93 @@ describe('a command the guard cannot read is judged on what it can read (#169)',
 });
 
 // ---------------------------------------------------------------------------
+// A relative path resolves where its own command runs (#218)
+// ---------------------------------------------------------------------------
+//
+// Axial, 2026-09-29: a session sitting in the checkout whose `data/` is the live root ran
+// `cd /d/axial-runs && python -m axial.cli map compare data/map/X ...` and was refused,
+// because `data/map/X` was resolved against the session directory rather than the runs
+// checkout the `cd` had moved to. Each command's relative paths now resolve against the
+// directory that command runs in. The same rule refuses the mirror image, a `cd` INTO the
+// live checkout from outside it, which the old resolution let through.
+
+describe('a relative path resolves where its own command runs (#218)', () => {
+  const setup = () => {
+    const base = tempDir();
+    const axial = path.join(base, 'axial');
+    const live = path.join(axial, 'data');
+    const runs = path.join(base, 'axial-runs');
+    for (const d of [path.join(live, 'map', 'X'), path.join(runs, 'data', 'map', 'X')]) mkdirSync(d, { recursive: true });
+    return { base, axial, live, runs, env: { [LIVE]: live } };
+  };
+  // The same directory in the form the Bash tool hands the shell on Windows, `/c/...`. On
+  // any other platform the native path is already that form.
+  const msys = (p) =>
+    process.platform === 'win32' ? p.replace(/^([A-Za-z]):[\\/]/, (_, d) => `/${d.toLowerCase()}/`).replace(/\\/g, '/') : p;
+  const compare = 'python -m axial.cli map compare data/map/X data/map/X-category --vocabulary-dir data/vocabulary';
+
+  test("the issue's command runs when the cd leaves the live checkout", () => {
+    const { axial, runs, env } = setup();
+    for (const command of [
+      `cd ${msys(runs)} && ${compare} > out.txt 2>&1`,
+      `cd ${runs} && ${compare} > out.txt 2>&1`,
+      `cd ${runs.replace(/\\/g, '/')} && ${compare}`,
+      `cd ${runs} ; ${compare}`,
+      `cd ${runs}\n${compare}`,
+    ]) {
+      assertAllowed(guard({ payload: bash(command, axial), env }), JSON.stringify(command));
+    }
+  });
+
+  test('a relative cd target resolves against the session directory first', () => {
+    const { axial, env } = setup();
+    for (const command of [`cd ../axial-runs && ${compare}`, `cd .. && cd axial-runs && ${compare}`]) {
+      assertAllowed(guard({ payload: bash(command, axial), env }), JSON.stringify(command));
+    }
+  });
+
+  test('a cd into the live checkout from outside it refuses a relative path inside the live root', () => {
+    const { base, axial, runs, env } = setup();
+    for (const [command, cwd] of [
+      [`cd ${msys(axial)} && ${compare}`, runs],
+      [`cd ${axial} && python run.py --out data/map/X`, runs],
+      [`cd ../axial && ${compare}`, runs],
+      [`cd axial && ${compare}`, base],
+      [`cd .. && cd axial && ${compare}`, runs],
+      [`cd ${runs} && ls && cd ${axial} && ${compare}`, base],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+  });
+
+  test('a command the cd does not reach still resolves against where it runs', () => {
+    const { axial, runs, env } = setup();
+    for (const command of [
+      `cd ${runs} || ${compare}`, // runs only when the cd failed, so in the session directory
+      `( cd ${runs} ) && ${compare}`, // the cd dies with the subshell
+      `( cd ${runs} && ls ) ; ${compare}`,
+      `${compare} && cd ${runs}`, // before the cd
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, axial), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+    assertAllowed(guard({ payload: bash(`( cd ${runs} && ${compare} ) && ls`, axial), env }), 'inside the subshell');
+  });
+
+  // #169: a `cd` the guard cannot name gives a relative path after it no directory, so it
+  // is not resolved, and the warning says so. That stays. What changes is the command
+  // BEFORE such a `cd`: it runs where the session sits, which the guard does know.
+  test('a cd the guard cannot name does not loosen what runs before it', () => {
+    const { axial, env } = setup();
+    for (const command of [`cd $RUNS && ${compare}`, `cd - && ${compare}`]) {
+      assertWarned(guard({ payload: bash(command, axial), env }), WARNS_UNNAMED_CD, JSON.stringify(command));
+    }
+    for (const command of [`${compare} && cd $RUNS && ls`, `rm -rf data/map/X ; cd - && ls`]) {
+      assertBlockedBecause(guard({ payload: bash(command, axial), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A prefix assignment binds to one command, not to the line
 // ---------------------------------------------------------------------------
 //
