@@ -495,7 +495,7 @@ describe('a session with no seam (#214)', () => {
   test('the rules that read a path still refuse', () => {
     const { live, repo } = setup();
     assertBlockedBecause(
-      guard({ payload: bash(`cat ${path.join(live, 'x')}`, repo), env: {} }),
+      guard({ payload: bash(`python ${path.join(live, 'x')}`, repo), env: {} }),
       NAMES_LIVE_DATA,
       'a path named inside production data',
     );
@@ -530,7 +530,7 @@ describe('the declaration file (#133)', () => {
 
   // The probe for "armed": a command naming a path inside the declared root. With no
   // declaration that path is an ordinary directory and the command runs.
-  const probe = (live) => `cat ${path.join(live, 'index.json')}`;
+  const probe = (live) => `python read.py ${path.join(live, 'index.json')}`;
 
   test('a declaration in the file alone arms the guard, with nothing in the environment', () => {
     const { live } = roots();
@@ -611,7 +611,7 @@ describe('the declaration file (#133)', () => {
     // project (repoB) wrongly governed instead, liveA would be an ordinary, undeclared
     // directory and this would pass straight through.
     assertBlockedBecause(
-      guard({ payload: bash(`ls ${path.join(liveA, 'index')}`, repoA), env }),
+      guard({ payload: bash(`rm -rf ${path.join(liveA, 'index')}`, repoA), env }),
       NAMES_LIVE_DATA,
       "payload.cwd's own repo governs the declaration, not CLAUDE_PROJECT_DIR's",
     );
@@ -682,11 +682,10 @@ describe('paths named in the command', () => {
     const inside = path.join(live, 'index');
     mkdirSync(inside, { recursive: true });
     for (const command of [
-      `ls ${inside}`,
       `rm -rf ${inside}`,
       `pytest --data-dir=${inside}`,
       `python -m tool --out "${inside}"`,
-      `cat ${path.join(inside, 'entries.jsonl')}`,
+      `node read.mjs ${path.join(inside, 'entries.jsonl')}`,
     ]) {
       assertBlockedBecause(
         guard({ payload: bash(command, repo), env: { [LIVE]: live, [DATA]: sandbox } }),
@@ -701,7 +700,7 @@ describe('paths named in the command', () => {
     const repo = makeRepo();
     mkdirSync(path.join(live, 'index'), { recursive: true });
     assertBlockedBecause(
-      guard({ payload: bash('ls ./index', path.join(live)), env: { [LIVE]: live, [DATA]: sandbox } }),
+      guard({ payload: bash('rm -rf ./index', path.join(live)), env: { [LIVE]: live, [DATA]: sandbox } }),
       NAMES_LIVE_DATA,
       'relative token resolved against the operation directory',
     );
@@ -750,7 +749,7 @@ describe('the operation directory', () => {
     const { live, sandbox } = roots();
     mkdirSync(path.join(live, 'index'), { recursive: true });
     // No token here carries a separator, so the rule that names a path sees nothing.
-    for (const command of ['rm -rf index', 'ls', 'cat entries.jsonl']) {
+    for (const command of ['rm -rf index', 'python run.py', 'sqlite3 entries.db']) {
       assertBlockedBecause(
         guard({ payload: bash(command, live), env: { [LIVE]: live, [DATA]: sandbox } }),
         OPERATES_IN,
@@ -791,6 +790,153 @@ describe('the operation directory', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Read-only commands may name production data (#216)
+// ---------------------------------------------------------------------------
+//
+// Axial, 2026-09-29: the founder copied results into the live root and a session could
+// not confirm the copy. `ls`, `du -sh`, `dir` and `git ls-files` of the live vault were
+// each refused for naming it, which read no data that a write could harm. A line whose
+// every command is on a short list that cannot write or run project code may now name
+// production data and run from inside it. One command off the list and the whole line is
+// judged as before, because a read-only command's output can feed one that is not.
+
+describe('read-only commands may name production data (#216)', () => {
+  const setup = () => {
+    const { base, live, sandbox } = roots();
+    const vault = path.join(live, 'vault');
+    mkdirSync(vault, { recursive: true });
+    writeFileSync(path.join(vault, 'a.md'), 'a\n');
+    return { base, live, sandbox, vault, env: { [LIVE]: live, [DATA]: sandbox } };
+  };
+
+  test('the checks from the issue run', () => {
+    const { base, sandbox, vault, env } = setup();
+    const a = path.join(vault, 'a.md');
+    const other = path.join(sandbox, 'copy');
+    for (const command of [
+      `ls ${vault}`,
+      `ls -la ${vault}`,
+      `du -sh ${vault}`,
+      `dir ${vault}`,
+      `stat ${a}`,
+      `sha256sum ${a}`,
+      `md5sum ${a}`,
+      `cat ${a}`,
+      `head -5 ${a}`,
+      `tail -n 5 ${a}`,
+      `wc -l ${a}`,
+      `find ${vault} -type f | wc -l`,
+      `find ${vault} -name '*.md' -newer ${path.join(sandbox, 'stamp')}`,
+      `robocopy ${vault} ${other} /L /E`,
+      `robocopy ${vault} ${other} /l`,
+      `cd ${vault} && ls`,
+      `/usr/bin/ls ${vault}`,
+      `du.exe -sh ${vault}`,
+      `ls ${vault} 2>/dev/null`,
+      `LC_ALL=C ls ${vault}`,
+      `ls ${vault} > ${path.join(sandbox, 'listing.txt')}`,
+    ]) {
+      assertAllowed(guard({ payload: bash(command, base), env }), command);
+    }
+  });
+
+  // The issue's first example: the live root sits inside the repository, and the relative
+  // path is resolved against the session directory.
+  test('git reads a live root that sits inside the repository', () => {
+    const repo = makeRepo();
+    const live = path.join(repo, 'data');
+    mkdirSync(path.join(live, 'runs'), { recursive: true });
+    for (const command of [
+      `git -C ${repo} ls-files data/runs`,
+      'git ls-files data/runs',
+      'git status data/runs',
+      `git --no-pager diff --stat -- ${path.join(live, 'runs')}`,
+    ]) {
+      assertAllowed(guard({ payload: bash(command, repo), env: { [LIVE]: live } }), command);
+    }
+  });
+
+  test('a session sitting inside production data may look around', () => {
+    const { vault, env } = setup();
+    for (const command of ['ls', 'ls -la', 'du -sh .', 'find . -type f | wc -l', 'cat a.md', 'git status']) {
+      assertAllowed(guard({ payload: bash(command, vault), env }), `${command} from inside`);
+    }
+  });
+
+  // The third shape in the issue was fixed by #214 (plugin 0.3.1); the machine that
+  // reported it ran 0.3.0. Pinned so it stays fixed.
+  test('a pipe with no leading seam runs (#214)', () => {
+    const { base, live, sandbox } = setup();
+    for (const command of [`find ${sandbox} -type f | wc -l`, 'env | grep AXIAL']) {
+      assertAllowed(guard({ payload: bash(command, base), env: { [LIVE]: live } }), command);
+    }
+  });
+
+  test('a write, an interpreter or a project entry point still refuses by the path it names', () => {
+    const { base, sandbox, vault, env } = setup();
+    const a = path.join(vault, 'a.md');
+    const b = path.join(vault, 'b.md');
+    for (const command of [
+      `ls ${vault} > ${path.join(vault, 'x')}`,
+      `cat ${a} >> ${b}`,
+      `cat ${a} | tee ${b}`,
+      `find ${vault} -delete`,
+      `find ${vault} -exec rm {} ;`,
+      `find ${vault} -execdir rm {} +`,
+      `find ${vault} -fprint ${path.join(sandbox, 'x')}`,
+      `find ${vault} -name '*.tmp' | xargs rm`,
+      `python ${path.join(vault, 'x.py')}`,
+      `uv run axial --root ${vault}`,
+      `sqlite3 ${path.join(vault, 'db')}`,
+      `node ${path.join(vault, 'x.mjs')}`,
+      `robocopy ${vault} ${path.join(sandbox, 'copy')}`,
+      `robocopy ${vault} ${path.join(sandbox, 'copy')} /L /LOG:${path.join(sandbox, 'log.txt')}`,
+      `git diff --output=${path.join(vault, 'x')}`,
+      `git diff --output ${path.join(vault, 'x')}`,
+      `git diff --outp=${path.join(vault, 'x')}`,
+      `git diff --ext-diff -- ${vault}`,
+      `git diff --textconv -- ${vault}`,
+      `git -c core.fsmonitor=x status ${vault}`,
+      `git add ${a}`,
+      `ls ${vault} && rm -rf ${path.join(vault, 'x')}`,
+      `ls ${vault} ; npm test`,
+      `./ls ${vault}`,
+      `${path.join(vault, 'ls')} ${sandbox}`,
+      `X=${a} ls ${sandbox}`,
+      `ls "${vault}`, // unreadable: no exemption without a parse
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, base), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+  });
+
+  test('from inside production data, anything off the list still refuses', () => {
+    const { base, live, vault, env } = setup();
+    const rel = path.basename(live);
+    for (const [command, cwd] of [
+      ['rm -rf x', vault],
+      ['python x.py', vault],
+      ['ls ; rm -rf x', vault],
+      ['ls > out.txt', vault],
+      ['ls "$(rm -rf x)"', vault],
+      [`cd ${rel} && python x.py`, base],
+      [`cd ${rel} && ls > out.txt`, base],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, `${command} in ${cwd}`);
+    }
+    assertBlockedBecause(guard({ payload: bash(`cd ${live} && python x.py`, base), env }), NAMES_LIVE_DATA, 'absolute cd');
+  });
+
+  test('the file tools get no exemption', () => {
+    const { base, vault, env } = setup();
+    assertBlockedBecause(
+      guard({ payload: fileCall('Write', path.join(vault, 'a.md'), base), env }),
+      TARGETS_LIVE_DATA,
+      'Write into production data',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The file tools
 // ---------------------------------------------------------------------------
 //
@@ -817,7 +963,7 @@ describe('the operation directory', () => {
 describe('PowerShell reaches the same rules as Bash', () => {
   const pwsh = (command, cwd, extra = {}) => ({ ...bash(command, cwd, extra), tool_name: 'PowerShell' });
 
-  test('a cmdlet reading a file inside production data blocks, as `cat` does', () => {
+  test('a cmdlet reading a file inside production data blocks', () => {
     const { live, sandbox } = roots();
     const target = path.join(live, 'index', 'entries.jsonl');
     assertBlockedBecause(
@@ -907,6 +1053,8 @@ describe('the file tools', () => {
     assertAllowed(gate({ payload, env }), 'Read inside production data, through gate.mjs');
   });
 
+  // L-03's shape is code reading an index. `cat` of one file is on the read-only list
+  // now (#216), so the probe is a script, which is what L-03 was.
   test("a Bash call reading the same file still blocks, which is L-03's own shape", () => {
     const { live, sandbox } = roots();
     const target = path.join(live, 'index', 'entries.jsonl');
@@ -917,7 +1065,7 @@ describe('the file tools', () => {
       hook_event_name: 'PreToolUse',
       cwd: tempDir(),
       tool_name: 'Bash',
-      tool_input: { command: `cat ${target}` },
+      tool_input: { command: `node count.mjs ${target}` },
     };
     const env = { [LIVE]: live, [DATA]: sandbox };
     assertBlockedBecause(guard({ payload, env }), NAMES_LIVE_DATA, 'a Bash read of production data');
@@ -1017,7 +1165,7 @@ describe('the file tools', () => {
       'absolute target outside, session cwd inside production data',
     );
     assertBlockedBecause(
-      guard({ payload: bash('ls', live), env: { [LIVE]: live, [DATA]: sandbox } }),
+      guard({ payload: bash('rm -rf index', live), env: { [LIVE]: live, [DATA]: sandbox } }),
       OPERATES_IN,
       'the Bash control',
     );
@@ -1220,13 +1368,13 @@ describe('a command the guard cannot read is judged on what it can read (#169)',
 
   test('a cd the guard cannot name still blocks on an absolute path inside production data', () => {
     const { base, live, env } = setup();
-    const command = `cd $DIR && cat ${path.join(live, 'x')}`;
+    const command = `cd $DIR && rm ${path.join(live, 'x')}`;
     assertBlockedBecause(guard({ payload: bash(command, base), env }), NAMES_LIVE_DATA, command);
   });
 
   test('a cd the guard cannot name still blocks on a directory the walk did resolve', () => {
     const { live, env } = setup();
-    assertBlockedBecause(guard({ payload: bash('cd $DIR && ls', live), env }), OPERATES_IN, 'started inside');
+    assertBlockedBecause(guard({ payload: bash('cd $DIR && rm -rf index', live), env }), OPERATES_IN, 'started inside');
   });
 
   // A KNOWN MISS, pinned rather than claimed as covered. The tokeniser splits on a space
@@ -1351,7 +1499,7 @@ describe('aliased paths', () => {
     if (!link(live, alias)) return t.skip('this platform would not create a directory link');
     mkdirSync(path.join(live, 'index'), { recursive: true });
     assertBlockedBecause(
-      guard({ payload: bash(`ls ${path.join(live, 'index')}`, repo), env: { [LIVE]: alias, [DATA]: sandbox } }),
+      guard({ payload: bash(`rm -rf ${path.join(live, 'index')}`, repo), env: { [LIVE]: alias, [DATA]: sandbox } }),
       NAMES_LIVE_DATA,
       'production root declared under its alias, command uses the real name',
     );
@@ -1364,7 +1512,7 @@ describe('aliased paths', () => {
     const alias = path.join(base, 'shortcut');
     if (!link(live, alias)) return t.skip('this platform would not create a directory link');
     assertBlockedBecause(
-      guard({ payload: bash(`cat ${path.join(alias, 'index', 'entries.jsonl')}`, repo), env: { [LIVE]: live, [DATA]: sandbox } }),
+      guard({ payload: bash(`rm ${path.join(alias, 'index', 'entries.jsonl')}`, repo), env: { [LIVE]: live, [DATA]: sandbox } }),
       NAMES_LIVE_DATA,
       'command names production data through a link',
     );
@@ -1376,7 +1524,7 @@ describe('aliased paths', () => {
     const trap = path.join(sandbox, 'data');
     if (!link(live, trap)) return t.skip('this platform would not create a directory link');
     assertBlockedBecause(
-      guard({ payload: bash(`ls ${path.join(trap, 'index')}`, repo), env: { [LIVE]: live, [DATA]: sandbox } }),
+      guard({ payload: bash(`rm -rf ${path.join(trap, 'index')}`, repo), env: { [LIVE]: live, [DATA]: sandbox } }),
       NAMES_LIVE_DATA,
       'a sandbox path that is really production data',
     );
@@ -1619,7 +1767,7 @@ describe('no override', () => {
     for (const name of disablers) {
       for (const value of ['1', 'true']) {
         assertBlockedBecause(
-          guard({ payload: bash(`cat ${path.join(live, 'index.json')}`, repo), env: { [LIVE]: live, [name]: value } }),
+          guard({ payload: bash(`python read.py ${path.join(live, 'index.json')}`, repo), env: { [LIVE]: live, [name]: value } }),
           NAMES_LIVE_DATA,
           `${name}=${value}`,
         );
@@ -1642,7 +1790,7 @@ describe('no override', () => {
     for (const flag of ['--no-sandbox', '--allow-live-data', '--force', '--aeo-skip', '--no-verify', '-f']) {
       assertBlockedBecause(guard({ payload: bash(`npm test ${flag}`, repo) }), LIVE_RUN, `sentinel with ${flag}`);
       assertBlockedBecause(
-        guard({ payload: bash(`ls ${flag} ${path.join(live, 'index')}`, repo), env: { [LIVE]: live } }),
+        guard({ payload: bash(`rm ${flag} ${path.join(live, 'index')}`, repo), env: { [LIVE]: live } }),
         NAMES_LIVE_DATA,
         `data rule with ${flag}`,
       );
@@ -1656,7 +1804,7 @@ describe('no override', () => {
     const extra = { permission_mode: 'bypassPermissions' };
     assertBlockedBecause(guard({ payload: bash('npm test', repo, extra) }), LIVE_RUN, 'bypassPermissions, sentinel');
     assertBlockedBecause(
-      guard({ payload: bash(`ls ${path.join(live, 'index')}`, repo, extra), env: { [LIVE]: live } }),
+      guard({ payload: bash(`rm -rf ${path.join(live, 'index')}`, repo, extra), env: { [LIVE]: live } }),
       NAMES_LIVE_DATA,
       'bypassPermissions, data rule',
     );
@@ -1673,7 +1821,7 @@ describe('no override', () => {
       const extra = agent_type === undefined ? {} : { agent_type };
       assertBlockedBecause(guard({ payload: bash('npm test', repo, extra) }), LIVE_RUN, `sentinel, ${agent_type}`);
       assertBlockedBecause(
-        guard({ payload: bash(`ls ${path.join(live, 'index')}`, repo, extra), env: { [LIVE]: live } }),
+        guard({ payload: bash(`rm -rf ${path.join(live, 'index')}`, repo, extra), env: { [LIVE]: live } }),
         NAMES_LIVE_DATA,
         `data rule, ${agent_type}`,
       );
