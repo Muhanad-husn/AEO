@@ -1503,6 +1503,98 @@ describe('a relative path resolves where its own command runs (#218)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// A relative path after `git -C <dir>` resolves against <dir> (#220)
+// ---------------------------------------------------------------------------
+//
+// Axial, 2026-09-29: from the live checkout, `git -C /d/axial-runs add data/logs/X/summary.md`
+// was refused, because `data/logs/X` was resolved against the session directory rather than
+// the runs checkout `-C` names. `git -C` moves where a command's relative paths land the way
+// `cd` does (#218), each `-C` relative to the one before it. The mirror image, `git -C <live
+// checkout> add data/...` from outside it, is refused.
+
+describe('a relative path after git -C resolves against the -C target (#220)', () => {
+  const setup = () => {
+    const base = tempDir();
+    const axial = path.join(base, 'axial');
+    const live = path.join(axial, 'data');
+    const runs = path.join(base, 'axial-runs');
+    for (const d of [path.join(live, 'logs', 'X'), path.join(runs, 'data', 'logs', 'X')]) mkdirSync(d, { recursive: true });
+    return { base, axial, live, runs, env: { [LIVE]: live } };
+  };
+  const msys = (p) =>
+    process.platform === 'win32' ? p.replace(/^([A-Za-z]):[\\/]/, (_, d) => `/${d.toLowerCase()}/`).replace(/\\/g, '/') : p;
+  const spec = 'data/logs/X/summary.md';
+
+  test("the issue's command runs when -C leaves the live checkout", () => {
+    const { axial, runs, env } = setup();
+    for (const command of [
+      `git -C ${msys(runs)} add ${spec}`,
+      `git -C ${runs} add ${spec}`,
+      `git -C ../axial-runs add ${spec}`,
+      `git -C ${runs} -c core.autocrlf=false add ${spec}`,
+      `git --no-pager -C ${runs} add ${spec}`,
+      `git -C .. -C axial-runs add ${spec}`,
+      `cd ${msys(runs)} && git -C . add ${spec}`,
+    ]) {
+      assertAllowed(guard({ payload: bash(command, axial), env }), JSON.stringify(command));
+    }
+  });
+
+  test('a -C into the live checkout from outside it refuses a relative path inside the live root', () => {
+    const { base, axial, runs, env } = setup();
+    for (const [command, cwd] of [
+      [`git -C ${msys(axial)} add ${spec}`, runs],
+      [`git -C ../axial add ${spec}`, runs],
+      [`git -C axial add ${spec}`, base],
+      [`git -C .. -C axial add ${spec}`, runs],
+      [`git -C ${runs} -C ../axial add ${spec}`, base],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+  });
+
+  // A global option that takes its value as a separate word must not end the scan for -C:
+  // a scan that stops at the value sees no -C and resolves against the session directory,
+  // which allows a write into the live root.
+  test('a -C after a global option with a separate value is still read', () => {
+    const { base, axial, runs, env } = setup();
+    for (const opt of ['--git-dir .git', '--work-tree .', '--namespace ns', '--super-prefix p/', '--config-env core.x=VAR']) {
+      assertBlockedBecause(
+        guard({ payload: bash(`git ${opt} -C ../axial add ${spec}`, runs), env }),
+        NAMES_LIVE_DATA,
+        opt,
+      );
+      assertAllowed(guard({ payload: bash(`git ${opt} -C ${runs} add ${spec}`, axial), env }), opt);
+    }
+    assertAllowed(
+      guard({ payload: bash(`git --git-dir ${msys(runs)}/.git -C ${msys(runs)} add ${spec}`, axial), env }),
+      'a --git-dir inside the runs checkout',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash(`git --git-dir=.git -C axial add ${spec}`, base), env }),
+      NAMES_LIVE_DATA,
+      'the = form',
+    );
+  });
+
+  test('a -C does not reach the commands around it', () => {
+    const { axial, runs, env } = setup();
+    for (const command of [`git -C ${runs} status && git add ${spec}`, `git add ${spec} && git -C ${runs} status`]) {
+      assertBlockedBecause(guard({ payload: bash(command, axial), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+    assertAllowed(guard({ payload: bash(`git -C ${runs} status && git -C ${runs} add ${spec}`, axial), env }), 'each -C on its own');
+  });
+
+  test('a -C the guard cannot name gives a relative path no directory, and warns', () => {
+    const { axial, env } = setup();
+    for (const command of [`git -C $RUNS add ${spec}`, `git -C "$RUNS" add ${spec}`]) {
+      assertWarned(guard({ payload: bash(command, axial), env }), WARNS_UNNAMED_CD, JSON.stringify(command));
+    }
+    assertBlockedBecause(guard({ payload: bash(`git -C $RUNS status && git add ${spec}`, axial), env }), NAMES_LIVE_DATA, 'a later command');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A prefix assignment binds to one command, not to the line
 // ---------------------------------------------------------------------------
 //
