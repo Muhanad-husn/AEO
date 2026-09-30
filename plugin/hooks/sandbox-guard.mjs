@@ -409,8 +409,18 @@ const READS_ONLY = new Set(['ls', 'dir', 'du', 'stat', 'wc', 'cat', 'head', 'tai
 /** The `find` primaries that delete, run a program, or write a file. */
 const FIND_ACTIONS = new Set(['-delete', '-exec', '-execdir', '-ok', '-okdir', '-fprint', '-fprint0', '-fprintf', '-fls']);
 
-/** The `git` subcommands that read. `git status` may refresh `.git/index`, which is the repository's, not data. */
-const GIT_READS = new Set(['status', 'ls-files', 'diff']);
+/**
+ * The `git` subcommands that change no file in the working tree (#234). They read it, or
+ * write git's own store: the index, the objects, a ref. `git status` may refresh
+ * `.git/index`, which is the repository's, not data. `stash`, `restore`, `reset` and `rm`
+ * qualify only in the forms gitIndexOnly accepts.
+ */
+const GIT_INDEX_OPS = new Set(['add', 'commit', 'status', 'diff', 'log', 'show', 'blame', 'ls-files', 'stash', 'restore', 'reset', 'rm']);
+
+/** The only options `restore`, `reset` and `rm` may carry and still leave the working tree alone. */
+const GIT_RESTORE_INDEX = new Set(['--staged', '-S', '-q', '--quiet', '--']);
+const GIT_RESET_INDEX = new Set(['--soft', '--mixed', '-N', '-q', '--quiet', '--']);
+const GIT_RM_INDEX = new Set(['--cached', '-r', '-f', '-rf', '-fr', '--force', '-n', '--dry-run', '-q', '--quiet', '--ignore-unmatch', '--']);
 
 /** Global options that change nothing `git` runs. `-c` is not one: `core.fsmonitor` runs a program. */
 const GIT_QUIET_GLOBALS = new Set(['--no-pager', '-P', '--no-optional-locks', '--literal-pathspecs']);
@@ -434,20 +444,62 @@ function programName(program) {
   return program.split(/[\\/]/).pop().replace(/\.exe$/i, '');
 }
 
-function gitReadsOnly(args) {
-  let i = 0;
-  while (i < args.length && args[i].startsWith('-')) {
-    if (args[i] === '-C') i += 2;
-    else if (GIT_QUIET_GLOBALS.has(args[i]) || /^--(?:git-dir|work-tree)=/.test(args[i])) i += 1;
-    else return false;
-  }
-  if (!GIT_READS.has(args[i])) return false;
-  // `git diff` also runs a diff driver or textconv filter that the repository's own config
-  // names. That is the repository's code, not the command line's, and is not judged here.
-  return !args.slice(i + 1).some((a) => {
+/**
+ * True when `git <sub> <rest>` changes no file in the working tree. The three that can
+ * change one are held to an option list: `restore` without `--staged`, or with
+ * `--worktree`, writes the files; `reset --hard`, `--merge` and `--keep` write them, and
+ * git takes `--ha` for `--hard`, so an option off the list is refused rather than parsed;
+ * `rm` without `--cached` deletes them. `stash` qualifies as `list` and `show` only.
+ */
+function gitIndexOnly(sub, rest) {
+  // A diff driver or textconv filter the repository's own config names is the
+  // repository's code, not the command line's, and is not judged here.
+  const unsafe = rest.some((a) => {
     const name = a.startsWith('--') ? a.slice(2).split('=')[0] : '';
     return name !== '' && GIT_DIFF_UNSAFE.some((o) => o.startsWith(name));
   });
+  if (unsafe) return false;
+  const options = rest.filter((a) => a.startsWith('-'));
+  if (sub === 'stash') return rest[0] === 'list' || rest[0] === 'show';
+  if (sub === 'restore') return options.every((o) => GIT_RESTORE_INDEX.has(o)) && options.some((o) => o === '--staged' || o === '-S');
+  if (sub === 'reset') return options.every((o) => GIT_RESET_INDEX.has(o));
+  if (sub === 'rm') return options.every((o) => GIT_RM_INDEX.has(o)) && options.includes('--cached');
+  return true;
+}
+
+/**
+ * For a `git` segment that changes no file in the working tree (#234), the words rule 5
+ * still judges: every word except the subcommand, its own arguments and the `-C` values.
+ * `null` for any other segment.
+ *
+ * Only the global options that cannot run a program or move git's store elsewhere
+ * unjudged are accepted. `-c` is refused because `core.pager` and `core.fsmonitor` run
+ * one. The value of `--git-dir` and `--work-tree` stays judged, since `--git-dir=<live>/x`
+ * writes objects there. A `-C` value is left to rule 6, which judges the directory the
+ * command runs in.
+ */
+function gitIndexJudged(segment) {
+  if (segment.program === null || programName(segment.program) !== 'git') return null;
+  const args = segment.args;
+  const own = [];
+  let i = 0;
+  while (i < args.length && args[i].startsWith('-')) {
+    if (args[i] === '-C') {
+      if (args[i + 1] !== undefined) own.push(args[i + 1]);
+      i += 2;
+    } else if (args[i] === '--git-dir' || args[i] === '--work-tree') i += 2;
+    else if (GIT_QUIET_GLOBALS.has(args[i]) || /^--(?:git-dir|work-tree)=/.test(args[i])) i += 1;
+    else return null;
+  }
+  if (!GIT_INDEX_OPS.has(args[i]) || !gitIndexOnly(args[i], args.slice(i + 1))) return null;
+  own.push(...args.slice(i));
+  const out = [];
+  for (const word of segment.tokens) {
+    const k = own.indexOf(word);
+    if (k === -1) out.push(word);
+    else own.splice(k, 1);
+  }
+  return out;
 }
 
 /** True when a segment runs a program on the list, with no argument that writes or executes. */
@@ -457,14 +509,14 @@ function readsOnly(segment) {
   if (READS_ONLY.has(name)) return true;
   if (name === 'find') return !args.some((a) => FIND_ACTIONS.has(a));
   if (name === 'robocopy') return args.some((a) => a.toUpperCase() === '/L') && !args.some((a) => ROBOCOPY_WRITES.test(a));
-  if (name === 'git') return gitReadsOnly(args);
   return false;
 }
 
 /**
  * True when every command on the line reads and nothing more (#216). Axial could not
  * confirm a copy into its live root because `ls`, `du -sh`, `dir` and `git ls-files` of it
- * were refused for naming it, and none of them can write.
+ * were refused for naming it, and none of them can write. A `git` command that writes only
+ * git's own store counts as reading here (#234): it changes no file under the root.
  *
  * THE WHOLE LINE, NOT ONE SEGMENT. `find <live> -name '*.tmp' | xargs rm` names production
  * data only in a segment that reads, and deletes it in one that names nothing. A command
@@ -482,7 +534,7 @@ function readOnlyLine(command, parsed) {
   if (parsed.error !== null || parsed.segments.length === 0) return false;
   if (/\$\(|[<>]\(/.test(command)) return false;
   return parsed.segments.every(
-    (s) => s.program === null || s.program === 'cd' || s.program === 'pushd' || readsOnly(s),
+    (s) => s.program === null || s.program === 'cd' || s.program === 'pushd' || readsOnly(s) || gitIndexJudged(s) !== null,
   );
 }
 
@@ -807,9 +859,19 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
   // does not. The parse error above gets no exemption: with no segments there is nothing
   // to tell an argument from a redirection target, so every token is judged as before,
   // against the directory the call starts in.
+  //
+  // A git command that changes no working-tree file (#234) is judged the same way on a
+  // line with other commands on it, so `git add <live>/x && python run.py <live>/y` refuses
+  // on the second command only. Not when a pipe follows it anywhere on the line: `git
+  // ls-files <live> | xargs rm` deletes what the git command named. Not on a line with `$(`
+  // or a process substitution either, for the reason readOnlyLine gives.
   const liveReal = realise(live.root);
   const parsed = commandSegments(command);
   const readOnly = !fileTool && readOnlyLine(command, parsed);
+  const plain = parsed.error === null && !/\$\(|[<>]\(/.test(command);
+  const pipedFrom = (i) => parsed.segments.slice(i).some((s) => s.followedBy === '|');
+  const judged = (s, i) =>
+    ((readOnly || (plain && !pipedFrom(i))) && gitIndexJudged(s)) || (readOnly ? judgedWords([s]) : s.tokens);
   const absolute = (d) => (typeof d === 'string' && path.isAbsolute(d) ? d : null);
   // A file tool names exactly one location and names it plainly. A Bash command names as
   // many as its tokens do, and which of them is a path has to be guessed at.
@@ -818,7 +880,7 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
     : walk.parseError !== null
       ? [{ candidates: pathCandidates(shellTokens(command)), dir: dirs[0] ?? null }]
       : parsed.segments.map((s, i) => ({
-          candidates: pathCandidates(readOnly ? judgedWords([s]) : s.tokens),
+          candidates: pathCandidates(judged(s, i)),
           dir: absolute(walk.segmentDirs[i]),
         }));
   const checks = named.flatMap(({ candidates, dir }) => candidates.map((candidate) => ({ candidate, dir })));
@@ -859,7 +921,8 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
   //    it, and no production data is behind that refusal.
   //
   //    A line whose every command only reads may run in there too (#216), so a session
-  //    sitting in the live root can `ls` it. Not when it redirects to a relative target:
+  //    sitting in the live root can `ls` it, and `git -C <live> add x` runs while `git -C
+  //    <live> clean -fd` does not (#234). Not when it redirects to a relative target:
   //    `ls > out.txt` writes into the directory it runs in, and rule 5 only judges a
   //    target that carries a separator. An absolute target, `/dev/null` included, rule 5
   //    has already judged.
