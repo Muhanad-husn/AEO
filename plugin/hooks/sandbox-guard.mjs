@@ -454,7 +454,7 @@ function runsHiddenCommand(command) {
 }
 
 /**
- * `word` with a leading `~` and every `$NAME` or `${NAME}` read from the session
+ * `word` with a leading `~` and every `$NAME`, `${NAME}` or `$env:NAME` read from the session
  * environment, or null when one of them is not defined there: a loop variable, or one set
  * earlier on the same line, names a location the guard cannot know.
  */
@@ -468,7 +468,7 @@ function expand(word, env) {
   };
   const out = word
     .replace(/^~(?=$|[\\/])/, () => (typeof env?.HOME === 'string' ? env.HOME : value('USERPROFILE')))
-    .replace(/\$(?:\{(\w+)\}|(\w+))/g, (_, braced, bare) => value(braced ?? bare));
+    .replace(/\$(?:env:(\w+)|\{(\w+)\}|(\w+))/gi, (_, ps, braced, bare) => value(ps ?? braced ?? bare));
   return unknown ? null : out;
 }
 

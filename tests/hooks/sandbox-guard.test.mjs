@@ -2275,6 +2275,10 @@ describe('the guard judges only what git cannot restore (#237)', () => {
       guard({ payload: bash('rm -rf "$SCRATCH_DIR/x"', app), env: { ...env, SCRATCH_DIR: tempDir() } }),
       'a defined variable outside the root',
     );
+    assertAllowed(
+      guard({ payload: pwsh('Remove-Item -Recurse $env:SCRATCH_DIR\\x', app), env: { ...env, SCRATCH_DIR: tempDir() } }),
+      'a PowerShell environment variable outside the root',
+    );
     assertBlockedBecause(
       guard({ payload: bash('rm -rf "$LIVE_RAW"', app), env: { ...env, LIVE_RAW: path.join(app, 'data', 'raw') } }),
       CHANGES_LIVE_DATA,
