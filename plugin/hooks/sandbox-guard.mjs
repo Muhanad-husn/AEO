@@ -238,15 +238,36 @@ export function invokesDeclaredSuite(command, declared) {
 /**
  * Programs that cannot write a file or run code, whatever arguments they get (#216). What
  * they name, they read, so their arguments are not judged. None of them has a flag that
- * writes: `sort -o` and `uniq in out` would, and neither is here. Compared in lower case,
- * so PowerShell's own names match.
+ * writes. The pure stdout filters (cut, tr, jq and the like) are here so that a read piped
+ * through one is still a read. `sort` and `uniq` are not: each can write a file, so
+ * kindOf reads them by their arguments (readOnlySortUniq). `awk`, `sed`, `xxd` and `tee`
+ * are absent because they can write. Compared in lower case, so PowerShell's own names match.
  */
 const READS = new Set([
   'ls', 'dir', 'du', 'stat', 'wc', 'cat', 'head', 'tail', 'sha256sum', 'sha1sum', 'md5sum', 'grep', 'egrep', 'fgrep',
   'diff', 'cmp', 'file', 'tree', 'echo', 'printf', 'pwd', 'true', 'false', 'test', 'basename', 'dirname', 'realpath',
   'readlink', 'get-content', 'gc', 'get-childitem', 'gci', 'get-item', 'gi', 'test-path', 'get-filehash',
   'select-string', 'sls', 'write-output', 'write-host', 'measure-object', 'resolve-path',
+  'cut', 'tr', 'nl', 'tac', 'rev', 'fold', 'paste', 'column', 'od', 'hexdump', 'jq', 'less', 'more',
 ]);
+
+/**
+ * Whether `sort` or `uniq` with these arguments only prints. `sort` writes a file with
+ * `-o`, `--output`, or a short cluster holding `o`, and runs a program with
+ * `--compress-program`; a long option may be abbreviated. `uniq` takes its output file as
+ * a second positional argument, so it reads when it has at most one.
+ */
+function readOnlySortUniq(name, args) {
+  if (name === 'uniq') return args.filter((a) => a === '-' || !a.startsWith('-')).length <= 1;
+  for (const a of args) {
+    if (a === '--') break;
+    if (a.startsWith('--')) {
+      const long = a.slice(2).split('=')[0];
+      if (long !== '' && ('output'.startsWith(long) || (long.length >= 2 && 'compress-program'.startsWith(long)))) return false;
+    } else if (/^-[A-Za-z0-9]*o/.test(a)) return false;
+  }
+  return true;
+}
 
 /** The `find` primaries that delete, run a program, or write a file. */
 const FIND_ACTIONS = new Set(['-delete', '-exec', '-execdir', '-ok', '-okdir', '-fprint', '-fprint0', '-fprintf', '-fls']);
@@ -402,6 +423,7 @@ function kindOf(segment) {
   const args = segment.args;
   if (
     READS.has(name) ||
+    ((name === 'sort' || name === 'uniq') && readOnlySortUniq(name, args)) ||
     (name === 'find' && !args.some((a) => FIND_ACTIONS.has(a))) ||
     (name === 'gh' && !args.some((a) => GH_WRITES.test(a)))
   ) {
@@ -456,7 +478,8 @@ function writeTargets(name, args) {
     return dest === null || dest === undefined ? moved : [...moved, { word: dest, into: positional }];
   }
   if (name === 'chmod' || name === 'chown') positional.shift();
-  return positional.map((word) => ({ word }));
+  const makesDirectory = name === 'mkdir' || name === 'md' || ((name === 'new-item' || name === 'ni') && args.some((a) => /^(?:directory|dir)$/i.test(a)));
+  return positional.map((word) => ({ word, newDirectory: makesDirectory }));
 }
 
 /** The head of `$(cat <<EOF`, with the delimiter bare or quoted and nothing after it on the line. */
@@ -537,10 +560,11 @@ function isDirectory(p) {
  *
  * Git can put a target back when every file it reaches is tracked and has no change git
  * has not recorded: `git status --ignored` lists nothing for it, and a single file is in
- * the index. An untracked or ignored file, an uncommitted edit, a new file, or a root git
- * cannot read at all, and it cannot.
+ * the index. An untracked or ignored file, an uncommitted edit, or a root git cannot read
+ * at all, and it cannot. A file that does not exist yet loses nothing, so it is allowed when
+ * it would join tracked content (newFileBesideTracked).
  */
-function cannotRestore(target, root) {
+function cannotRestore(target, root, newFileOk = true) {
   const parts = target.split(/[\\/]/);
   const firstGlob = parts.findIndex((p) => /[*?[]/.test(p));
   const fixed = firstGlob === -1 ? target : parts.slice(0, firstGlob).join('/');
@@ -575,9 +599,34 @@ function cannotRestore(target, root) {
   if (firstGlob === -1 && subject === target && !isDirectory(subject)) {
     const tracked = git('ls-files', '-z');
     if (tracked.error || tracked.status !== 0) return 'git cannot read a repository there';
-    if (tracked.stdout === '') return 'git does not track it';
+    if (tracked.stdout === '') {
+      if (newFileOk && !existsSync(subject) && newFileBesideTracked(subject, cwd)) return null;
+      return 'git does not track it';
+    }
   }
   return null;
+}
+
+/**
+ * Whether a path that does not exist yet would join tracked content: git is readable
+ * there, git does not ignore the path, and its parent directory exists and already holds a
+ * tracked file of its own. Nothing is lost by creating it, and it can then be committed.
+ */
+function newFileBesideTracked(target, cwd) {
+  const parent = path.dirname(target);
+  if (!isDirectory(parent)) return false;
+  const ignored = spawnSync('git', ['-C', cwd, 'check-ignore', '-q', '--', target.replace(/\\/g, '/')], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  if (ignored.error || ignored.status !== 1) return false; // 0 is ignored, anything else is an error
+  const listed = spawnSync('git', ['-C', parent, 'ls-files', '-z', '--', '.'], {
+    encoding: 'utf8',
+    windowsHide: true,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (listed.error || listed.status !== 0) return false;
+  return listed.stdout.split(String.fromCharCode(0)).some((entry) => entry !== '' && !/[\\/]/.test(entry));
 }
 
 // ---------------------------------------------------------------------------
@@ -804,7 +853,7 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
   // whose location cannot be named (a variable the session does not define, or a relative
   // path after a `cd` the guard could not name) is refused when the line could reach the
   // root, and otherwise allowed with a warning.
-  const judgeWrite = (word, dir, into = [], what = 'this command changes') => {
+  const judgeWrite = (word, dir, into = [], what = 'this command changes', newDirectory = false) => {
     const located = (expand(word, env, loops) ?? [null]).map((e) => (e === null ? null : locate(e, dir)));
     if (located.includes(null)) {
       if (lineReaches()) {
@@ -823,7 +872,7 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
     for (const p of located) {
       const targets = into.length > 0 && isDirectory(p) ? into.map((src) => path.join(p, path.basename(normalizeHookPath(src)))) : [p];
       for (const target of targets) {
-        const why = cannotRestore(realise(target), liveReal);
+        const why = cannotRestore(realise(target), liveReal, !newDirectory);
         if (why !== null) refuseChange(what, word, realise(target), why);
       }
     }
@@ -908,7 +957,9 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
     // `<root>/bin/ls` runs what production data holds, and so does `PATH=<root>/bin ls`.
     judgeRun([...(s.program !== null && /[\\/]/.test(s.program) ? [s.program] : []), ...s.assignments, ...judged], dir);
     const targets = kind === 'write' ? writeTargets(programName(s.program), s.args) : [];
-    for (const { word, into } of [...s.writes.map((word) => ({ word })), ...targets]) judgeWrite(word, dir, into);
+    for (const { word, into, newDirectory } of [...s.writes.map((word) => ({ word })), ...targets]) {
+      judgeWrite(word, dir, into, undefined, newDirectory);
+    }
     if (kind !== 'discard') return;
     let { paths } = discard;
     if (discard.ambiguous !== undefined) {
