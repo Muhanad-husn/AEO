@@ -3,8 +3,11 @@
 //   node --test                              # everything, from the repo root
 //   node --test "tests/hooks/*.test.mjs"     # this directory only
 //
-// Every case spawns the real gate and asserts an exit code, because the exit code is the
-// behaviour. 2 blocks; anything else lets the tool call through (C-06).
+// The exit code is the behaviour: 2 blocks; anything else lets the tool call through
+// (C-06). 'the process contract' spawns the real gate and pins that, once per verdict kind
+// and shell, and checks each spawned result equals the in-process one. Every other case
+// decides in-process through the same parse and settle runGate uses (#224), because a
+// spawn per case cost this file over two minutes on Windows.
 //
 // This gate's product is a guarantee about data that cannot be un-deleted, so a suite
 // that passes for the wrong reason is worth more here than a bug. Every block therefore
@@ -13,13 +16,14 @@
 // for an unrelated reason; the fix is the same one applied throughout below.
 
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { pathCandidates, shellTokens, invokesDeclaredSuite, resolveRoots } from '../../plugin/hooks/sandbox-guard.mjs';
+import { pathCandidates, shellTokens, invokesDeclaredSuite, resolveRoots, sandboxGuard } from '../../plugin/hooks/sandbox-guard.mjs';
+import { parseHookPayload, settleGate } from '../../plugin/hooks/lib.mjs';
 import { projectAnchor, sentinelPath } from '../../plugin/hooks/sentinel.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
@@ -66,9 +70,28 @@ function git(cwd, ...args) {
   return (r.stdout ?? '').trim();
 }
 
+// One built repository per shape, copied for each case. Building one costs nine git
+// processes, which on Windows was most of what this file spent once the guard ran
+// in-process (#224).
+const templates = new Map();
+
 /** A real repository on a feature branch, recording a Node test command by default. */
 function makeRepo({ base = { 'aeo-tests.json': JSON.stringify({ test: 'npm test' }) }, branch = 'feat/slice', change = {} } = {}) {
+  const key = JSON.stringify({ base, branch });
+  if (!templates.has(key)) templates.set(key, buildRepo(base, branch));
   const dir = tempDir();
+  cpSync(templates.get(key), dir, { recursive: true });
+  for (const [rel, body] of Object.entries(change)) {
+    const full = path.join(dir, rel);
+    mkdirSync(path.dirname(full), { recursive: true });
+    writeFileSync(full, body);
+  }
+  if (Object.keys(change).length > 0) git(dir, 'add', '-A');
+  return dir;
+}
+
+function buildRepo(base, branch) {
+  const dir = tempDir('aeo-p15-template-');
   git(dir, 'init', '-q', '-b', 'main');
   git(dir, 'config', 'user.name', 'aeo-test');
   git(dir, 'config', 'user.email', 'aeo-test@example.invalid');
@@ -83,12 +106,6 @@ function makeRepo({ base = { 'aeo-tests.json': JSON.stringify({ test: 'npm test'
   git(dir, 'remote', 'add', 'origin', 'https://example.invalid/x.git');
   git(dir, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
   if (branch !== 'main') git(dir, 'switch', '-q', '-c', branch);
-  for (const [rel, body] of Object.entries(change)) {
-    const full = path.join(dir, rel);
-    mkdirSync(path.dirname(full), { recursive: true });
-    writeFileSync(full, body);
-  }
-  if (Object.keys(change).length > 0) git(dir, 'add', '-A');
   return dir;
 }
 
@@ -112,7 +129,7 @@ function raise(repo, id = 'ingest', record = {}) {
  * that happens to carry them cannot silently change a result. Every case that needs one
  * states it.
  */
-function runHook(script, { payload, raw, env = {} } = {}) {
+function hookInput({ payload, raw, env = {} } = {}) {
   const input = raw !== undefined ? raw : payload === undefined ? '' : JSON.stringify(payload);
   const childEnv = { ...process.env, CLAUDE_PROJECT_DIR: '' };
   delete childEnv[LIVE];
@@ -121,11 +138,41 @@ function runHook(script, { payload, raw, env = {} } = {}) {
     if (v === undefined) delete childEnv[k];
     else childEnv[k] = v;
   }
+  return { input, childEnv };
+}
+
+function runHook(script, options) {
+  const { input, childEnv } = hookInput(options);
   const r = spawnSync(process.execPath, [script], { input, encoding: 'utf8', cwd: NEUTRAL_CWD, env: childEnv, windowsHide: true });
   return { status: r.status, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 
-const guard = (options) => runHook(GUARD, options);
+/**
+ * The guard decided in this process, with what the spawned hook would have had: the same
+ * serialised payload, the same environment, NEUTRAL_CWD as its working directory, and its
+ * notes and verdict collected as the text it writes to stderr and stdout. Nothing here
+ * touches process.env or process.cwd(), so cases stay isolated from each other.
+ */
+function decide(options) {
+  const { input, childEnv } = hookInput(options);
+  const parsed = parseHookPayload('sandbox-guard', input);
+  let outcome = parsed.outcome;
+  let notes = '';
+  if (outcome === null) {
+    let caught = null;
+    try {
+      sandboxGuard(parsed.payload, { env: childEnv, cwd: () => NEUTRAL_CWD, note: (m) => (notes += `${m}\n`) });
+    } catch (err) {
+      caught = { err };
+    }
+    outcome = settleGate('sandbox-guard', parsed.payload, caught);
+  }
+  return { status: outcome.code, stdout: outcome.stdout ?? '', stderr: notes + (outcome.stderr ?? '') };
+}
+
+const guard = decide;
+const spawnGuard = (options) => runHook(GUARD, options);
+// Spawned: gate.mjs also runs block-merge, redirect-guard and path-guard, which read the process's own state.
 const gate = (options) => runHook(GATE, options);
 
 const bash = (command, cwd, extra = {}) => ({
@@ -220,6 +267,82 @@ function roots() {
   mkdirSync(sandbox, { recursive: true });
   return { base, live, sandbox };
 }
+
+// ---------------------------------------------------------------------------
+// The process contract: the real hook, spawned
+// ---------------------------------------------------------------------------
+//
+// The exit code is the behaviour, so each verdict kind is pinned once through a real
+// process, for both shells, and each spawned result must equal what decide() returns for
+// the same input. That equality is what lets every other case in this file run in-process.
+
+describe('the process contract', () => {
+  const pwsh = (command, cwd) => ({ ...bash(command, cwd), tool_name: 'PowerShell' });
+
+  function spawned(options) {
+    const r = spawnGuard(options);
+    assert.deepEqual(decide(options), r, 'the in-process verdict differs from the spawned hook');
+    return r;
+  }
+
+  test('a block exits 2 with the reason on stderr, from Bash and from PowerShell', () => {
+    const { live, sandbox } = roots();
+    const env = { [LIVE]: live, [DATA]: sandbox };
+    const target = path.join(live, 'index.json');
+    for (const payload of [bash(`python read.py ${target}`, tempDir()), pwsh(`Get-Content ${target}`, tempDir())]) {
+      const r = spawned({ payload, env });
+      assertBlockedBecause(r, NAMES_LIVE_DATA, `${payload.tool_name} naming production data`);
+      assert.equal(r.stdout, '', `${payload.tool_name}: a block writes nothing to stdout`);
+    }
+  });
+
+  test('a file tool block exits 2 with the reason on stderr', () => {
+    const { live, sandbox } = roots();
+    const r = spawned({ payload: fileCall('Write', path.join(live, 'x.txt'), tempDir()), env: { [LIVE]: live, [DATA]: sandbox } });
+    assertBlockedBecause(r, TARGETS_LIVE_DATA, 'Write into production data');
+  });
+
+  test('an allow exits 0 and writes nothing, from Bash and from PowerShell', () => {
+    const { live, sandbox } = roots();
+    for (const payload of [bash('git status', tempDir()), pwsh('Get-ChildItem', tempDir())]) {
+      const r = spawned({ payload, env: { [LIVE]: live, [DATA]: sandbox } });
+      assertAllowed(r, `${payload.tool_name} outside production data`);
+      assert.deepEqual([r.stdout, r.stderr], ['', ''], `${payload.tool_name}: an allow says nothing`);
+    }
+  });
+
+  test('a warning exits 0 with one JSON object on stdout', () => {
+    const { live, sandbox } = roots();
+    const r = spawned({ payload: bash('echo "unterminated', tempDir()), env: { [LIVE]: live, [DATA]: sandbox } });
+    assertWarned(r, WARNS_UNREADABLE, 'an unreadable command');
+    assert.equal(r.stderr, '', 'a warning writes nothing to stderr');
+  });
+
+  test('with no AEO_LIVE_DATA_ROOT a call exits 0 and says nothing', () => {
+    const r = spawned({ payload: bash('echo "unterminated', makeRepo()) });
+    assert.deepEqual([r.status, r.stdout, r.stderr], [0, '', ''], 'no declaration, no verdict');
+  });
+
+  test('a malformed payload exits 0 with a line on stderr', () => {
+    for (const raw of ['', 'not json at all']) {
+      const r = spawned({ raw, env: { [LIVE]: 'D:/production' } });
+      assert.equal(r.status, 0, `raw ${JSON.stringify(raw)}: expected exit 0`);
+      assert.match(r.stderr, /^sandbox-guard: (empty|unreadable) hook payload/, `raw ${JSON.stringify(raw)}: silent skip`);
+    }
+  });
+
+  test('a live sentinel blocks, and a stale one allows with a note on stderr', () => {
+    const repo = makeRepo();
+    raise(repo, 'running', { pid: process.pid, host: os.hostname() });
+    assertBlockedBecause(spawned({ payload: bash('npm test', repo) }), LIVE_RUN, 'live owner process');
+
+    const stale = makeRepo();
+    raise(stale, 'crashed', { pid: 999_999_999, host: os.hostname() });
+    const r = spawned({ payload: bash('npm test', stale) });
+    assertAllowed(r, 'stale sentinel');
+    assert.match(r.stderr, /^sandbox-guard: .*owner process is gone/m, 'the note did not reach stderr');
+  });
+});
 
 // ---------------------------------------------------------------------------
 // The two cases PLAN's verify line names by name
@@ -985,8 +1108,9 @@ describe('PowerShell reaches the same rules as Bash', () => {
     if (process.platform !== 'win32') return t.skip('backslash is not a separator on this platform');
     const { live, sandbox } = roots();
     const target = path.join(live, 'corpus', 'notes.txt').replace(/\//g, '\\');
+    // Still spawned: it is the one case that pins a real Windows hook process on backslash paths.
     assertBlockedBecause(
-      guard({ payload: pwsh(`Get-Content ${target}`, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
+      spawnGuard({ payload: pwsh(`Get-Content ${target}`, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
       NAMES_LIVE_DATA,
       'a backslash-separated target',
     );
@@ -1912,6 +2036,7 @@ describe('the sentinel', () => {
 
   test('the CLI raises, lists and clears a sentinel', () => {
     const repo = makeRepo();
+    // Spawned: the CLI is the thing under test, and it is a separate program.
     const run = (...args) =>
       spawnSync(process.execPath, [SENTINEL_CLI, ...args], { cwd: repo, encoding: 'utf8', windowsHide: true });
 
