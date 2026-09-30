@@ -2151,6 +2151,8 @@ describe('the guard judges only what git cannot restore (#237)', () => {
   };
   const pwsh = (command, cwd) => ({ ...bash(command, cwd), tool_name: 'PowerShell' });
   const UNDECIDED = /cannot tell whether .* lands inside the production data root/;
+  const UNLOCATED = /cannot tell where .* lands, and nothing on the line reaches the production data root/;
+  const REFUSED = /inside the\s+production data root/;
 
   test('every command from the five false refusals runs', () => {
     const { app, live, runs, sandbox, env } = setup();
@@ -2265,10 +2267,19 @@ describe('the guard judges only what git cannot restore (#237)', () => {
     }
   });
 
-  test('a write whose location the guard cannot name refuses', () => {
-    const { app, env } = setup();
-    for (const command of ['cd $DIR && rm -rf raw', 'cd - && touch x', 'rm -rf "$NOT_SET_ANYWHERE/raw"']) {
-      assertBlockedBecause(guard({ payload: bash(command, app), env }), UNDECIDED, JSON.stringify(command));
+  test('a write the guard cannot locate refuses only when the line could reach the root', () => {
+    const { app, live, env } = setup();
+    // Nothing on the line reaches the root: allowed, and the session is told.
+    for (const command of ['cd $DIR && rm -rf raw', 'cd - && touch x', 'rm -rf "$NOT_SET_ANYWHERE/raw"', 'rm "$UNSET"']) {
+      assertWarned(guard({ payload: bash(command, app), env }), UNLOCATED, JSON.stringify(command));
+    }
+    // The line names the root, or runs from inside it.
+    for (const [command, cwd] of [
+      ['ls data/raw ; rm -rf "$UNSET"', app],
+      [`cd ${live} && cd $DIR && rm -rf raw`, app],
+      ['rm "$UNSET"', live],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), UNDECIDED, JSON.stringify(command));
     }
     // A variable the session environment defines is read from it.
     assertAllowed(
@@ -2284,6 +2295,70 @@ describe('the guard judges only what git cannot restore (#237)', () => {
       CHANGES_LIVE_DATA,
       'a defined variable inside the root',
     );
+  });
+
+  test('a loop over literal words is judged on each word', () => {
+    const { app, env } = setup();
+    for (const command of ['for f in a.tmp b.tmp; do rm "$f"; done', 'for f in a.tmp; do rm "docs/$f"; done']) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+    for (const command of ['for f in data/raw/*; do rm "$f"; done', 'for f in x.tmp y.tmp; do rm "data/raw/$f"; done']) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), REFUSED, JSON.stringify(command));
+    }
+  });
+
+  test('a git command that discards working-tree content refuses when the root holds what git cannot restore', () => {
+    const { app, live, env } = setup();
+    for (const [command, cwd] of [
+      ['git clean -fdx', app],
+      ['git clean -fd', app],
+      ['git clean -ffdx .', app],
+      ['git -C data clean -fdx', app],
+      ['git clean -fdx', live],
+      ['git reset --hard', app],
+      ['git reset --hard HEAD~1', app],
+      ['git reset --merge', app],
+      ['git reset --keep HEAD', app],
+      ['cd data && git reset --hard', app],
+      ['git checkout -- .', app],
+      ['git checkout .', app],
+      ['git checkout HEAD -- data', app],
+      ['git checkout -- data/reports/edited.md', app],
+      ['git restore .', app],
+      ['git restore --worktree --staged .', app],
+      ['git stash', app],
+      ['git stash push', app],
+      ['git stash -u', app],
+      ['git stash push -- data/reports', app],
+      ['git switch -f main', app],
+      ['git switch --discard-changes main', app],
+      ['git checkout -f main', app],
+      ['git checkout --force main', app],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), CHANGES_LIVE_DATA, JSON.stringify(command));
+    }
+    for (const command of [
+      'git clean -fdx src',
+      'git clean -n',
+      'git checkout -- docs/reports/dec-75-outcome.md',
+      'git checkout -- data/reports/dec-75-outcome.md',
+      'git restore docs',
+      'git stash push -- docs',
+      'git checkout main',
+      'git switch main',
+      'git stash list',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+  });
+
+  test('the same git commands run when the root is clean and fully tracked', () => {
+    const app = makeRepo({ base: { 'aeo-tests.json': JSON.stringify({ test: 'npm test' }), 'data/reports/r.md': 'tracked\n' } });
+    const env = { [LIVE]: path.join(app, 'data') };
+    writeFileSync(path.join(app, 'scratch.tmp'), 'untracked, outside the root\n');
+    for (const command of ['git clean -fdx', 'git reset --hard', 'git checkout -- .', 'git restore .', 'git stash -u', 'git switch -f main']) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
   });
 
   test('a root git cannot read fails closed', () => {
