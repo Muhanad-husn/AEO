@@ -138,11 +138,20 @@ function ghJson(args, dir) {
 
 // A GitHub milestone's own window: the earliest issue's creation, and the
 // latest issue's close only once every issue in it is closed.
-function milestoneOfIssues(title, issues) {
+function milestoneOfIssues(title, issues, dir) {
   const createdAt = issues.map((i) => i.createdAt).sort()[0];
   const open = issues.some((i) => i.state !== 'CLOSED');
   const closedAt = open ? null : issues.map((i) => i.closedAt).sort().at(-1);
-  return { title, createdAt, closedAt };
+  const milestone = { title, createdAt, closedAt };
+  if (closedAt) {
+    // The last commit at or before the close, for the offset the window's dates are read in.
+    const out = run('git', ['log', '-1', `--until=${closedAt}`, '--format=%H %cI'], dir);
+    if (out) {
+      const [sha, date] = out.split(' ');
+      milestone.closingCommit = { sha, date };
+    }
+  }
+  return milestone;
 }
 
 // The merged pull requests that close one of the milestone's issues, read
@@ -173,7 +182,7 @@ export function readMilestone(dir, title) {
   const snapshot = {
     recordedAt: nowWithOffset(),
     consumer: consumerName(run('git', ['remote', 'get-url', 'origin'], dir)),
-    milestone: milestoneOfIssues(title, issues),
+    milestone: milestoneOfIssues(title, issues, dir),
     ledger: readMilestoneLedger(dir),
     pullRequests: milestonePullRequests(dir, new Set(issues.map((i) => i.number))),
     harness: measure(dir),
