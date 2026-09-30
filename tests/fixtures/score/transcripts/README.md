@@ -12,6 +12,12 @@ these files is noise the count has to drop:
 - task notifications, system reminders, slash commands and hook output, all of
   which arrive wrapped in a tag
 - `assistant` and `summary` records
+- plain-string slash commands such as `/compact`, records marked
+  `isCompactSummary`, and session-continuation summaries (#238; those shapes are
+  built inline in `tests/scripts/score-synthetic.test.mjs`)
+
+A message counts only when its own timestamp is inside the window, from its
+first date to the closing commit's time.
 
 A merge decision is a founder message of at most twelve words containing
 `approve`, `approved`, `merge` or `lgtm`. `in-window-a.jsonl` holds one long

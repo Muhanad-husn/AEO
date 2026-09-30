@@ -24,7 +24,7 @@ function snapshot(extra = {}) {
     consumer: 'example/consumer',
     phases: { from: 0, to: 5 },
     firstCommit: { sha: 'aaa', date: '2026-09-06T09:00:00+02:00' },
-    gateCommit: { sha: 'bbb', date: '2026-09-07T20:00:00+02:00' },
+    gateCommit: { sha: 'bbb', date: '2026-09-07T23:59:00+02:00' },
     pullRequests: [
       { number: 1, mergedAt: '2026-09-06T10:00:00Z' },
       { number: 2, mergedAt: '2026-09-06T14:00:00Z' },

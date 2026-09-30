@@ -94,3 +94,8 @@ test('a milestone window reads its dates in the closing commit offset', () => {
 test('a milestone closed in UTC with no closing commit reads in +00:00, never a slice of the time', () => {
   assert.equal(windowOf(milestone({})).offset, '+00:00');
 });
+
+test('a session that starts after the window closes on the same day is skipped', () => {
+  const path = writeSession([user('After the gate, same day.', '2026-09-07T16:00:00Z')]);
+  assert.deepEqual(scanTranscripts([path], window), { messages: 0, mergeDecisions: 0, sessions: 0 });
+});

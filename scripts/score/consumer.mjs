@@ -25,6 +25,12 @@ export function offsetMs(offset) {
   return sign * (Number(match[2]) * 60 + Number(match[3])) * 60000;
 }
 
+// The UTC offset an ISO time is written in: "+02:00", or "+00:00" for Z.
+export function offsetOf(iso) {
+  const match = /([+-]\d{2}:\d{2})$/.exec(iso);
+  return match ? match[1] : '+00:00';
+}
+
 // The calendar date of an instant, read in the given offset.
 export function calendarDate(iso, offset) {
   return new Date(Date.parse(iso) + offsetMs(offset)).toISOString().slice(0, 10);
@@ -48,9 +54,10 @@ function sumDollars(rows, from, to) {
 // latest issue's close, or open (closing at the snapshot's own recording
 // time) while any issue in it still is.
 function milestoneWindowOf(snapshot) {
-  const { title, createdAt, closedAt } = snapshot.milestone;
+  const { title, createdAt, closedAt, closingCommit } = snapshot.milestone;
   const closingTime = closedAt ?? snapshot.recordedAt;
-  const offset = closingTime.slice(-6);
+  // Dates read in the closing commit's own offset; GitHub's closedAt is UTC.
+  const offset = offsetOf(closingCommit?.date ?? closingTime);
   return {
     milestone: title,
     open: !closedAt,
@@ -70,7 +77,7 @@ export function windowOf(snapshot) {
   if (snapshot.milestone) return milestoneWindowOf(snapshot);
   const gate = snapshot.gateCommit;
   const closingTime = gate ? gate.date : snapshot.recordedAt;
-  const offset = closingTime.slice(-6);
+  const offset = offsetOf(closingTime);
   return {
     from: snapshot.phases.from,
     to: snapshot.phases.to,
