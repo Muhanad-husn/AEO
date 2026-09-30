@@ -512,6 +512,47 @@ function readsOnly(segment) {
   return false;
 }
 
+/** The head of `$(cat <<EOF`, with the delimiter bare or quoted and nothing after it on the line. */
+const CAT_HEREDOC = /\$\(cat[ \t]+<<(-?)[ \t]*(?:'(\w+)'|"(\w+)"|(\w+))[ \t]*\n/g;
+
+/**
+ * The command with every `$(cat <<EOF ... EOF)` taken out (#234). That substitution runs
+ * only `cat`, and what it yields is the heredoc body: message text, the way a Claude Code
+ * session writes `git commit -m "$(cat <<'EOF' ... EOF)"`. It is taken out only when the
+ * delimiter line is followed by nothing but the closing parenthesis. A bare delimiter
+ * lets the shell expand the body, so a body with `$(` or a backtick in it stays.
+ */
+function withoutLiteralMessages(command) {
+  let out = '';
+  let from = 0;
+  CAT_HEREDOC.lastIndex = 0;
+  for (let m; (m = CAT_HEREDOC.exec(command)) !== null; ) {
+    const [head, dash, single, double, bare] = m;
+    const delimiter = single ?? double ?? bare;
+    const lines = command.slice(m.index + head.length).split('\n');
+    const end = lines.findIndex((l) => (dash ? l.replace(/^\t+/, '') : l) === delimiter);
+    if (end === -1) continue;
+    const body = lines.slice(0, end).join('\n');
+    if (bare !== undefined && /\$\(|`/.test(body)) continue;
+    const after = lines.slice(end + 1).join('\n');
+    const close = /^\s*\)/.exec(after);
+    if (close === null) continue;
+    out += command.slice(from, m.index);
+    from = command.length - after.length + close[0].length;
+    CAT_HEREDOC.lastIndex = from;
+  }
+  return out + command.slice(from);
+}
+
+/**
+ * True when the command runs a command the parser did not open: a `$(`, a process
+ * substitution, or a backtick, which inside double quotes reads as one word. A
+ * `$(cat <<EOF ... EOF)` does not count (withoutLiteralMessages).
+ */
+function runsHiddenCommand(command) {
+  return /\$\(|[<>]\(|`/.test(withoutLiteralMessages(command));
+}
+
 /**
  * True when every command on the line reads and nothing more (#216). Axial could not
  * confirm a copy into its live root because `ls`, `du -sh`, `dir` and `git ls-files` of it
@@ -526,13 +567,13 @@ function readsOnly(segment) {
  * segment with no program (a bare assignment, a bare redirection, a brace) runs nothing;
  * its assignment values and redirection targets are still judged by rule 5.
  *
- * NEVER ON A LINE THE GUARD COULD NOT READ, and never on one carrying `$(` or a process
- * substitution: the parser does not look inside a double-quoted `"$(rm -rf x)"`, so an
- * argument to `ls` there is a command nobody judged.
+ * NEVER ON A LINE THE GUARD COULD NOT READ, and never on one that runs a command the parser
+ * did not open (see runsHiddenCommand): the parser does not look inside a double-quoted
+ * `"$(rm -rf x)"`, so an argument to `ls` there is a command nobody judged.
  */
 function readOnlyLine(command, parsed) {
   if (parsed.error !== null || parsed.segments.length === 0) return false;
-  if (/\$\(|[<>]\(/.test(command)) return false;
+  if (runsHiddenCommand(command)) return false;
   return parsed.segments.every(
     (s) => s.program === null || s.program === 'cd' || s.program === 'pushd' || readsOnly(s) || gitIndexJudged(s) !== null,
   );
@@ -863,12 +904,13 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
   // A git command that changes no working-tree file (#234) is judged the same way on a
   // line with other commands on it, so `git add <live>/x && python run.py <live>/y` refuses
   // on the second command only. Not when a pipe follows it anywhere on the line: `git
-  // ls-files <live> | xargs rm` deletes what the git command named. Not on a line with `$(`
-  // or a process substitution either, for the reason readOnlyLine gives.
+  // ls-files <live> | xargs rm` deletes what the git command named. Not on a line that runs
+  // a command the parser did not open either, for the reason readOnlyLine gives; a commit
+  // message from `$(cat <<EOF ... EOF)` is text and does not count.
   const liveReal = realise(live.root);
   const parsed = commandSegments(command);
   const readOnly = !fileTool && readOnlyLine(command, parsed);
-  const plain = parsed.error === null && !/\$\(|[<>]\(/.test(command);
+  const plain = parsed.error === null && !runsHiddenCommand(command);
   const pipedFrom = (i) => parsed.segments.slice(i).some((s) => s.followedBy === '|');
   const judged = (s, i) =>
     ((readOnly || (plain && !pipedFrom(i))) && gitIndexJudged(s)) || (readOnly ? judgedWords([s]) : s.tokens);
