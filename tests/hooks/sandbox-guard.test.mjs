@@ -2044,6 +2044,46 @@ describe('git index operations may name files under the data root (#234)', () =>
       assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, JSON.stringify(command));
     }
   });
+
+  // The way a Claude Code session commits: the message is a heredoc read by `cat` inside a
+  // command substitution. Its body is message text, not a path to judge.
+  const message = (delim, body) => `"$(cat <<${delim}\n${body}\nEOF\n)"`;
+
+  test('a commit message from cat of a heredoc is message text', () => {
+    const { app, live, env } = setup();
+    const body = `run log for ${x}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`;
+    for (const [command, cwd] of [
+      [`git commit -m ${message("'EOF'", body)} ${x}`, app],
+      [`git commit -m ${message('EOF', body)} ${x}`, app],
+      [`git commit -m ${message('"EOF"', body)}`, app],
+      [`git commit -m "$(cat <<-'EOF'\n\t${body}\n\tEOF\n\t)" ${x}`, app],
+      [`git add ${x} ${y} && git commit -m ${message("'EOF'", body)}`, app],
+      [`git commit -m ${message("'EOF'", 'run log')}`, live],
+    ]) {
+      assertAllowed(guard({ payload: bash(command, cwd), env }), JSON.stringify(command));
+    }
+  });
+
+  test('any other command substitution keeps the judgement', () => {
+    const { app, live, env } = setup();
+    const rmY = `rm -rf ${y}`;
+    for (const command of [
+      `git commit -m "$(sh <<'EOF'\n${rmY}\nEOF\n)" ${x}`,
+      `git commit -m "$(cat <<'EOF' | sh\n${rmY}\nEOF\n)" ${x}`,
+      `git commit -m "$(cat <<'EOF'\nmsg\nEOF\n; ${rmY})" ${x}`,
+      `git commit -m "$(cat <<EOF\nmsg $(${rmY})\nEOF\n)" ${x}`,
+      `git commit -m ${message("'EOF'", 'msg')}"$(${rmY})" ${x}`,
+      `git commit -m "\`cat notes.txt\`" ${x}`,
+      `python run.py ${message("'EOF'", 'msg')} ${y}`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+    // A backtick inside double quotes is a command substitution the parser does not open,
+    // so a line carrying one is no longer read-only either.
+    for (const command of ['ls "`rm -rf summary.md`"', 'git status "`rm -rf summary.md`"']) {
+      assertBlockedBecause(guard({ payload: bash(command, live), env }), OPERATES_IN, JSON.stringify(command));
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
