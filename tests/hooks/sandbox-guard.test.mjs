@@ -1719,6 +1719,105 @@ describe('a relative path after git -C resolves against the -C target (#220)', (
 });
 
 // ---------------------------------------------------------------------------
+// A relative path in Start-Process resolves against -WorkingDirectory (#227)
+// ---------------------------------------------------------------------------
+//
+// Axial, 2026-09-30: from the live checkout, a `Start-Process ... -WorkingDirectory
+// D:\axial-runs` sweep naming `data/runs/881-arm-C` was refused, because the path was
+// resolved against the session directory rather than the directory the process runs in.
+// The refusal also named `data/runs/881-arm-C,`: the comma that separates a PowerShell
+// argument list was kept as part of the path. The mirror image, a -WorkingDirectory into
+// the live checkout from outside it, is refused.
+
+describe('a relative path in Start-Process resolves against -WorkingDirectory (#227)', () => {
+  const pwsh = (command, cwd) => ({ ...bash(command, cwd), tool_name: 'PowerShell' });
+  const setup = () => {
+    const base = tempDir();
+    const axial = path.join(base, 'axial');
+    const live = path.join(axial, 'data');
+    const runs = path.join(base, 'axial-runs');
+    for (const d of [path.join(live, 'runs'), path.join(runs, 'data', 'runs')]) mkdirSync(d, { recursive: true });
+    return { base, axial, live, runs, env: { [LIVE]: live } };
+  };
+  const sweep = (python, wd) =>
+    `Start-Process -FilePath "${python}" -ArgumentList "scripts\\watch_run.py", $py, "-m", "axial.cli", "brief", ` +
+    `"sweep", "worklist.txt", "--draws", "3", "--sweep-dir", "data/runs/881-arm-C", "--arm", "map", "--workers", "3" ${wd}`;
+
+  test("the issue's command runs when -WorkingDirectory leaves the live checkout", () => {
+    const { axial, runs, env } = setup();
+    const python = path.join(runs, '.venv', 'Scripts', 'python.exe');
+    for (const wd of [
+      `-WorkingDirectory "${runs}"`,
+      `-WorkingDirectory ${runs}`,
+      `-workingdirectory "${runs}"`,
+      `-WORKINGDIRECTORY "${runs}"`,
+      `-wo "${runs}"`,
+      `-WorkingDir "${runs}"`,
+      `-WorkingDirectory:"${runs}"`,
+      // A backslash separates only on win32; on POSIX it is part of a directory name.
+      `-WorkingDirectory ${path.join('..', 'axial-runs')}`,
+      `-WorkingDirectory "${runs}" -NoNewWindow -PassThru`,
+    ]) {
+      assertAllowed(guard({ payload: pwsh(sweep(python, wd), axial), env }), wd);
+    }
+    for (const alias of ['saps', 'start']) {
+      const command = sweep(python, `-WorkingDirectory "${runs}"`).replace(/^Start-Process/, alias);
+      assertAllowed(guard({ payload: pwsh(command, axial), env }), alias);
+    }
+  });
+
+  test('a -WorkingDirectory into the live checkout from outside it refuses a relative path inside the live root', () => {
+    const { base, axial, runs, env } = setup();
+    const python = path.join(runs, '.venv', 'Scripts', 'python.exe');
+    for (const [wd, cwd] of [
+      [`-WorkingDirectory "${axial}"`, runs],
+      [`-WorkingDirectory ${path.join('..', 'axial')}`, runs],
+      ['-WorkingDirectory axial', base],
+      [`-wo ${axial}`, runs],
+      [`-WorkingDirectory:${axial}`, runs],
+    ]) {
+      assertBlockedBecause(guard({ payload: pwsh(sweep(python, wd), cwd), env }), NAMES_LIVE_DATA, wd);
+    }
+  });
+
+  test('a -WorkingDirectory does not reach the commands around it', () => {
+    const { axial, runs, env } = setup();
+    const python = path.join(runs, '.venv', 'Scripts', 'python.exe');
+    const other = 'python -m axial.cli brief sweep --sweep-dir data/runs/881-arm-C';
+    for (const command of [
+      `${sweep(python, `-WorkingDirectory "${runs}"`)}; ${other}`,
+      `${other}; ${sweep(python, `-WorkingDirectory "${runs}"`)}`,
+    ]) {
+      assertBlockedBecause(guard({ payload: pwsh(command, axial), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+  });
+
+  test('a -WorkingDirectory the guard cannot name gives a relative path no directory, and warns', () => {
+    const { axial, runs, env } = setup();
+    const python = path.join(runs, '.venv', 'Scripts', 'python.exe');
+    for (const wd of ['-WorkingDirectory $runs', '-WorkingDirectory "$runs"', '-WorkingDirectory:$runs']) {
+      assertWarned(guard({ payload: pwsh(sweep(python, wd), axial), env }), WARNS_UNNAMED_CD, wd);
+    }
+  });
+
+  test('a PowerShell list separator is not part of the path it follows', () => {
+    const { axial, live, runs, env } = setup();
+    const python = path.join(runs, '.venv', 'Scripts', 'python.exe');
+    const result = guard({ payload: pwsh(sweep(python, ''), axial), env });
+    assertBlockedBecause(result, NAMES_LIVE_DATA, 'no -WorkingDirectory: the session directory');
+    assert.match(result.stderr, /names "data\/runs\/881-arm-C",/, 'the refusal names the path without its comma');
+    assert.deepEqual(pathCandidates(shellTokens('x -ArgumentList "a/b", "c/d",')), ['a/b', 'c/d']);
+    assert.deepEqual(pathCandidates(shellTokens('x -ArgumentList ,"a/b"')), ['a/b']);
+    // Two quoted items with no space between them are one word to the scanner; each is judged.
+    assertBlockedBecause(
+      guard({ payload: pwsh(`Start-Process python -ArgumentList "run.py","${path.join(live, 'runs')}"`, runs), env }),
+      NAMES_LIVE_DATA,
+      'a live path joined to the item before it by a comma',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A prefix assignment binds to one command, not to the line
 // ---------------------------------------------------------------------------
 //

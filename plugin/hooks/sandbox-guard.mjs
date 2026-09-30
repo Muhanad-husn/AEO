@@ -210,15 +210,20 @@ const URL_LIKE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
  * `NAME=value` and `--flag=value` both contribute their right-hand side, which is where
  * a data directory is usually passed. A token with no separator in it is a word rather
  * than a path and is skipped; a bare `corpus` is not a claim about a location.
+ *
+ * A comma separates the items of a PowerShell argument list (#227), so each item is judged
+ * on its own: `"data/x",` names `data/x`, and `"a","<live>/y"` names both.
  */
 export function pathCandidates(tokens) {
   const out = new Set();
   for (const raw of tokens) {
     const eq = raw.indexOf('=');
-    const t = (eq > 0 ? raw.slice(eq + 1) : raw).trim();
-    if (t === '' || URL_LIKE.test(t)) continue;
-    if (!/[\\/]/.test(t)) continue;
-    out.add(t);
+    for (const item of (eq > 0 ? raw.slice(eq + 1) : raw).split(',')) {
+      const t = item.trim();
+      if (t === '' || URL_LIKE.test(t)) continue;
+      if (!/[\\/]/.test(t)) continue;
+      out.add(t);
+    }
   }
   return [...out];
 }
