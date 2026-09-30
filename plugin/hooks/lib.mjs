@@ -111,10 +111,62 @@ export function warn(text) {
   warnLatched = warnLatched === null ? line : `${warnLatched}\n${line}`;
 }
 
+/**
+ * What a gate's run came to, as runGate reports it: the exit code and the exact text for
+ * stderr and stdout, at most one of them set. Reads both latches and clears them, so a
+ * caller that decides more than one call in one process starts each from nothing. runGate
+ * decides one call and exits, so the clearing changes nothing there.
+ *
+ * `caught` is `{err}` when the run threw, null when it returned.
+ *
+ * @returns {{code: 0|2, stderr: string|null, stdout: string|null}}
+ */
+export function settleGate(name, payload, caught) {
+  const blocked = blockLatched;
+  const warned = warnLatched;
+  blockLatched = null;
+  warnLatched = null;
+  const refuse = (message) => ({ code: 2, stderr: asLine(message), stdout: null });
+
+  if (caught !== null) {
+    if (caught.err instanceof BlockDecision) return refuse(`BLOCKED: ${caught.err.reason}`);
+    return refuse(`BLOCKED: the ${name} gate could not evaluate this call (${describeError(caught.err)}). ${CANNOT_DECIDE}`);
+  }
+  // A warning never changes an exit code (#169), so the block latch is read first and a
+  // warning latched beside it is dropped: the stderr reason is what a blocked call needs.
+  if (blocked !== null) return refuse(`BLOCKED: ${blocked}`);
+  if (warned !== null) return { code: 0, stderr: null, stdout: warningLine(payload, warned) };
+  return { code: 0, stderr: null, stdout: null };
+}
+
+/**
+ * The payload runGate hands a gate, or the outcome when there is none to hand it.
+ *
+ * Malformed or empty payload => allow, with a line on stderr (see runGate).
+ *
+ * @returns {{payload: object, outcome: null} | {payload: null, outcome: {code: 0, stderr: string, stdout: null}}}
+ */
+export function parseHookPayload(name, raw) {
+  const allow = (message) => ({ payload: null, outcome: { code: 0, stderr: asLine(message), stdout: null } });
+  if (!raw.trim()) return allow(`${name}: empty hook payload; nothing to judge, allowing.`);
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new TypeError('payload is not a JSON object');
+    }
+  } catch (err) {
+    return allow(`${name}: unreadable hook payload (${describeError(err)}); allowing.`);
+  }
+  return { payload, outcome: null };
+}
+
+const asLine = (message) => (message.endsWith('\n') ? message : `${message}\n`);
+
 function finish(code, message) {
   if (message) {
     try {
-      writeSync(2, message.endsWith('\n') ? message : `${message}\n`);
+      writeSync(2, asLine(message));
     } catch {
       // A failed stderr write must not turn a block into an open gate.
     }
@@ -123,7 +175,7 @@ function finish(code, message) {
 }
 
 /**
- * The clean exit of a gate that warned: one JSON object on stdout, then exit 0 (#169).
+ * The stdout of a gate that warned: one JSON object on one line (#169).
  *
  * `hookSpecificOutput.additionalContext` is the field the running Claude Code surfaces
  * to the model, confirmed live on 2.1.270 against a probe that put a different string in
@@ -132,7 +184,7 @@ function finish(code, message) {
  * a control run showed the warning is delivered without one, and stating `allow` could
  * skip the user's own permission prompt for a command the gate could not read.
  */
-function finishWithWarning(name, payload, text) {
+function warningLine(payload, text) {
   const event = typeof payload?.hook_event_name === 'string' && payload.hook_event_name !== ''
     ? payload.hook_event_name
     : 'PreToolUse';
@@ -143,15 +195,18 @@ function finishWithWarning(name, payload, text) {
     },
     systemMessage: text,
   };
-  let line;
   try {
-    line = `${JSON.stringify(body)}\n`;
+    return `${JSON.stringify(body)}\n`;
   } catch {
-    line = null; // Unserialisable text is not worth an exit code. The call was allowed.
+    return null; // Unserialisable text is not worth an exit code. The call was allowed.
   }
-  if (line !== null) {
+}
+
+/** Write what settleGate or parseHookPayload decided, then exit with its code. */
+function emit(name, { code, stderr, stdout }) {
+  if (stdout !== null) {
     try {
-      writeSync(1, line);
+      writeSync(1, stdout);
     } catch {
       // Loud skip, never a quiet pass (L-08): the call still proceeds, and losing the
       // warning must not change that, but it is said somewhere.
@@ -162,7 +217,7 @@ function finishWithWarning(name, payload, text) {
       }
     }
   }
-  process.exit(0);
+  return finish(code, stderr);
 }
 
 const CANNOT_DECIDE =
@@ -236,33 +291,20 @@ export async function runGate({ name, run }) {
 
   let payload;
   try {
-    const raw = await readStdin();
-    if (!raw.trim()) {
-      return finish(0, `${name}: empty hook payload; nothing to judge, allowing.`);
-    }
-    payload = JSON.parse(raw);
-    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
-      throw new TypeError('payload is not a JSON object');
-    }
+    const parsed = parseHookPayload(name, await readStdin());
+    if (parsed.outcome !== null) return emit(name, parsed.outcome);
+    payload = parsed.payload;
   } catch (err) {
     return finish(0, `${name}: unreadable hook payload (${describeError(err)}); allowing.`);
   }
 
+  let caught = null;
   try {
     await run(payload);
   } catch (err) {
-    if (err instanceof BlockDecision) return finish(2, `BLOCKED: ${err.reason}`);
-    return finish(
-      2,
-      `BLOCKED: the ${name} gate could not evaluate this call (${describeError(err)}). ${CANNOT_DECIDE}`,
-    );
+    caught = { err };
   }
-
-  // A warning never changes an exit code (#169), so the block latch is read first and a
-  // warning latched beside it is dropped: the stderr reason is what a blocked call needs.
-  if (blockLatched !== null) return finish(2, `BLOCKED: ${blockLatched}`);
-  if (warnLatched !== null) return finishWithWarning(name, payload, warnLatched);
-  return finish(0, null);
+  return emit(name, settleGate(name, payload, caught));
 }
 
 /**

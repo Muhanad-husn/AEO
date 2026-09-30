@@ -140,7 +140,7 @@ const NO_OVERRIDE =
  */
 const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
-function note(message) {
+function writeNote(message) {
   try {
     writeSync(2, `${message}\n`);
   } catch {
@@ -567,10 +567,10 @@ function readLiveDeclarationFromFile(dir) {
  * before every Bash and file-tool call, and a git subprocess there is a cost paid on
  * every tool use.
  */
-export function settingsDeclarationDir(payload, env) {
+export function settingsDeclarationDir(payload, env, cwd = process.cwd) {
   const fromPayload = typeof payload?.cwd === 'string' ? payload.cwd.trim() : '';
   const fromEnv = typeof env?.CLAUDE_PROJECT_DIR === 'string' ? env.CLAUDE_PROJECT_DIR.trim() : '';
-  const base = fromPayload || fromEnv || process.cwd();
+  const base = fromPayload || fromEnv || cwd();
   return worktreeAnchor(normalizeHookPath(base));
 }
 
@@ -673,13 +673,19 @@ function checkSeam(live, data, dataSource) {
   }
 }
 
-/** @param {object} payload */
-export function sandboxGuard(payload) {
+/**
+ * @param {object} payload
+ * @param {{env?: object, cwd?: () => string, note?: (message: string) => void}} [host] What
+ *   the hook process would read for itself: its environment, its working directory, and
+ *   stderr for a note. The hook passes nothing; the tests pass their own, so a case is
+ *   decided in-process exactly as the spawned hook decides it.
+ */
+export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, note = writeNote } = {}) {
   const command = typeof payload?.tool_input?.command === 'string' ? payload.tool_input.command : '';
   const tool = typeof payload?.tool_name === 'string' ? payload.tool_name : '';
   const fileTool = FILE_TOOLS.has(tool);
 
-  const walk = operationDirs(payload);
+  const walk = operationDirs(payload, { env, cwd });
   const dirs = walk.dirs.filter((d) => path.isAbsolute(d));
 
   // 1. A live long job (L-02). Read first and read cheaply: no git process, one readdir,
@@ -717,7 +723,7 @@ export function sandboxGuard(payload) {
   //    to be ambiguous about. The declaration itself is read from .claude/settings.json,
   //    re-resolved on this call (#133); env is only the fallback resolveRoots takes when
   //    the file has nothing to say.
-  const { live, seams } = resolveRoots({ command, env: process.env, dir: settingsDeclarationDir(payload, process.env) });
+  const { live, seams } = resolveRoots({ command, env, dir: settingsDeclarationDir(payload, env, cwd) });
   if (!live.set) return;
 
   if (live.root === null) {
