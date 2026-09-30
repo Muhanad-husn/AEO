@@ -15,14 +15,23 @@ export { countCommitments };
 const DECISION = /\b(approve|approved|merge|lgtm)\b/i;
 const DECISION_WORDS = 12;
 
+// A slash command typed as a bare string: a slash, a command word, then a space
+// or the end. A path such as /tmp/log.txt has a second slash and does not match.
+const SLASH_COMMAND = /^\/[A-Za-z][\w:.-]*(\s|$)/;
+const CONTINUATION = 'This session is being continued from a previous conversation';
+
 // A record the founder typed. Tool results arrive with an array for content;
-// task notifications, system reminders, slash commands and hook output all
-// arrive wrapped in a tag; meta records are the harness talking to itself.
+// task notifications, system reminders and hook output arrive wrapped in a tag;
+// meta records are the harness talking to itself. Two plain-string records are
+// not the founder either: a slash command (or any record the transcript marks
+// as a compact summary) and a session-continuation summary.
 export function isFounderMessage(record) {
   if (!record || record.type !== 'user' || record.isMeta === true) return false;
   const content = record.message?.content;
   if (typeof content !== 'string') return false;
   const text = content.trim();
+  if (record.isCompactSummary === true) return false;
+  if (SLASH_COMMAND.test(text) || text.startsWith(CONTINUATION)) return false;
   return text !== '' && !text.startsWith('<');
 }
 
@@ -33,10 +42,10 @@ export function isMergeDecision(content) {
   return words.length <= DECISION_WORDS && DECISION.test(content);
 }
 
-// One session file: its founder messages, how many of those were merge
-// decisions, and the timestamp of the first founder message.
+// One session file: its founder messages, each with its own timestamp and
+// whether it was a merge decision, and the timestamp of the first one.
 export function scanSession(path) {
-  const counts = { messages: 0, mergeDecisions: 0, firstTimestamp: null };
+  const counts = { messages: [], firstTimestamp: null };
   for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
     const text = raw.trim();
     if (text === '') continue;
@@ -48,18 +57,21 @@ export function scanSession(path) {
     }
     if (!isFounderMessage(record)) continue;
     if (counts.firstTimestamp === null) counts.firstTimestamp = record.timestamp ?? null;
-    if (isMergeDecision(record.message.content)) counts.mergeDecisions += 1;
-    else counts.messages += 1;
+    counts.messages.push({
+      timestamp: record.timestamp ?? null,
+      mergeDecision: isMergeDecision(record.message.content),
+    });
   }
   return counts;
 }
 
-// A session is inside the window when its first founder message falls on or
-// between the window's dates, read in the window's own offset.
-export function inWindow(firstTimestamp, window) {
-  if (!firstTimestamp) return false;
-  const day = calendarDate(firstTimestamp, window.offset);
-  return day >= window.start && day <= window.end;
+// A message is inside the window when its own timestamp is on or after the
+// window's first date and no later than the closing time. A session is inside
+// the window when its first founder message is.
+export function messageInWindow(timestamp, window) {
+  if (!timestamp) return false;
+  if (Date.parse(timestamp) > Date.parse(window.closingTime)) return false;
+  return calendarDate(timestamp, window.offset) >= window.start;
 }
 
 // The derived counts for a set of session files. This is what goes in the
@@ -68,9 +80,12 @@ export function scanTranscripts(paths, window) {
   const totals = { messages: 0, mergeDecisions: 0, sessions: 0 };
   for (const path of paths) {
     const session = scanSession(path);
-    if (!inWindow(session.firstTimestamp, window)) continue;
-    totals.messages += session.messages;
-    totals.mergeDecisions += session.mergeDecisions;
+    if (!messageInWindow(session.firstTimestamp, window)) continue;
+    for (const message of session.messages) {
+      if (!messageInWindow(message.timestamp, window)) continue;
+      if (message.mergeDecision) totals.mergeDecisions += 1;
+      else totals.messages += 1;
+    }
     totals.sessions += 1;
   }
   return totals;

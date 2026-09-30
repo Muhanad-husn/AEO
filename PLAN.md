@@ -240,8 +240,11 @@ Made 2026-09-08, in phase 0:
 2. Dollars come from `LEDGER.md`'s Phase and Dollars columns summed over the phase range,
    never from the status table.
 3. A founder message is a `user` record with string content not starting with `<` and not
-   marked meta; a merge decision is such a message of at most twelve words carrying
-   approve, approved, merge or lgtm, and is excluded from the intervention count.
+   marked meta, and not a slash-command record (`/compact`) or a session-continuation
+   summary ("This session is being continued from a previous conversation"), both excluded
+   2026-10-01; a merge decision is such a message of at most twelve words carrying
+   approve, approved, merge or lgtm, and is excluded from the intervention count. A message
+   counts only when its own timestamp is inside the window.
 4. The commitment ledger is `COMMITMENTS.md`, a table with an Executed column holding
    executed, partial or not; a blank cell stays out of the denominator, and a consumer
    without the file prints `executed: none declared`.

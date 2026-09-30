@@ -251,6 +251,8 @@ const LIVE_RELATIVE = /AEO_LIVE_DATA_ROOT is set to .*which is not an absolute p
 const NAMES_LIVE_DATA = /this command names .*which resolves to .*inside the\s+production data root/;
 const TARGETS_LIVE_DATA = /targets .*which resolves to .*inside the\s+production data root/;
 const OPERATES_IN = /this command operates in .*inside the production data root/;
+// A write, move or delete where git cannot put back what it changes (#237).
+const CHANGES_LIVE_DATA = /this command changes .*inside the production data root .*git cannot restore it/;
 const LIVE_RUN = /a long job is running and this would execute code alongside it/;
 const SENTINEL_UNREADABLE = /sentinel is present but unreadable/;
 const SENTINEL_DIR_UNREADABLE = /could not be read \(.*\), so the gate cannot tell whether a long job is running/;
@@ -289,7 +291,7 @@ describe('the process contract', () => {
     const { live, sandbox } = roots();
     const env = { [LIVE]: live, [DATA]: sandbox };
     const target = path.join(live, 'index.json');
-    for (const payload of [bash(`python read.py ${target}`, tempDir()), pwsh(`Get-Content ${target}`, tempDir())]) {
+    for (const payload of [bash(`python read.py ${target}`, tempDir()), pwsh(`python read.py ${target}`, tempDir())]) {
       const r = spawned({ payload, env });
       assertBlockedBecause(r, NAMES_LIVE_DATA, `${payload.tool_name} naming production data`);
       assert.equal(r.stdout, '', `${payload.tool_name}: a block writes nothing to stdout`);
@@ -623,7 +625,7 @@ describe('a session with no seam (#214)', () => {
       'a path named inside production data',
     );
     assertBlockedBecause(
-      guard({ payload: bash('gh issue view 853', live), env: { [LIVE]: live } }),
+      guard({ payload: bash('python run.py', live), env: { [LIVE]: live } }),
       OPERATES_IN,
       'a command run from inside production data',
     );
@@ -735,7 +737,7 @@ describe('the declaration file (#133)', () => {
     // directory and this would pass straight through.
     assertBlockedBecause(
       guard({ payload: bash(`rm -rf ${path.join(liveA, 'index')}`, repoA), env }),
-      NAMES_LIVE_DATA,
+      CHANGES_LIVE_DATA,
       "payload.cwd's own repo governs the declaration, not CLAUDE_PROJECT_DIR's",
     );
   });
@@ -804,8 +806,12 @@ describe('paths named in the command', () => {
     const repo = makeRepo();
     const inside = path.join(live, 'index');
     mkdirSync(inside, { recursive: true });
+    assertBlockedBecause(
+      guard({ payload: bash(`rm -rf ${inside}`, repo), env: { [LIVE]: live, [DATA]: sandbox } }),
+      CHANGES_LIVE_DATA,
+      'a delete of what git does not hold',
+    );
     for (const command of [
-      `rm -rf ${inside}`,
       `pytest --data-dir=${inside}`,
       `python -m tool --out "${inside}"`,
       `node read.mjs ${path.join(inside, 'entries.jsonl')}`,
@@ -824,7 +830,7 @@ describe('paths named in the command', () => {
     mkdirSync(path.join(live, 'index'), { recursive: true });
     assertBlockedBecause(
       guard({ payload: bash('rm -rf ./index', path.join(live)), env: { [LIVE]: live, [DATA]: sandbox } }),
-      NAMES_LIVE_DATA,
+      CHANGES_LIVE_DATA,
       'relative token resolved against the operation directory',
     );
   });
@@ -860,9 +866,14 @@ describe('the operation directory', () => {
     const { base, live, sandbox } = roots();
     mkdirSync(path.join(live, 'index'), { recursive: true });
     assertBlockedBecause(
-      guard({ payload: bash(`cd ${path.basename(live)} && rm -rf index`, base), env: { [LIVE]: live, [DATA]: sandbox } }),
+      guard({ payload: bash(`cd ${path.basename(live)} && python run.py index`, base), env: { [LIVE]: live, [DATA]: sandbox } }),
       OPERATES_IN,
       'relative cd into production data; no token carries a separator',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash(`cd ${path.basename(live)} && rm -rf index`, base), env: { [LIVE]: live, [DATA]: sandbox } }),
+      CHANGES_LIVE_DATA,
+      'a delete after the same cd is judged on its target',
     );
   });
 
@@ -872,7 +883,12 @@ describe('the operation directory', () => {
     const { live, sandbox } = roots();
     mkdirSync(path.join(live, 'index'), { recursive: true });
     // No token here carries a separator, so the rule that names a path sees nothing.
-    for (const command of ['rm -rf index', 'python run.py', 'sqlite3 entries.db']) {
+    assertBlockedBecause(
+      guard({ payload: bash('rm -rf index', live), env: { [LIVE]: live, [DATA]: sandbox } }),
+      CHANGES_LIVE_DATA,
+      'a delete from inside is judged on its target',
+    );
+    for (const command of ['python run.py', 'sqlite3 entries.db']) {
       assertBlockedBecause(
         guard({ payload: bash(command, live), env: { [LIVE]: live, [DATA]: sandbox } }),
         OPERATES_IN,
@@ -887,10 +903,11 @@ describe('the operation directory', () => {
     const { base, live, sandbox } = roots();
     const env = { [LIVE]: live, [DATA]: sandbox };
     mkdirSync(path.join(live, 'index'), { recursive: true });
-    assertBlockedBecause(guard({ payload: bash(`cd ${live} && rm -rf index`, base), env }), NAMES_LIVE_DATA, 'absolute cd');
+    assertBlockedBecause(guard({ payload: bash(`cd ${live} && rm -rf index`, base), env }), CHANGES_LIVE_DATA, 'absolute cd');
+    assertBlockedBecause(guard({ payload: bash(`cd ${live} && python run.py`, base), env }), OPERATES_IN, 'absolute cd, a run');
     assertBlockedBecause(
       guard({ payload: bash(`rm -rf ${path.join(live, 'index')}`, base), env }),
-      NAMES_LIVE_DATA,
+      CHANGES_LIVE_DATA,
       'absolute target named outright',
     );
   });
@@ -958,6 +975,11 @@ describe('read-only commands may name production data (#216)', () => {
       `ls ${vault} 2>/dev/null`,
       `LC_ALL=C ls ${vault}`,
       `ls ${vault} > ${path.join(sandbox, 'listing.txt')}`,
+      // #237: a copy out of the root reads it, and a command after a read is not fed by it.
+      `robocopy ${vault} ${other}`,
+      `robocopy ${vault} ${other} /L /LOG:${path.join(sandbox, 'log.txt')}`,
+      `ls ${vault} ; npm test`,
+      `Get-Content ${a}`,
     ]) {
       assertAllowed(guard({ payload: bash(command, base), env }), command);
     }
@@ -999,9 +1021,10 @@ describe('read-only commands may name production data (#216)', () => {
     const { base, sandbox, vault, env } = setup();
     const a = path.join(vault, 'a.md');
     const b = path.join(vault, 'b.md');
+    for (const command of [`ls ${vault} > ${path.join(vault, 'x')}`, `cat ${a} >> ${b}`, `ls ${vault} && rm -rf ${path.join(vault, 'x')}`]) {
+      assertBlockedBecause(guard({ payload: bash(command, base), env }), CHANGES_LIVE_DATA, JSON.stringify(command));
+    }
     for (const command of [
-      `ls ${vault} > ${path.join(vault, 'x')}`,
-      `cat ${a} >> ${b}`,
       `cat ${a} | tee ${b}`,
       `find ${vault} -delete`,
       `find ${vault} -exec rm {} ;`,
@@ -1012,8 +1035,6 @@ describe('read-only commands may name production data (#216)', () => {
       `uv run axial --root ${vault}`,
       `sqlite3 ${path.join(vault, 'db')}`,
       `node ${path.join(vault, 'x.mjs')}`,
-      `robocopy ${vault} ${path.join(sandbox, 'copy')}`,
-      `robocopy ${vault} ${path.join(sandbox, 'copy')} /L /LOG:${path.join(sandbox, 'log.txt')}`,
       `git diff --output=${path.join(vault, 'x')}`,
       `git diff --output ${path.join(vault, 'x')}`,
       `git diff --outp=${path.join(vault, 'x')}`,
@@ -1021,8 +1042,6 @@ describe('read-only commands may name production data (#216)', () => {
       `git diff --textconv -- ${vault}`,
       `git -c core.fsmonitor=x status ${vault}`,
       `git rm ${a}`,
-      `ls ${vault} && rm -rf ${path.join(vault, 'x')}`,
-      `ls ${vault} ; npm test`,
       `./ls ${vault}`,
       `${path.join(vault, 'ls')} ${sandbox}`,
       `X=${a} ls ${sandbox}`,
@@ -1036,17 +1055,21 @@ describe('read-only commands may name production data (#216)', () => {
     const { base, live, vault, env } = setup();
     const rel = path.basename(live);
     for (const [command, cwd] of [
-      ['rm -rf x', vault],
       ['python x.py', vault],
-      ['ls ; rm -rf x', vault],
-      ['ls > out.txt', vault],
       ['ls "$(rm -rf x)"', vault],
       [`cd ${rel} && python x.py`, base],
-      [`cd ${rel} && ls > out.txt`, base],
+      [`cd ${live} && python x.py`, base],
     ]) {
       assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, `${command} in ${cwd}`);
     }
-    assertBlockedBecause(guard({ payload: bash(`cd ${live} && python x.py`, base), env }), NAMES_LIVE_DATA, 'absolute cd');
+    for (const [command, cwd] of [
+      ['rm -rf x', vault],
+      ['ls ; rm -rf x', vault],
+      ['ls > out.txt', vault],
+      [`cd ${rel} && ls > out.txt`, base],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), CHANGES_LIVE_DATA, `${command} in ${cwd}`);
+    }
   });
 
   test('the file tools get no exemption', () => {
@@ -1086,14 +1109,12 @@ describe('read-only commands may name production data (#216)', () => {
 describe('PowerShell reaches the same rules as Bash', () => {
   const pwsh = (command, cwd, extra = {}) => ({ ...bash(command, cwd, extra), tool_name: 'PowerShell' });
 
-  test('a cmdlet reading a file inside production data blocks', () => {
+  test('a cmdlet that writes into production data blocks, and one that reads it runs (#237)', () => {
     const { live, sandbox } = roots();
     const target = path.join(live, 'index', 'entries.jsonl');
-    assertBlockedBecause(
-      guard({ payload: pwsh(`Get-Content ${target}`, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
-      NAMES_LIVE_DATA,
-      'Get-Content of production data',
-    );
+    const env = { [LIVE]: live, [DATA]: sandbox };
+    assertBlockedBecause(guard({ payload: pwsh(`Set-Content ${target} -Value x`, tempDir()), env }), CHANGES_LIVE_DATA, 'Set-Content');
+    assertAllowed(guard({ payload: pwsh(`Get-Content ${target}`, tempDir()), env }), 'Get-Content of production data');
   });
 
   test('a Windows path with backslashes still resolves into the root', (t) => {
@@ -1110,7 +1131,7 @@ describe('PowerShell reaches the same rules as Bash', () => {
     const target = path.join(live, 'corpus', 'notes.txt').replace(/\//g, '\\');
     // Still spawned: it is the one case that pins a real Windows hook process on backslash paths.
     assertBlockedBecause(
-      spawnGuard({ payload: pwsh(`Get-Content ${target}`, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
+      spawnGuard({ payload: pwsh(`python read.py ${target}`, tempDir()), env: { [LIVE]: live, [DATA]: sandbox } }),
       NAMES_LIVE_DATA,
       'a backslash-separated target',
     );
@@ -1122,13 +1143,13 @@ describe('PowerShell reaches the same rules as Bash', () => {
     const { base, live, sandbox } = roots();
     const env = { [LIVE]: live, [DATA]: sandbox };
     assertBlockedBecause(
-      guard({ payload: pwsh(`cd ${path.basename(live)}; Remove-Item -Recurse corpus`, base), env }),
+      guard({ payload: pwsh(`cd ${path.basename(live)}; python run.py corpus`, base), env }),
       OPERATES_IN,
       'a cd through the PowerShell statement separator',
     );
     assertBlockedBecause(
       guard({ payload: pwsh(`cd ${live}; Remove-Item -Recurse corpus`, tempDir()), env }),
-      NAMES_LIVE_DATA,
+      CHANGES_LIVE_DATA,
       'an absolute cd target through the PowerShell statement separator',
     );
   });
@@ -1297,7 +1318,7 @@ describe('the file tools', () => {
       'absolute target outside, session cwd inside production data',
     );
     assertBlockedBecause(
-      guard({ payload: bash('rm -rf index', live), env: { [LIVE]: live, [DATA]: sandbox } }),
+      guard({ payload: bash('python run.py index', live), env: { [LIVE]: live, [DATA]: sandbox } }),
       OPERATES_IN,
       'the Bash control',
     );
@@ -1350,12 +1371,12 @@ describe('a cd the shell honours, in every syntax that reaches it', () => {
   test('every separator the shell carries a cd across blocks', () => {
     const { base, prod, env } = setup();
     for (const command of [
-      `cd ${prod} && rm -rf corpus`, // the control: this one always blocked
-      `cd ${prod} ; rm -rf corpus`,
-      `cd ${prod}\nrm -rf corpus`,
-      `pushd ${prod} && rm -rf corpus`,
-      `cd -- ${prod} && rm -rf corpus`,
-      `( cd ${prod} && rm -rf corpus )`,
+      `cd ${prod} && python run.py corpus`, // the control: this one always blocked
+      `cd ${prod} ; python run.py corpus`,
+      `cd ${prod}\npython run.py corpus`,
+      `pushd ${prod} && python run.py corpus`,
+      `cd -- ${prod} && python run.py corpus`,
+      `( cd ${prod} && python run.py corpus )`,
     ]) {
       assertBlockedBecause(guard({ payload: bash(command, base), env }), OPERATES_IN, JSON.stringify(command));
     }
@@ -1376,7 +1397,8 @@ describe('a cd the shell honours, in every syntax that reaches it', () => {
   // and the session is told which one could not be read.
   test('a cd to somewhere the guard cannot name warns and allows', () => {
     const { base, env } = setup();
-    for (const command of ['cd $PROD && rm -rf corpus', 'cd && rm -rf corpus', 'cd - && rm -rf corpus']) {
+    // A write after it is refused instead (#237): where it lands cannot be decided.
+    for (const command of ['cd $PROD && python run.py corpus', 'cd && python run.py corpus', 'cd - && python run.py corpus']) {
       assertWarned(guard({ payload: bash(command, base), env }), WARNS_UNNAMED_CD, JSON.stringify(command));
     }
   });
@@ -1500,13 +1522,13 @@ describe('a command the guard cannot read is judged on what it can read (#169)',
 
   test('a cd the guard cannot name still blocks on an absolute path inside production data', () => {
     const { base, live, env } = setup();
-    const command = `cd $DIR && rm ${path.join(live, 'x')}`;
+    const command = `cd $DIR && python run.py ${path.join(live, 'x')}`;
     assertBlockedBecause(guard({ payload: bash(command, base), env }), NAMES_LIVE_DATA, command);
   });
 
   test('a cd the guard cannot name still blocks on a directory the walk did resolve', () => {
     const { live, env } = setup();
-    assertBlockedBecause(guard({ payload: bash('cd $DIR && rm -rf index', live), env }), OPERATES_IN, 'started inside');
+    assertBlockedBecause(guard({ payload: bash('cd $DIR && python run.py index', live), env }), OPERATES_IN, 'started inside');
   });
 
   // A KNOWN MISS, pinned rather than claimed as covered. The tokeniser splits on a space
@@ -1620,9 +1642,8 @@ describe('a relative path resolves where its own command runs (#218)', () => {
     for (const command of [`cd $RUNS && ${compare}`, `cd - && ${compare}`]) {
       assertWarned(guard({ payload: bash(command, axial), env }), WARNS_UNNAMED_CD, JSON.stringify(command));
     }
-    for (const command of [`${compare} && cd $RUNS && ls`, `rm -rf data/map/X ; cd - && ls`]) {
-      assertBlockedBecause(guard({ payload: bash(command, axial), env }), NAMES_LIVE_DATA, JSON.stringify(command));
-    }
+    assertBlockedBecause(guard({ payload: bash(`${compare} && cd $RUNS && ls`, axial), env }), NAMES_LIVE_DATA, 'a run before it');
+    assertBlockedBecause(guard({ payload: bash('rm -rf data/map/X ; cd - && ls', axial), env }), CHANGES_LIVE_DATA, 'a delete before it');
   });
 });
 
@@ -1997,14 +2018,16 @@ describe('git index operations may name files under the data root (#234)', () =>
       `git --git-dir=${path.join('data', 'repo.git')} add summary.md`,
       `git --work-tree ${path.join('data', 'logs')} checkout .`,
     ]) {
-      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+      // A run names the path; a discard (#237) is judged by git, which cannot read a root
+      // outside any repository. Either refusal is the one under test.
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), /(?:names|changes) .*inside the production data root/, JSON.stringify(command));
     }
   });
 
   test('a redirect into the root is still refused', () => {
     const { app, env } = setup();
     for (const command of [`git show HEAD:x > ${y}`, `git diff > ${path.join('data', 'x.patch')}`, `git status >> ${y}`]) {
-      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), CHANGES_LIVE_DATA, JSON.stringify(command));
     }
   });
 
@@ -2012,7 +2035,6 @@ describe('git index operations may name files under the data root (#234)', () =>
     const { app, env } = setup();
     for (const command of [
       `git add ${x} && python run.py ${y}`,
-      `git add ${x}; rm -rf ${y}`,
       `git ls-files ${path.join('data', 'logs')} | xargs rm`,
       `( git ls-files ${path.join('data', 'logs')} ) | xargs rm`,
       `git diff --name-only -- ${x} | xargs rm`,
@@ -2020,6 +2042,7 @@ describe('git index operations may name files under the data root (#234)', () =>
     ]) {
       assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
     }
+    assertBlockedBecause(guard({ payload: bash(`git add ${x}; rm -rf ${y}`, app), env }), CHANGES_LIVE_DATA, 'a delete beside it');
   });
 
   test('a run directory inside the root is judged by the same subcommand rule', () => {
@@ -2041,7 +2064,8 @@ describe('git index operations may name files under the data root (#234)', () =>
       ['git clean -fd', live],
       ['git -C data add summary.md && git -C data clean -fd', app],
     ]) {
-      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, JSON.stringify(command));
+      // `git rm` runs there; the discards (#237) are judged by git, which reads no repository here.
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), /operates in|changes .*inside the production data root/, JSON.stringify(command));
     }
   });
 
@@ -2083,6 +2107,271 @@ describe('git index operations may name files under the data root (#234)', () =>
     for (const command of ['ls "`rm -rf summary.md`"', 'git status "`rm -rf summary.md`"']) {
       assertBlockedBecause(guard({ payload: bash(command, live), env }), OPERATES_IN, JSON.stringify(command));
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The guard judges only what git cannot restore (#237)
+// ---------------------------------------------------------------------------
+//
+// Four refusals of legitimate work in Axial (#214, #216, #218, #234) and a fifth (#236):
+// each command named the live root and none could lose data git does not hold. The guard
+// now refuses a write, move or delete under the root only when git cannot put back what
+// it changes: a file git does not track, one with uncommitted changes, or a directory or
+// glob that reaches such a file. A run against the root is refused whatever git holds.
+// Tracked status is read from a real repository here, the way the guard reads it.
+
+describe('the guard judges only what git cannot restore (#237)', () => {
+  const setup = () => {
+    const app = makeRepo({
+      base: {
+        'aeo-tests.json': JSON.stringify({ test: 'npm test' }),
+        'docs/reports/dec-75-outcome.md': 'outcome v2\n',
+        'data/reports/dec-75-outcome.md': 'outcome v1\n',
+        'data/reports/edited.md': 'committed\n',
+        'data/clean/c.md': 'tracked\n',
+        'data/logs/old/summary.md': 'tracked\n',
+      },
+    });
+    const live = path.join(app, 'data');
+    // What git does not hold: run output imported by the founder, and an uncommitted edit.
+    for (const [rel, body] of [
+      ['data/reports/draft.md', 'untracked\n'],
+      ['data/raw/a.json', '{}\n'],
+      ['data/logs/2026-09-30-883-brief-set/summary.md', 'untracked\n'],
+      ['data/logs/2026-09-30-883-brief-set/x.py', 'print(1)\n'],
+      ['data/runs/883-arm-A/summary.json', '{}\n'],
+      ['data/map/X/m.json', '{}\n'],
+    ]) {
+      mkdirSync(path.dirname(path.join(app, rel)), { recursive: true });
+      writeFileSync(path.join(app, rel), body);
+    }
+    writeFileSync(path.join(app, 'data', 'reports', 'edited.md'), 'uncommitted\n');
+    const runs = tempDir('aeo-p15-runs-');
+    mkdirSync(path.join(runs, 'data', 'map', 'X'), { recursive: true });
+    const { sandbox } = roots();
+    return { app, live, runs, sandbox, env: { [LIVE]: live } };
+  };
+  const pwsh = (command, cwd) => ({ ...bash(command, cwd), tool_name: 'PowerShell' });
+  const UNDECIDED = /cannot tell whether .* lands inside the production data root/;
+  const UNLOCATED = /cannot tell where .* lands, and nothing on the line reaches the production data root/;
+  const REFUSED = /inside the\s+production data root/;
+
+  test('every command from the five false refusals runs', () => {
+    const { app, live, runs, sandbox, env } = setup();
+    const compare = 'python -m axial.cli map compare data/map/X data/map/X-category --vocabulary-dir data/vocabulary';
+    for (const command of [
+      // #236
+      'cp docs/reports/dec-75-outcome.md data/reports/dec-75-outcome.md && diff docs/reports/dec-75-outcome.md data/reports/dec-75-outcome.md && echo SAME',
+      // #214
+      `cd ${app} && gh issue view 853 && gh issue view 855`,
+      `cd ${app} && ${DATA}=${sandbox} gh issue view 853`,
+      `gh issue create --title "guard" --body "the live root ${path.join(live, 'runs')} was named"`,
+      `${DATA}=${sandbox} npm test | tail -5`,
+      `${DATA}=${sandbox} npm test ; echo done`,
+      // #216
+      `git -C ${app} ls-files data/runs`,
+      `ls ${live}`,
+      `du -sh ${path.join(live, 'raw')}`,
+      `dir ${live}`,
+      `find ${sandbox} -type f | wc -l`,
+      `find ${live} -type f | wc -l`,
+      'env | grep AXIAL',
+      `robocopy ${live} ${path.join(sandbox, 'copy')} /L /E`,
+      // #218
+      `cd ${runs} && ${compare} > ${path.join(sandbox, 'compare.txt')} 2>&1`,
+      // #234
+      'git pull -q && git add config/briefs/cross && git add -f data/logs/2026-09-30-883-brief-set/*.py ' +
+        'data/logs/2026-09-30-883-brief-set/summary.md data/runs/883-arm-A/summary.json ' +
+        'data/runs/883-arm-C/summary.json && git status --short',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+  });
+
+  test('a write, move or delete that git can undo runs', () => {
+    const { app, live, sandbox, env } = setup();
+    for (const command of [
+      'cp docs/reports/dec-75-outcome.md data/reports/',
+      'echo more >> data/reports/dec-75-outcome.md',
+      'printf x > data/clean/c.md',
+      'rm -rf data/clean',
+      'rm data/logs/old/summary.md',
+      `mv data/clean/c.md ${path.join(sandbox, 'c.md')}`,
+      `cp data/raw/a.json ${path.join(sandbox, 'a.json')}`,
+      `robocopy ${live} ${path.join(sandbox, 'copy')} /E`,
+      `cat data/raw/a.json > ${path.join(sandbox, 'a.json')}`,
+      'ls data/raw ; npm test',
+      'grep -rn outcome data/reports',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+    assertAllowed(
+      guard({ payload: pwsh('Copy-Item docs/reports/dec-75-outcome.md -Destination data/reports/dec-75-outcome.md', app), env }),
+      'Copy-Item onto a tracked file',
+    );
+    for (const tool of FILE_TOOLS) {
+      assertAllowed(guard({ payload: fileCall(tool, path.join(live, 'reports', 'dec-75-outcome.md'), app), env }), tool);
+    }
+  });
+
+  test('a write, move or delete that reaches what git does not hold refuses', () => {
+    const { app, live, env } = setup();
+    for (const command of [
+      'cp docs/reports/dec-75-outcome.md data/raw/new.json',
+      'cp docs/reports/dec-75-outcome.md data/reports/draft.md',
+      'cp docs/reports/dec-75-outcome.md data/reports/edited.md',
+      'rm -rf data/reports',
+      'rm -rf data/logs/2026-09-30-883-brief-set/*.py',
+      'rm -rf data',
+      'rm -rf .',
+      'rm -rf *',
+      'mv data/raw/a.json data/raw/b.json',
+      'echo x > data/raw/a.json',
+      'ls > data/raw/listing.txt',
+      'touch data/raw/new.json',
+      'mkdir -p data/raw/new',
+      `cat docs/reports/dec-75-outcome.md | tee data/raw/a.json`,
+      `cd ${live} && rm -rf raw`,
+      `cd data/raw && echo x > a.json`,
+      `robocopy ${app} ${live} /MIR`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), CHANGES_LIVE_DATA, JSON.stringify(command));
+    }
+    assertBlockedBecause(
+      guard({ payload: pwsh('Remove-Item -Recurse -Force data/raw', app), env }),
+      CHANGES_LIVE_DATA,
+      'Remove-Item of an untracked directory',
+    );
+    for (const tool of FILE_TOOLS) {
+      assertBlockedBecause(
+        guard({ payload: fileCall(tool, path.join(live, 'raw', 'new.json'), app), env }),
+        /targets .*inside the\s+production data root .*git cannot restore it/,
+        tool,
+      );
+    }
+  });
+
+  test('a run against the root refuses whatever git holds', () => {
+    const { app, env } = setup();
+    for (const command of [
+      'python run.py data/reports/dec-75-outcome.md',
+      'python run.py < data/raw/a.json',
+      'cat data/raw/a.json | python x.py',
+      `find data/raw -name '*.tmp' | xargs rm`,
+      'git ls-files data/logs | xargs rm',
+      'for f in data/raw/*; do rm $f; done',
+      'ls "$(rm -rf data/raw)"',
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+    for (const command of ['cd data && python run.py', 'git -C data rm x.md', 'cd data && sqlite3 entries.db']) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), OPERATES_IN, JSON.stringify(command));
+    }
+  });
+
+  test('a write the guard cannot locate refuses only when the line could reach the root', () => {
+    const { app, live, env } = setup();
+    // Nothing on the line reaches the root: allowed, and the session is told.
+    for (const command of ['cd $DIR && rm -rf raw', 'cd - && touch x', 'rm -rf "$NOT_SET_ANYWHERE/raw"', 'rm "$UNSET"']) {
+      assertWarned(guard({ payload: bash(command, app), env }), UNLOCATED, JSON.stringify(command));
+    }
+    // The line names the root, or runs from inside it.
+    for (const [command, cwd] of [
+      ['ls data/raw ; rm -rf "$UNSET"', app],
+      [`cd ${live} && cd $DIR && rm -rf raw`, app],
+      ['rm "$UNSET"', live],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), UNDECIDED, JSON.stringify(command));
+    }
+    // A variable the session environment defines is read from it.
+    assertAllowed(
+      guard({ payload: bash('rm -rf "$SCRATCH_DIR/x"', app), env: { ...env, SCRATCH_DIR: tempDir() } }),
+      'a defined variable outside the root',
+    );
+    assertAllowed(
+      guard({ payload: pwsh('Remove-Item -Recurse $env:SCRATCH_DIR\\x', app), env: { ...env, SCRATCH_DIR: tempDir() } }),
+      'a PowerShell environment variable outside the root',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash('rm -rf "$LIVE_RAW"', app), env: { ...env, LIVE_RAW: path.join(app, 'data', 'raw') } }),
+      CHANGES_LIVE_DATA,
+      'a defined variable inside the root',
+    );
+  });
+
+  test('a loop over literal words is judged on each word', () => {
+    const { app, env } = setup();
+    for (const command of ['for f in a.tmp b.tmp; do rm "$f"; done', 'for f in a.tmp; do rm "docs/$f"; done']) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+    for (const command of ['for f in data/raw/*; do rm "$f"; done', 'for f in x.tmp y.tmp; do rm "data/raw/$f"; done']) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), REFUSED, JSON.stringify(command));
+    }
+  });
+
+  test('a git command that discards working-tree content refuses when the root holds what git cannot restore', () => {
+    const { app, live, env } = setup();
+    for (const [command, cwd] of [
+      ['git clean -fdx', app],
+      ['git clean -fd', app],
+      ['git clean -ffdx .', app],
+      ['git -C data clean -fdx', app],
+      ['git clean -fdx', live],
+      ['git reset --hard', app],
+      ['git reset --hard HEAD~1', app],
+      ['git reset --merge', app],
+      ['git reset --keep HEAD', app],
+      ['cd data && git reset --hard', app],
+      ['git checkout -- .', app],
+      ['git checkout .', app],
+      ['git checkout HEAD -- data', app],
+      ['git checkout -- data/reports/edited.md', app],
+      ['git restore .', app],
+      ['git restore --worktree --staged .', app],
+      ['git stash', app],
+      ['git stash push', app],
+      ['git stash -u', app],
+      ['git stash push -- data/reports', app],
+      ['git switch -f main', app],
+      ['git switch --discard-changes main', app],
+      ['git checkout -f main', app],
+      ['git checkout --force main', app],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), CHANGES_LIVE_DATA, JSON.stringify(command));
+    }
+    for (const command of [
+      'git clean -fdx src',
+      'git clean -n',
+      'git checkout -- docs/reports/dec-75-outcome.md',
+      'git checkout -- data/reports/dec-75-outcome.md',
+      'git restore docs',
+      'git stash push -- docs',
+      'git checkout main',
+      'git switch main',
+      'git stash list',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+  });
+
+  test('the same git commands run when the root is clean and fully tracked', () => {
+    const app = makeRepo({ base: { 'aeo-tests.json': JSON.stringify({ test: 'npm test' }), 'data/reports/r.md': 'tracked\n' } });
+    const env = { [LIVE]: path.join(app, 'data') };
+    writeFileSync(path.join(app, 'scratch.tmp'), 'untracked, outside the root\n');
+    for (const command of ['git clean -fdx', 'git reset --hard', 'git checkout -- .', 'git restore .', 'git stash -u', 'git switch -f main']) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+  });
+
+  test('a root git cannot read fails closed', () => {
+    const { live } = roots();
+    const repo = makeRepo();
+    mkdirSync(path.join(live, 'index'), { recursive: true });
+    writeFileSync(path.join(live, 'index', 'a.json'), '{}\n');
+    const r = guard({ payload: bash(`cp README ${path.join(live, 'index', 'a.json')}`, repo), env: { [LIVE]: live } });
+    assertBlockedBecause(r, CHANGES_LIVE_DATA, 'no repository around the root');
+    assert.match(r.stderr, /git cannot read a repository there/);
   });
 });
 
@@ -2179,7 +2468,7 @@ describe('aliased paths', () => {
     mkdirSync(path.join(live, 'index'), { recursive: true });
     assertBlockedBecause(
       guard({ payload: bash(`rm -rf ${path.join(live, 'index')}`, repo), env: { [LIVE]: alias, [DATA]: sandbox } }),
-      NAMES_LIVE_DATA,
+      CHANGES_LIVE_DATA,
       'production root declared under its alias, command uses the real name',
     );
   });
@@ -2192,7 +2481,7 @@ describe('aliased paths', () => {
     if (!link(live, alias)) return t.skip('this platform would not create a directory link');
     assertBlockedBecause(
       guard({ payload: bash(`rm ${path.join(alias, 'index', 'entries.jsonl')}`, repo), env: { [LIVE]: live, [DATA]: sandbox } }),
-      NAMES_LIVE_DATA,
+      CHANGES_LIVE_DATA,
       'command names production data through a link',
     );
   });
@@ -2204,7 +2493,7 @@ describe('aliased paths', () => {
     if (!link(live, trap)) return t.skip('this platform would not create a directory link');
     assertBlockedBecause(
       guard({ payload: bash(`rm -rf ${path.join(trap, 'index')}`, repo), env: { [LIVE]: live, [DATA]: sandbox } }),
-      NAMES_LIVE_DATA,
+      CHANGES_LIVE_DATA,
       'a sandbox path that is really production data',
     );
   });
@@ -2471,7 +2760,7 @@ describe('no override', () => {
       assertBlockedBecause(guard({ payload: bash(`npm test ${flag}`, repo) }), LIVE_RUN, `sentinel with ${flag}`);
       assertBlockedBecause(
         guard({ payload: bash(`rm ${flag} ${path.join(live, 'index')}`, repo), env: { [LIVE]: live } }),
-        NAMES_LIVE_DATA,
+        CHANGES_LIVE_DATA,
         `data rule with ${flag}`,
       );
     }
@@ -2485,7 +2774,7 @@ describe('no override', () => {
     assertBlockedBecause(guard({ payload: bash('npm test', repo, extra) }), LIVE_RUN, 'bypassPermissions, sentinel');
     assertBlockedBecause(
       guard({ payload: bash(`rm -rf ${path.join(live, 'index')}`, repo, extra), env: { [LIVE]: live } }),
-      NAMES_LIVE_DATA,
+      CHANGES_LIVE_DATA,
       'bypassPermissions, data rule',
     );
   });
@@ -2502,7 +2791,7 @@ describe('no override', () => {
       assertBlockedBecause(guard({ payload: bash('npm test', repo, extra) }), LIVE_RUN, `sentinel, ${agent_type}`);
       assertBlockedBecause(
         guard({ payload: bash(`rm -rf ${path.join(live, 'index')}`, repo, extra), env: { [LIVE]: live } }),
-        NAMES_LIVE_DATA,
+        CHANGES_LIVE_DATA,
         `data rule, ${agent_type}`,
       );
     }

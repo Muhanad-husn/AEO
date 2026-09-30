@@ -1,112 +1,56 @@
-// AEO sandbox guard: production data is not reachable from a session, and a live long
-// job is not run over.
+// AEO sandbox guard: a session cannot change production data that git cannot put back,
+// cannot run code against production data, and cannot run the project's suite over a
+// live long job.
 //
-// PreToolUse on Bash and on the tools that write a file directly. It decides from
-// stdin rather than from an `if:` filter, because `if:` fails open on an unparseable
-// command and is never the security boundary (C-04).
+// PreToolUse on Bash, PowerShell and the tools that write a file directly. It decides
+// from stdin rather than from an `if:` filter, because `if:` fails open on an
+// unparseable command and is never the security boundary (C-04).
 //
-// WHY THIS EXISTS. Three real incidents, months apart, all invisible in CI because CI
-// has no data directory (L-03):
+// WHY THIS EXISTS. Three incidents, all invisible in CI because CI has no data directory
+// (L-03): tests that wrote 79 run directories into the operator's live logs, six test
+// call-sites that silently read a live 49,674-entry index through a default directory,
+// and a fixture that snapshotted a shared state directory, which addressed collision and
+// not reach. Plus L-02: four external kills of a live four-hour pipeline, traced to a
+// concurrent session running the suite over it. Rule 1 guards that.
 //
-//   - A module-global logs root meant any test driving main() wrote real timestamped run
-//     directories into the operator's live logs. 79 leaked directories over five days,
-//     one of which a status hook then reported as "newest run".
-//   - A lookup that resolved through a DEFAULT directory when its argument was omitted
-//     meant six test call-sites silently read the operator's live 49,674-entry index.
-//   - A conftest fixture that snapshotted and restored a shared state directory. That
-//     was the mitigation which already existed; it addresses collision, not reach.
+// THE ONE JOB (#237). The project declares where production data is. The guard refuses:
+//   - a write, move or delete under that root that git cannot restore: a file git does
+//     not track, one with uncommitted changes, or a directory or glob reaching either;
+//   - a run against the root: code whose arguments, inputs or working directory are
+//     under it, whatever git holds, because code can reach anything it is pointed at;
+//   - a seam (AEO_DATA_ROOT) that is relative or overlaps the root;
+//   - the declared suite while a live-run sentinel is up.
+// Everything else passes, whatever paths it names. Phase 4 on Axial refused five pieces
+// of legitimate work (#214, #216, #218, #234, #236), each a command that named the root
+// and could not lose data git does not hold, and PLAN.md's kill line says a layer that
+// refuses legitimate work is removed. It fails closed where the effect cannot be decided:
+// a write whose location it cannot name, or under a root git cannot read, is refused. A
+// command it cannot parse is judged as a run on the paths its tokens name and the
+// directory it starts in, and otherwise allowed with a warning (#169).
 //
-// Plus the fourth (L-02): four simultaneous external kills of a live four-hour pipeline
-// were traced to a concurrent session running the project's suite over it. Rule 1 below
-// is what still guards that: it refuses a Bash invocation of the declared suite while a
-// sentinel is up, whoever types it. The commit gate this rule used to be backstopped by
-// is gone (D30) — it ran the suite as a side effect of every commit, which was the other
-// half of L-02's own hazard, so deleting it removes that half of the risk rather than
-// reopening it.
+// THE LINE. A tracked file with no uncommitted change can be put back with git, so
+// overwriting or deleting it is allowed; the founder can undo it. A file git does not
+// hold, or an edit git has not seen, cannot, so touching it is refused. A command that
+// only reads (a short, fixed list of programs that cannot write or run code) may name the
+// root freely, but when it pipes into anything that is not also on that list, its
+// arguments are judged as a run's, because the next program acts on what it printed.
 //
-// WHICH RULES REFUSE, AND WHICH WARN. A rule that has read production data in the call
-// refuses: the seam, a path named inside the production root, the directory the command
-// runs in, and the project's suite invoked over a live job. Advice is what cost 19,000
-// documents, so where the guard can see the reach it stops it. There is no override flag
-// and the absence of one is the point (L-05): an override is what you reach for at 2am,
-// and a guard with a bypass is a guard that reports safety it does not provide.
+// There is no override flag and the absence of one is the point (L-05): an override is
+// what you reach for at 2am. It applies to every identity, the orchestrator included.
 //
-// A line whose every command only reads is not an override (#216). `ls`, `du`, `stat`,
-// `find` without an action that writes or runs, `git status` and `robocopy /L` may name
-// production data and run inside it, because none of them can write it or run project
-// code over it. Axial could not confirm a copy into its live root without them. Anything
-// else on the same line, a redirection into the root, or an interpreter, and the line is
-// judged as before.
-//
-// Two rules used to refuse without having read anything (#169): a command the parser
-// could not finish, and a `cd` whose target could not be named. Both refused `echo
-// "unterminated` and `cd $DIR && ls`, which reach no data at all, and a guard that
-// refuses harmless commands is a guard people delete, which is the same L-05 failure
-// arriving from the other side. Both now run every rule that does not need the piece
-// that went missing, and warn about the piece. Little is given up: a token that names a
-// path names it whether or not its quote closes, the directory a call runs in comes from
-// the payload rather than from the parse, and the sentinel rule matches on tokens. What
-// is given up is the reach hidden inside the part that could not be read -- an
-// expansion, a backtick substitution, a `cd` to a computed directory. The warning names
-// that, so a session is told which judgement it got.
-//
-// THE TWO VARIABLES, AND WHY TWO.
-//
-//   AEO_LIVE_DATA_ROOT  the project's declaration of WHERE PRODUCTION DATA IS.
-//   AEO_DATA_ROOT       the seam: where THIS process tree reads and writes data.
-//
-// One variable cannot do this. The guard has to compare an effective location against a
-// declared one, and a single variable gives it nothing to compare against. In ordinary
-// operator use outside Claude Code the two are equal; in a session that sets the seam
-// they must differ, and this gate refuses a session where they do not.
-//
-// AEO_DATA_ROOT is an environment variable because in-process monkeypatching never
-// reaches a subprocess CLI child and integration tests shell out. That is L-03's second
-// requirement, stated in its own words, and an environment variable is the only seam
-// that survives a process boundary unaided.
-//
-// AEO_LIVE_DATA_ROOT does NOT survive a process boundary the same way -- it is compared
-// in this process, before anything is spawned -- so that justification never applied to
-// it, and reading it from process.env cost a real session a restart (#133). settings.json
-// is a tracked file: a branch checkout can silently revert its content, and grant and
-// revoke turned out not to be symmetric once that happens -- a checkout that reintroduces
-// a real value applies live, one that reintroduces blank does not, because that half looks
-// like nothing changed. A stale declaration then outlived the seam it was declared
-// against, and the guard blocked every Bash call with no way back, including the `git
-// checkout` needed to undo the checkout that caused it. The fix reads the DECLARATION
-// straight from .claude/settings.json's `env` object on every invocation instead, so grant
-// and revoke are both just "what does the file say right now" -- no side that gets stuck.
-// AEO_DATA_ROOT is unaffected: it still has to reach a subprocess, so it stays exactly
-// where it was.
-//
-// THE SEAM RULE JUDGES A SEAM THAT IS SET, ON EVERY COMMAND. A seam that is relative, or
-// that overlaps production data, is refused whatever the command is, because there is
-// nothing to classify: a seam pointed into production data is misconfigured for every
-// command that inherits it. A seam that is NOT set is not refused (#214). That refusal
-// read no production data. It refused `gh issue view` in Axial, and refused it again
-// behind the prefix its own message prescribed, because the `cd` before it was judged
-// against the unset session seam. A session with no seam is judged by the rules that read
-// evidence: a path named inside production data, the directory a command runs in, and
-// the live-run sentinel.
-//
-// The sentinel rule does need to recognise a suite, and it takes that from the project's
-// own recorded test command (stack.mjs) rather than from a table of its own. A project
-// with no record declares no suite here, so a live run is protected only for a project
-// that has named its own test command; recognition is deliberately generous within that.
-// A command shape the recognition misses (D22's known miss: `node --test`, when the
-// record says `npm test`) is a gap this rule alone carries (D30): nothing else backstops
-// it now that the commit gate is gone.
-//
-// WHO IT APPLIES TO: everyone, the orchestrator included. There is no identity test in
-// this file. block-merge exempts the orchestrator because a founder-approved merge is a
-// real workflow. A founder-approved run against production data during a live job is not
-// one, and the four kills in L-02 came from concurrent sessions rather than from a role.
+// THE TWO VARIABLES. AEO_LIVE_DATA_ROOT is the project's declaration of where production
+// data is, read from `.claude/settings.json` on every call and from the environment only
+// when the file says nothing (#133). AEO_DATA_ROOT is the seam, where this process tree
+// reads and writes data; it is an environment variable because that is the only seam that
+// survives a process boundary, and a set seam is refused when it is relative or overlaps
+// the root. An unset seam is not refused (#214).
 
-import { readFileSync, realpathSync, writeSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { block, commandSegments, isPathInside, normalizeHookPath, operationDirs, runGate, toolFilePath, warn } from './lib.mjs';
+import { block, commandSegments, isPathInside, normalizeHookPath, operationDirs, realpathDeep as realise, runGate, toolFilePath, warn } from './lib.mjs';
 import { projectAnchor, runInProgress, worktreeAnchor } from './sentinel.mjs';
 import { resolveTestPlan } from './stack.mjs';
 
@@ -120,23 +64,9 @@ const NO_OVERRIDE =
   'There is no override flag. That is deliberate (L-05): an override is what you reach for at 2am.';
 
 /**
- * The tools that name their target in the payload instead of inside a shell command, and
- * which hooks.json's matcher for this gate must therefore list alongside Bash.
- *
- * A smoke test of the installed plugin found the hole this set closes. The matcher was
- * `^Bash$`, so `cat <file inside production data>` was refused while a Write that CREATED
- * a file inside the production data root was not gated at all. Production data does not
- * care which tool reached it.
- *
- * READ AND NOTEBOOKREAD ARE NOT HERE (#167). PLAN.md section 2 fires nothing on a read
- * tool, so hooks.json starts no process on one and this set would be judging a payload
- * that never arrives. L-03's second incident is not lost by that: six test call-sites
- * silently READING a live 49,674-entry index is code reading an index, which arrives as
- * a Bash call and is judged as one. A Read tool call reads one named file into context.
- *
- * Glob and Grep are not here either. They name a pattern plus an optional root rather
- * than a file, which is a wider surface than this fix, and a matcher wider than the set
- * the gate actually judges reads as covered while it is not.
+ * The tools that name their target in the payload, which hooks.json lists beside the
+ * shells. Read is not here (#167): hooks.json fires nothing on a read tool. Glob and Grep
+ * name a pattern rather than a file.
  */
 const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
@@ -145,36 +75,6 @@ function writeNote(message) {
     writeSync(2, `${message}\n`);
   } catch {
     // Losing the note must not change the decision. runGate owns the exit.
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Paths
-// ---------------------------------------------------------------------------
-
-/**
- * An absolute path with every symlink and alias on it resolved.
- *
- * isPathInside compares strings and does not call realpath, so two names for one
- * directory never compare equal. For this gate that is not a correctness nit: a link
- * into live data defeats an unresolved check, and what it defeats is the guarantee that
- * data cannot be reached. Both sides go through here before they are compared.
- *
- * The loop realpaths the deepest ancestor that exists and re-appends the rest, so a path
- * that has not been created yet still resolves to the right place.
- */
-function realise(p) {
-  let current = path.resolve(p);
-  const tail = [];
-  for (;;) {
-    try {
-      return path.join(realpathSync.native(current), ...tail);
-    } catch {
-      const parent = path.dirname(current);
-      if (parent === current) return path.resolve(p);
-      tail.unshift(path.basename(current));
-      current = parent;
-    }
   }
 }
 
@@ -190,10 +90,8 @@ function overlaps(a, b) {
 // ---------------------------------------------------------------------------
 
 // A token is a run of non-space characters with quoted spans allowed inside it, so
-// `--data-dir="D:/corpus one"` is one token rather than two. Shell parsing beyond this
-// is deliberately not attempted: the tokens feed a containment test whose false
-// positives cost a message. Its false negatives are not covered when no seam is set
-// (#214).
+// `--data-dir="D:/corpus one"` is one token rather than two. Used where the command could
+// not be segmented, and by the sentinel rule.
 const TOKEN = /(?:"[^"]*"|'[^']*'|[^\s"']+)+/g;
 
 /** The command split into tokens, with quotes removed. */
@@ -230,20 +128,9 @@ export function pathCandidates(tokens) {
 
 /**
  * Interpreters generic enough that their own name carries no identity: what they run is
- * named by the argument after them, not by the interpreter itself (#136). This is a fixed,
- * small set rather than a heuristic on purpose: an interpreter's identity lives in its
- * script argument, and no positional or lexical signal — not position, not extension, not
- * a trailing slash — can substitute for naming them. `go test pkg/...` and `pytest
- * tests/` both put a path-shaped token straight after a plain program, and only one of
- * those programs is generic; a rule that tried to tell them apart by shape alone gets one
- * of the two wrong.
- *
- * `cmd`, `powershell` and `pwsh` are deliberately absent (#136). Their own flags are
- * path-shaped by the same `/[\\/]/` test a script argument is — `/c` and `-File` both
- * contain a slash or a dash the same way a path does — so `cmd /c scripts\check.cmd`
- * mis-reduces to `['cmd', 'c']`, the flag's own basename, not the script's. No declared
- * test command in this corpus starts with a Windows shell, and a set entry that
- * mis-reduces is worse than one that is simply absent.
+ * named by the argument after them (#136). A fixed set, because no shape tells `go test
+ * pkg/...` from `bash scripts/check.sh`. `cmd`, `powershell` and `pwsh` are absent: their
+ * own flags (`/c`, `-File`) are path-shaped and would be reduced in place of the script.
  */
 const GENERIC_INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'dash', 'node', 'python', 'python3', 'ruby', 'perl']);
 
@@ -272,30 +159,15 @@ function reduceInterpreterScript(tokens, i) {
  * particular file.
  *
  * A path-shaped token is kept, reduced to its basename, ONLY when it is a generic
- * interpreter's own script argument — reachable from the interpreter by walking back
- * over any flags in between (see reduceInterpreterScript). `bash scripts/check.sh`
- * becomes `['bash', 'check.sh']`, whatever relative prefix that script carries:
- * `bash ./scripts/check.sh` reduces the same way, because dropping it as a relative
- * argument the way `go test ./...` is dropped would reopen #134 for every script path
- * written the ordinary way, with a leading `./` (#136). Any other path-shaped token —
- * relative or not, adjacent to a flag or to nothing — is dropped the same way: it is a
- * target the suite runs over, not part of what identifies it, which is what lets a bare
- * `pytest` still match `pytest tests/unit/test_api.py`.
+ * interpreter's own script argument, found by walking back over flags
+ * (reduceInterpreterScript): `bash ./scripts/check.sh` becomes `['bash', 'check.sh']`.
+ * Any other path-shaped token is a target the suite runs over and is dropped, so a bare
+ * `pytest` still matches `pytest tests/unit/test_api.py`. Keeping every path token broke
+ * that (#136); dropping every one made `bash scripts/check.sh` match any `bash <x>`,
+ * including a supervisor's own `stop` during a run (#134).
  *
- * Two earlier versions of this rule got it wrong in opposite directions. Keeping every
- * path-shaped token once anything plain survived made a declared command with a
- * directory argument fail to match its own plain invocation — `pytest tests/` no longer
- * matched a bare `pytest` (#136). Dropping every path-shaped token whenever a plain one
- * survived, before that, made `bash scripts/check.sh` collapse to just `bash`, so any
- * `bash <anything>` matched it, including a supervisor's own `status` and `stop`
- * commands, unreachable for the life of a run (#134). A third version required strict,
- * un-walked adjacency on this side while the invoked side walked back over flags — that
- * asymmetry is gone; both sides now read a flag-skipping predecessor the same way.
- *
- * When nothing survives — no plain token and no interpreter+script pair — the first kept
- * token (flags and globs still excluded) keeps its basename, so `vendor/bin/phpunit`
- * still matches a bare `phpunit`, and `vendor/bin/phpunit tests/` still reduces to
- * `['phpunit']` rather than folding `tests/` into the suite's identity by accident (#136).
+ * When nothing survives, the first kept token keeps its basename, so `vendor/bin/phpunit
+ * tests/` reduces to `['phpunit']` (#136).
  */
 function significantTokens(command) {
   const wanted = [];
@@ -332,53 +204,16 @@ function isOrderedSubsequence(tokens, wanted) {
  * declared command wraps it, `cd sub && pytest` with it, and a script run directly as
  * `./scripts/check.sh`, whose basename is the program.
  *
- * The first form reads the invoked command's own tokens through reduceInterpreterScript
- * before comparing, the same reduction significantTokens applies to the declared side, so
- * an interpreter's script survives flags typed between them on either side (#136). The
- * second form reduces a segment's program to a plain basename unconditionally: a program
- * IS the thing invoked, not an argument to something else, so there is no interpreter to
- * require there. Both are deliberately narrower than reducing every path-shaped invoked
- * token regardless of what precedes it: doing that made `git add tools/pytest` and `cat
- * .venv/bin/pytest` match a bare declared `pytest`, because `tools/pytest` reduces to the
- * same basename as the declared suite even though it is `git add`'s and `cat`'s argument,
- * not an interpreter's.
+ * The first form reduces the invoked tokens the way significantTokens reduces the
+ * declared ones (#136), and no further: reducing every path token made `git add
+ * tools/pytest` match a declared `pytest`. The second form takes the program position
+ * only: anywhere in the command, the literal `test` refused `grep -r test .` and `mkdir
+ * test` during a live run.
  *
- * The second form used to accept that token anywhere in the command. Because flags and
- * globs are dropped, the final declared token is the literal `test` for Node, Go, Rust
- * and Maven, so during a live run `grep -r test .`, `mkdir test` and `git add test` were
- * each refused with "`npm test` will not run", naming a command nobody typed. A guard
- * people cannot work around is a guard people delete, which is the failure this whole
- * gate is trying not to cause.
- *
- * A KNOWN MISS, in the other direction: `node --test` is not recognised, and it is how
- * this project's own suite runs. The recorded command is `npm test`, and what that
- * expands to is the package manager's business, not this function's to guess. During a
- * live run a hand-typed `node --test` is not held by anything (D30): nothing runs a
- * suite as a side effect of a commit any more, so there is no second check downstream of
- * this one to catch what it misses. The same miss now also covers a project that declares
- * its suite with a target, `node --test tests/`: the bare `node --test` a developer
- * actually types omits `tests/`, so it no longer carries the token the declared command's
- * identity needs — accepted, because reading identity off flag-skipped adjacency both
- * ways is what lets that declared command recognise its own full invocation and the
- * `node --experimental-vm-modules node_modules/.bin/jest`-shaped ones like it (#136).
- *
- * A SECOND KNOWN MISS, of the same shape (#134): a different interpreter running the same
- * script, as in `sh scripts/check.sh` against a declared `bash scripts/check.sh`. The
- * script's basename is an ARGUMENT to `sh` there, not the program in program position, so
- * neither form catches it — catching it would mean treating `sh` and `bash` as
- * equivalent, which is a different question from which programs are generic enough to
- * need a script argument at all. GENERIC_INTERPRETERS answers only the second question;
- * it is not an interchangeability table between shells, and does not grow into one.
- *
- * A THIRD KNOWN MISS (#136): a wrapper that runs a script through a sub-command rather
- * than an interpreter — `uv run scripts/check.py`, and the same for `deno`, `bun` or
- * poetry's own `run` — still collapses to `['uv', 'run']`, because `run` is not in
- * GENERIC_INTERPRETERS and the script argument after it is dropped like any other target.
- * Any `uv run <anything>` then matches the declared suite, the same over-match #134 fixed
- * for a bare interpreter. `poetry run python scripts/check.py` does not have this
- * problem: its script follows `python`, a real interpreter, and reduces correctly. Adding
- * `run` (or `uv`, `deno`, `bun`) to the set is not the fix — `npm run build` and `cargo
- * run` are "run" too, and neither takes a script argument that identifies a suite.
+ * Known misses, accepted: `node --test` against a declared `npm test` (what npm expands
+ * to is not this function's to guess, and nothing downstream catches it since D30); `sh
+ * scripts/check.sh` against a declared `bash scripts/check.sh` (#134); and `uv run
+ * <script>`, which collapses to `['uv', 'run']` and so matches any `uv run` (#136).
  */
 export function invokesDeclaredSuite(command, declared) {
   const rawTokens = shellTokens(command);
@@ -397,23 +232,47 @@ export function invokesDeclaredSuite(command, declared) {
 }
 
 // ---------------------------------------------------------------------------
-// Read-only commands (#216)
+// What each command does to the root (#237)
 // ---------------------------------------------------------------------------
 
 /**
- * Programs that cannot write a file or run project code, whatever arguments they get.
- * None of them has a flag that writes: `sort -o` would, and `sort` is not here.
+ * Programs that cannot write a file or run code, whatever arguments they get (#216). What
+ * they name, they read, so their arguments are not judged. None of them has a flag that
+ * writes: `sort -o` and `uniq in out` would, and neither is here. Compared in lower case,
+ * so PowerShell's own names match.
  */
-const READS_ONLY = new Set(['ls', 'dir', 'du', 'stat', 'wc', 'cat', 'head', 'tail', 'sha256sum', 'md5sum']);
+const READS = new Set([
+  'ls', 'dir', 'du', 'stat', 'wc', 'cat', 'head', 'tail', 'sha256sum', 'sha1sum', 'md5sum', 'grep', 'egrep', 'fgrep',
+  'diff', 'cmp', 'file', 'tree', 'echo', 'printf', 'pwd', 'true', 'false', 'test', 'basename', 'dirname', 'realpath',
+  'readlink', 'get-content', 'gc', 'get-childitem', 'gci', 'get-item', 'gi', 'test-path', 'get-filehash',
+  'select-string', 'sls', 'write-output', 'write-host', 'measure-object', 'resolve-path',
+]);
 
 /** The `find` primaries that delete, run a program, or write a file. */
 const FIND_ACTIONS = new Set(['-delete', '-exec', '-execdir', '-ok', '-okdir', '-fprint', '-fprint0', '-fprintf', '-fls']);
 
+/** The `gh` arguments that write a local file. Without one, `gh` talks to GitHub only (#214). */
+const GH_WRITES = /^(?:download|clone|--dir|-D|--output|-O)(?:=|$)/;
+
+/** Programs that write, move or delete the paths they are given (writeTargets reads which). */
+const COPIES = new Set(['cp', 'install', 'copy-item', 'cpi', 'copy']);
+const MOVES = new Set(['mv', 'move-item', 'mi', 'move', 'rename-item', 'ren', 'rni']);
+const WRITES = new Set([
+  ...COPIES, ...MOVES, 'rm', 'rmdir', 'mkdir', 'touch', 'tee', 'ln', 'truncate', 'chmod', 'chown', 'unlink', 'shred',
+  'dd', 'robocopy', 'remove-item', 'ri', 'del', 'erase', 'rd', 'new-item', 'ni', 'md', 'set-content', 'sc',
+  'add-content', 'ac', 'out-file', 'clear-content', 'clc',
+]);
+
+/** PowerShell parameters whose value is not a path. Any unambiguous prefix names one. */
+const PS_VALUES = ['value', 'encoding', 'itemtype', 'filter', 'include', 'exclude', 'stream', 'credential'];
+
+/** robocopy options that name a file it writes or reads options from. */
+const ROBOCOPY_FILES = /^\/(?:(?:UNI)?LOG\+?|SAVE|JOB):/i;
+
 /**
  * The `git` subcommands that change no file in the working tree (#234). They read it, or
- * write git's own store: the index, the objects, a ref. `git status` may refresh
- * `.git/index`, which is the repository's, not data. `stash`, `restore`, `reset` and `rm`
- * qualify only in the forms gitIndexOnly accepts.
+ * write git's own store: the index, the objects, a ref. `stash`, `restore`, `reset` and
+ * `rm` qualify only in the forms gitIndexOnly accepts.
  */
 const GIT_INDEX_OPS = new Set(['add', 'commit', 'status', 'diff', 'log', 'show', 'blame', 'ls-files', 'stash', 'restore', 'reset', 'rm']);
 
@@ -425,35 +284,26 @@ const GIT_RM_INDEX = new Set(['--cached', '-r', '-f', '-rf', '-fr', '--force', '
 /** Global options that change nothing `git` runs. `-c` is not one: `core.fsmonitor` runs a program. */
 const GIT_QUIET_GLOBALS = new Set(['--no-pager', '-P', '--no-optional-locks', '--literal-pathspecs']);
 
-/**
- * `git diff` options that write or run a program. Git takes any unambiguous prefix of a
- * long option, so `--outp=x` is `--output=x` and is matched as one.
- */
+/** `git diff` options that write or run a program, matched by any prefix git accepts. */
 const GIT_DIFF_UNSAFE = ['output', 'ext-diff', 'textconv'];
 
-/** robocopy options that write a file even with `/L`, or read options from one. */
-const ROBOCOPY_WRITES = /^\/(?:(?:UNI)?LOG\+?:|SAVE:|JOB:|CREATE$)/i;
-
 /**
- * The name a program is known by: its basename with `.exe` dropped, so `/usr/bin/ls` and
- * `du.exe` are `ls` and `du`. A relative path such as `./ls` is a file in the project,
- * not the system program, and gets no name.
+ * The name a program is known by, in lower case: its basename with `.exe` dropped, so
+ * `/usr/bin/ls` and `du.exe` are `ls` and `du`. A relative path such as `./ls` is a file
+ * in the project, not the system program, and gets no name.
  */
 function programName(program) {
   if (/[\\/]/.test(program) && !path.isAbsolute(normalizeHookPath(program))) return null;
-  return program.split(/[\\/]/).pop().replace(/\.exe$/i, '');
+  return program.split(/[\\/]/).pop().replace(/\.exe$/i, '').toLowerCase();
 }
 
 /**
- * True when `git <sub> <rest>` changes no file in the working tree. The three that can
- * change one are held to an option list: `restore` without `--staged`, or with
- * `--worktree`, writes the files; `reset --hard`, `--merge` and `--keep` write them, and
- * git takes `--ha` for `--hard`, so an option off the list is refused rather than parsed;
- * `rm` without `--cached` deletes them. `stash` qualifies as `list` and `show` only.
+ * True when `git <sub> <rest>` changes no file in the working tree. `restore` without
+ * `--staged` writes the files; `reset --hard`, `--merge` and `--keep` write them, and git
+ * takes `--ha` for `--hard`, so an option off the list is refused rather than parsed; `rm`
+ * without `--cached` deletes them. `stash` qualifies as `list` and `show` only.
  */
 function gitIndexOnly(sub, rest) {
-  // A diff driver or textconv filter the repository's own config names is the
-  // repository's code, not the command line's, and is not judged here.
   const unsafe = rest.some((a) => {
     const name = a.startsWith('--') ? a.slice(2).split('=')[0] : '';
     return name !== '' && GIT_DIFF_UNSAFE.some((o) => o.startsWith(name));
@@ -468,48 +318,145 @@ function gitIndexOnly(sub, rest) {
 }
 
 /**
- * For a `git` segment that changes no file in the working tree (#234), the words rule 5
- * still judges: every word except the subcommand, its own arguments and the `-C` values.
- * `null` for any other segment.
- *
- * Only the global options that cannot run a program or move git's store elsewhere
- * unjudged are accepted. `-c` is refused because `core.pager` and `core.fsmonitor` run
- * one. The value of `--git-dir` and `--work-tree` stays judged, since `--git-dir=<live>/x`
- * writes objects there. A `-C` value is left to rule 6, which judges the directory the
- * command runs in.
+ * For a `git` command that changes no working-tree file (#234), the `--git-dir` and
+ * `--work-tree` values, which are still judged, since `--git-dir=<live>/x` writes objects
+ * there. `null` for any other command. A `-C` value is the directory the command runs in
+ * and is resolved by the walk; `-c` is refused because `core.pager` and `core.fsmonitor`
+ * run a program.
  */
-function gitIndexJudged(segment) {
-  if (segment.program === null || programName(segment.program) !== 'git') return null;
+function gitIndexOp(segment) {
+  if (programName(segment.program) !== 'git') return null;
   const args = segment.args;
-  const own = [];
+  const judged = [];
   let i = 0;
   while (i < args.length && args[i].startsWith('-')) {
-    if (args[i] === '-C') {
-      if (args[i + 1] !== undefined) own.push(args[i + 1]);
+    if (args[i] === '-C') i += 2;
+    else if (args[i] === '--git-dir' || args[i] === '--work-tree') {
+      judged.push(args[i + 1] ?? '');
       i += 2;
-    } else if (args[i] === '--git-dir' || args[i] === '--work-tree') i += 2;
-    else if (GIT_QUIET_GLOBALS.has(args[i]) || /^--(?:git-dir|work-tree)=/.test(args[i])) i += 1;
-    else return null;
+    } else if (GIT_QUIET_GLOBALS.has(args[i]) || /^--(?:git-dir|work-tree)=/.test(args[i])) {
+      if (!GIT_QUIET_GLOBALS.has(args[i])) judged.push(args[i]);
+      i += 1;
+    } else return null;
   }
-  if (!GIT_INDEX_OPS.has(args[i]) || !gitIndexOnly(args[i], args.slice(i + 1))) return null;
-  own.push(...args.slice(i));
-  const out = [];
-  for (const word of segment.tokens) {
-    const k = own.indexOf(word);
-    if (k === -1) out.push(word);
-    else own.splice(k, 1);
-  }
-  return out;
+  return GIT_INDEX_OPS.has(args[i]) && gitIndexOnly(args[i], args.slice(i + 1)) ? judged : null;
 }
 
-/** True when a segment runs a program on the list, with no argument that writes or executes. */
-function readsOnly(segment) {
+/** A `reset` option that discards working-tree content, by any prefix git accepts. */
+const discardsOnReset = (o) => /^--[a-z]{2,}$/.test(o) && ['hard', 'merge', 'keep'].some((f) => f.startsWith(o.slice(2)));
+
+/**
+ * For a `git` command that discards working-tree content git may not hold, what it
+ * reaches: `{ paths }`, the pathspecs it is limited to, or no paths for the whole
+ * repository; `{ ambiguous, force }` for `checkout <one word>`, which is a branch or a
+ * path depending on what is on disk. `null` for any other command. These are `clean`
+ * (except a dry run), `reset --hard`, `--merge` and `--keep`, `checkout` and `restore` of
+ * paths, a forced `checkout` or `switch`, and `stash` bare, `push` or `save`. A `checkout`
+ * or `switch` that is not forced refuses to overwrite local changes, so it is not here.
+ * With `-c`, `--git-dir` or `--work-tree` the command stays a run.
+ */
+function gitDiscards(segment) {
+  if (programName(segment.program) !== 'git') return null;
+  const args = segment.args;
+  let i = 0;
+  while (i < args.length && args[i].startsWith('-')) {
+    if (args[i] === '-C') i += 2;
+    else if (GIT_QUIET_GLOBALS.has(args[i])) i += 1;
+    else return null;
+  }
+  const sub = args[i];
+  const rest = args.slice(i + 1);
+  const dash = rest.indexOf('--');
+  const after = dash === -1 ? [] : rest.slice(dash + 1);
+  const before = dash === -1 ? rest : rest.slice(0, dash);
+  const options = before.filter((a) => a.startsWith('-'));
+  const words = before.filter((a, k) => !a.startsWith('-') && !['-s', '--source', '-b', '-B'].includes(before[k - 1]));
+  const force = options.some((o) => ['-f', '--force', '--discard-changes'].includes(o));
+  if (sub === 'clean') return options.some((o) => o === '-n' || o === '--dry-run') ? null : { paths: [...words, ...after] };
+  if (sub === 'reset') return options.some(discardsOnReset) ? { paths: after } : null;
+  if (sub === 'stash') {
+    if (words[0] !== undefined && !['push', 'save'].includes(words[0])) return null;
+    return { paths: [...(words[0] === 'push' ? words.slice(1) : []), ...after] };
+  }
+  if (sub === 'restore') return words.length + after.length > 0 ? { paths: [...words, ...after] } : null;
+  if (sub === 'switch') return force ? { paths: [] } : null;
+  if (sub !== 'checkout') return null;
+  if (after.length > 0 || words.length >= 2) return { paths: [...words.slice(1), ...after] };
+  if (words.length === 1) return { ambiguous: words[0], force };
+  return force ? { paths: [] } : null;
+}
+
+/**
+ * What one command does to the root: `read` (reads, or writes only git's store), `write`
+ * (changes the paths writeTargets names), `discard` (a git command gitDiscards reads), or
+ * `run` (anything else, whose arguments and directory are judged). `judged` is what a read
+ * still has judged as a run's words.
+ */
+function kindOf(segment) {
+  if (segment.program === null || segment.program === 'cd' || segment.program === 'pushd') return { kind: 'read', judged: [] };
+  const git = gitIndexOp(segment);
+  if (git !== null) return { kind: 'read', judged: git };
+  const discard = gitDiscards(segment);
+  if (discard !== null) return { kind: 'discard', judged: [], discard };
   const name = programName(segment.program);
   const args = segment.args;
-  if (READS_ONLY.has(name)) return true;
-  if (name === 'find') return !args.some((a) => FIND_ACTIONS.has(a));
-  if (name === 'robocopy') return args.some((a) => a.toUpperCase() === '/L') && !args.some((a) => ROBOCOPY_WRITES.test(a));
-  return false;
+  if (
+    READS.has(name) ||
+    (name === 'find' && !args.some((a) => FIND_ACTIONS.has(a))) ||
+    (name === 'gh' && !args.some((a) => GH_WRITES.test(a)))
+  ) {
+    return { kind: 'read', judged: [] };
+  }
+  return { kind: WRITES.has(name) ? 'write' : 'run', judged: [] };
+}
+
+/**
+ * The words a writing program changes. `into` marks a destination: when it is an existing
+ * directory, what changes is the file each source lands on inside it. A copy's sources are
+ * read and are not here; a move's are, since they are deleted. Flags are skipped, and so is
+ * the value of a PowerShell parameter on PS_VALUES.
+ */
+function writeTargets(name, args) {
+  if (name === 'dd') return args.filter((a) => a.startsWith('of=')).map((a) => ({ word: a.slice(3) }));
+  if (name === 'robocopy') {
+    const option = (a) => /^\/[A-Za-z]+(?:[:+].*)?$/.test(a);
+    const [src, dst] = args.filter((a) => !option(a));
+    const flags = args.filter(option).map((a) => a.toUpperCase());
+    const out = args.filter((a) => ROBOCOPY_FILES.test(a)).map((a) => ({ word: a.slice(a.indexOf(':') + 1) }));
+    if (flags.includes('/L')) return out;
+    if (dst !== undefined) out.push({ word: dst });
+    if (src !== undefined && (flags.includes('/MOV') || flags.includes('/MOVE'))) out.push({ word: src });
+    return out;
+  }
+  const positional = [];
+  let dest = null;
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    if (a === '--') {
+      positional.push(...args.slice(i + 1));
+      break;
+    }
+    if (a === '-t' || a.startsWith('--target-directory=')) {
+      dest = a === '-t' ? args[++i] : a.slice(a.indexOf('=') + 1);
+      continue;
+    }
+    const ps = /^-([A-Za-z][A-Za-z-]+)(?::(.*))?$/.exec(a);
+    if (ps !== null) {
+      const param = ps[1].toLowerCase();
+      if ('destination'.startsWith(param)) dest = ps[2] ?? args[++i];
+      else if (PS_VALUES.some((v) => v.startsWith(param))) i += ps[2] === undefined ? 1 : 0;
+      else if (ps[2] !== undefined) positional.push(ps[2]);
+      continue;
+    }
+    if (!a.startsWith('-')) positional.push(a);
+  }
+  if (COPIES.has(name) || MOVES.has(name)) {
+    if (dest === null && positional.length >= 2) dest = positional.pop();
+    const moved = MOVES.has(name) ? positional.map((word) => ({ word })) : [];
+    return dest === null || dest === undefined ? moved : [...moved, { word: dest, into: positional }];
+  }
+  if (name === 'chmod' || name === 'chown') positional.shift();
+  return positional.map((word) => ({ word }));
 }
 
 /** The head of `$(cat <<EOF`, with the delimiter bare or quoted and nothing after it on the line. */
@@ -546,56 +493,91 @@ function withoutLiteralMessages(command) {
 
 /**
  * True when the command runs a command the parser did not open: a `$(`, a process
- * substitution, or a backtick, which inside double quotes reads as one word. A
- * `$(cat <<EOF ... EOF)` does not count (withoutLiteralMessages).
+ * substitution, or a backtick, which inside double quotes reads as one word. Every
+ * command on such a line is judged as a run. A `$(cat <<EOF ... EOF)` does not count.
  */
 function runsHiddenCommand(command) {
   return /\$\(|[<>]\(|`/.test(withoutLiteralMessages(command));
 }
 
 /**
- * True when every command on the line reads and nothing more (#216). Axial could not
- * confirm a copy into its live root because `ls`, `du -sh`, `dir` and `git ls-files` of it
- * were refused for naming it, and none of them can write. A `git` command that writes only
- * git's own store counts as reading here (#234): it changes no file under the root.
- *
- * THE WHOLE LINE, NOT ONE SEGMENT. `find <live> -name '*.tmp' | xargs rm` names production
- * data only in a segment that reads, and deletes it in one that names nothing. A command
- * off the list anywhere on the line takes the exemption away from every command on it.
- *
- * A `cd` or `pushd` writes nothing and moves the shell, so it may sit on the line. A
- * segment with no program (a bare assignment, a bare redirection, a brace) runs nothing;
- * its assignment values and redirection targets are still judged by rule 5.
- *
- * NEVER ON A LINE THE GUARD COULD NOT READ, and never on one that runs a command the parser
- * did not open (see runsHiddenCommand): the parser does not look inside a double-quoted
- * `"$(rm -rf x)"`, so an argument to `ls` there is a command nobody judged.
+ * Every value `word` can take, with a leading `~` and each `$NAME`, `${NAME}` or
+ * `$env:NAME` read from the session environment, or from `loops`: the literal words of a
+ * `for NAME in ...` earlier on the line. Null when a variable is in neither, since it then
+ * names a location the guard cannot know.
  */
-function readOnlyLine(command, parsed) {
-  if (parsed.error !== null || parsed.segments.length === 0) return false;
-  if (runsHiddenCommand(command)) return false;
-  return parsed.segments.every(
-    (s) => s.program === null || s.program === 'cd' || s.program === 'pushd' || readsOnly(s) || gitIndexJudged(s) !== null,
-  );
+function expand(word, env, loops) {
+  const home = typeof env?.HOME === 'string' ? env.HOME : env?.USERPROFILE;
+  if (/^~(?=$|[\\/])/.test(word)) {
+    if (typeof home !== 'string') return null;
+    word = home + word.slice(1);
+  }
+  const m = /\$(?:env:(\w+)|\{(\w+)\}|(\w+))/i.exec(word);
+  if (m === null) return [word];
+  const name = m[1] ?? m[2] ?? m[3];
+  const values = typeof env?.[name] === 'string' ? [env[name]] : loops.get(name);
+  const tails = values === undefined ? null : expand(word.slice(m.index + m[0].length), env, new Map(loops));
+  if (tails === null) return null;
+  return values.flatMap((v) => tails.map((t) => word.slice(0, m.index) + v + t));
+}
+
+function isDirectory(p) {
+  try {
+    return statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /**
- * The tokens rule 5 still judges on a read-only line: every word except a program's own
- * arguments. The program itself stays judged, so `<live>/bin/ls` is refused; so do leading
- * assignments, since `PATH=<live>/bin ls` runs what production data holds; and so do
- * redirection targets, since `ls > <live>/x` writes there.
+ * Why git cannot put back what a change to `target` would lose, or null when it can, or
+ * when the target does not reach the root. It reaches the root when it lies inside it,
+ * contains it (`rm -rf .` from the checkout), or is a glob whose fixed directory does
+ * either and whose next part matches the way down to the root.
+ *
+ * Git can put a target back when every file it reaches is tracked and has no change git
+ * has not recorded: `git status --ignored` lists nothing for it, and a single file is in
+ * the index. An untracked or ignored file, an uncommitted edit, a new file, or a root git
+ * cannot read at all, and it cannot.
  */
-function judgedWords(segments) {
-  const out = [];
-  for (const segment of segments) {
-    const args = [...segment.args];
-    for (const word of segment.tokens) {
-      const i = args.indexOf(word);
-      if (i === -1) out.push(word);
-      else args.splice(i, 1);
+function cannotRestore(target, root) {
+  const parts = target.split(/[\\/]/);
+  const firstGlob = parts.findIndex((p) => /[*?[]/.test(p));
+  const fixed = firstGlob === -1 ? target : parts.slice(0, firstGlob).join('/');
+  let subject = target;
+  if (!isPathInside(root, fixed)) {
+    if (!isPathInside(fixed, root)) return null;
+    if (firstGlob !== -1) {
+      const next = path.relative(fixed, root).split(/[\\/]/)[0];
+      const pattern = parts[firstGlob].replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+      if (!new RegExp(`^${pattern}$`, process.platform === 'win32' ? 'i' : '').test(next)) return null;
     }
+    subject = root;
   }
-  return out;
+  let cwd = subject === root || firstGlob === -1 ? subject : fixed;
+  while (!isDirectory(cwd) && path.dirname(cwd) !== cwd) cwd = path.dirname(cwd);
+  const git = (...args) =>
+    spawnSync('git', ['-C', cwd, ...args, '--', subject.replace(/\\/g, '/')], {
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  const status = git('status', '--porcelain', '-z', '--ignored');
+  if (status.error || status.status !== 0) return 'git cannot read a repository there';
+  const fields = status.stdout.split('\0');
+  for (let i = 0; i < fields.length; i += 1) {
+    const f = fields[i];
+    if (f.length < 3) continue;
+    if (f[0] === 'R' || f[0] === 'C') i += 1; // a rename's second field is its old path
+    if (f.startsWith('??') || f.startsWith('!!')) return 'git does not track it, or a file it reaches';
+    if (f[1] !== ' ') return 'it has changes git has not recorded';
+  }
+  if (firstGlob === -1 && subject === target && !isDirectory(subject)) {
+    const tracked = git('ls-files', '-z');
+    if (tracked.error || tracked.status !== 0) return 'git cannot read a repository there';
+    if (tracked.stdout === '') return 'git does not track it';
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -647,23 +629,10 @@ function readLiveDeclarationFromFile(dir) {
 /**
  * The directory whose .claude/settings.json holds this session's declaration.
  *
- * `payload.cwd` first, not CLAUDE_PROJECT_DIR: it is the Bash tool's own persisted
- * directory, so it reflects whichever worktree the session is actually sitting in.
- * CLAUDE_PROJECT_DIR is session-fixed -- set once, at launch, at the main checkout -- and
- * wrong for a worktree session, the same V-02 lesson lib.mjs's own directory walk is
- * built around. `process.cwd()` is the same last resort that walk uses.
- *
- * worktreeAnchor (sentinel.mjs) then walks up to the checkout that directory sits in,
- * resolving a LINKED WORKTREE TO ITSELF: every worktree of a project has its own
- * working-tree copy of a tracked file, so a session in a feature worktree must read that
- * worktree's own settings.json, not the main checkout's (#133, the case the issue was
- * filed from). projectAnchor, used below for the sentinel, answers the opposite question
- * on purpose: sentinels are shared across every worktree of a project, a declaration is
- * not.
- *
- * Spawn-free, for the same reason worktreeAnchor itself is (sentinel.mjs): this runs
- * before every Bash and file-tool call, and a git subprocess there is a cost paid on
- * every tool use.
+ * `payload.cwd` first: CLAUDE_PROJECT_DIR is fixed at launch and wrong for a worktree
+ * session (V-02). worktreeAnchor resolves a linked worktree to itself, because each
+ * worktree has its own copy of a tracked settings file (#133); the sentinel, by contrast,
+ * is shared across worktrees (projectAnchor). Spawn-free: this runs on every call.
  */
 export function settingsDeclarationDir(payload, env, cwd = process.cwd) {
   const fromPayload = typeof payload?.cwd === 'string' ? payload.cwd.trim() : '';
@@ -675,42 +644,16 @@ export function settingsDeclarationDir(payload, env, cwd = process.cwd) {
 /**
  * Where production data is, and where the data of EACH command on this line will resolve.
  *
- * THE LIVE DECLARATION comes from `<dir>/.claude/settings.json` first (#133), re-read on
- * this call rather than trusted from a previous one, and falls back to
- * `env[AEO_LIVE_DATA_ROOT]` only when the file makes no statement: missing, unreadable,
- * malformed, or the key absent. `dir` is the caller's job to resolve
- * (settingsDeclarationDir, for the gate itself) -- resolveRoots stays a pure function of
- * what it is handed, which is what keeps it unit-testable with no filesystem at all when
- * `dir` is omitted. An explicitly exported AEO_LIVE_DATA_ROOT with no settings file (or
- * no `dir` passed at all) still arms the guard exactly as before: an existing setup that
- * has never adopted a settings file does not silently disarm.
+ * The declaration comes from `<dir>/.claude/settings.json`, re-read on every call, and
+ * from `env` only when the file says nothing (#133). With no `dir` this is a pure
+ * function of what it is handed.
  *
- * An inline `AEO_DATA_ROOT=...` wins over the inherited value, because that is what the
- * child will see. This is the sanctioned way to redirect one command inside a session: it
- * is visible in the command string and the guard validates it like any other value.
- *
- * ONE SEAM PER COMMAND, NOT ONE PER LINE. A prefix assignment binds to the single command
- * it prefixes and the shell carries it no further, so every command on the line gets its
- * own answer and the guard judges them all. Reading one seam for the whole line let
- * `AEO_DATA_ROOT=<sandbox> npm run build && npm test` run the suite against production —
- * `npm test` never saw that assignment — and it leaked backwards just as freely, so
- * `npm test && AEO_DATA_ROOT=<sandbox> echo ok` did the same. Both exited 0.
- *
- * ONLY IN LEADING POSITION, and within one command the last one wins. Taking the value
- * from any token that started with the name was not the shell's rule either, and it
- * defeated the gate with the gate's own advice: told to set the variable, a model runs
- * `echo 'AEO_DATA_ROOT=<safe>' >> .claude/settings.json && npm test`, the guard read the
- * safe value out of the echoed string and allowed, and the child still ran with the
- * production-pointing seam, because writing a settings file changes no running process. A
- * grep pattern, a commit message and a heredoc body named the variable just as cheaply.
- * Assignments before this one are allowed, so
- * `NODE_ENV=test AEO_DATA_ROOT=<sandbox> npm test` is read the way the shell reads it.
- *
- * A segment that runs no program sets nothing a child can inherit — a bare assignment
- * makes a shell variable, not an exported one — so it contributes no seam and is not
- * judged. A command with no segments at all still gets the session's own seam, so a
- * session seam that is relative or overlaps production data is refused whether or not
- * there is a command to read. A seam that is not set is not refused (#214).
+ * ONE SEAM PER COMMAND. A prefix assignment binds to the one command it prefixes, so
+ * `AEO_DATA_ROOT=<sandbox> npm run build && npm test` gives `npm test` the inherited seam.
+ * Only an assignment in leading position counts, the last one winning: reading it from
+ * any token let `echo 'AEO_DATA_ROOT=<safe>' >> .claude/settings.json && npm test` pass
+ * while the child ran with the old seam. A segment that runs no program contributes none;
+ * a line with no segments gets the session's seam. An unset seam is not refused (#214).
  *
  * @returns {{live: object, seams: Array<{data: object, dataSource: string}>}}
  */
@@ -743,12 +686,7 @@ export function resolveRoots({ command = '', env = process.env, platform = proce
 // The gate
 // ---------------------------------------------------------------------------
 
-/**
- * The two ways a seam that is set can be wrong. Blocks; returns when it is fine.
- *
- * A seam that is not set is not judged (#214). That refusal read no production data: it
- * refused `gh issue view` in Axial, and again behind the prefix its own message named.
- */
+/** The two ways a seam that is set can be wrong. Blocks; returns when it is fine. */
 function checkSeam(live, data, dataSource) {
   if (!data.set) return;
 
@@ -786,27 +724,16 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
   const walk = operationDirs(payload, { env, cwd });
   const dirs = walk.dirs.filter((d) => path.isAbsolute(d));
 
-  // 1. A live long job (L-02). Read first and read cheaply: no git process, one readdir,
-  //    and nothing else happens until a sentinel is actually present.
-  //
-  //    Every directory any command on this line runs in, not just the first: `cd
-  //    elsewhere && npm test` still burns this machine while a job is live here, so a
-  //    sentinel in either project is a sentinel worth honouring.
-  //
-  //    BASH ONLY. This rule blocks a command that INVOKES the project's declared test
-  //    command, and a file tool invokes nothing, so it can never match. Skipping it
-  //    outright rather than letting it not-match also keeps the sentinel walk off the
-  //    path of every Read and Edit in the session.
+  // 1. A live long job (L-02). Read first and cheaply: one readdir, and nothing else until
+  //    a sentinel is present. Every directory any command on the line runs in counts, since
+  //    `cd elsewhere && npm test` still burns this machine. A file tool invokes nothing.
   if (!fileTool) {
     const anchors = [...new Set(dirs.map(projectAnchor).filter((a) => a !== null))];
     for (const anchor of anchors) {
       const { reason, notes } = runInProgress(anchor);
       for (const line of notes) note(`sandbox-guard: ${line}`);
       if (reason === null) continue;
-      // The record states two command lines per project, fast tier and full (D31); both
-      // are the project's suite and either one overlapping a live run is what L-02
-      // refuses. This rule matches on tokens, so the lines are tokenised here rather than
-      // stored pre-split.
+      // Both declared tiers are the project's suite (D31).
       const declared = resolveTestPlan({ toplevel: anchor, files: [] })
         .units.flatMap((u) => [u.command, u.full])
         .filter((c) => typeof c === 'string')
@@ -816,14 +743,10 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
     }
   }
 
-  // 2. The seam (L-03). Everything below needs a declared production data root; without
-  //    one the project has told the guard nothing to protect, and there is nothing here
-  //    to be ambiguous about. The declaration itself is read from .claude/settings.json,
-  //    re-resolved on this call (#133); env is only the fallback resolveRoots takes when
-  //    the file has nothing to say.
+  // 2. Everything below needs a declared production data root; without one the project has
+  //    told the guard nothing to protect.
   const { live, seams } = resolveRoots({ command, env, dir: settingsDeclarationDir(payload, env, cwd) });
   if (!live.set) return;
-
   if (live.root === null) {
     block(
       `${LIVE_DATA_ROOT_ENV} is set to ${JSON.stringify(live.raw)}, which is not an absolute path, so the ` +
@@ -831,154 +754,172 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
         `absolute path of the production data directory, or unset it. ${NO_OVERRIDE}`,
     );
   }
+  const liveReal = realise(live.root);
+  const inside = (p) => isPathInside(liveReal, realise(p));
+  const locate = (word, dir) => {
+    const p = normalizeHookPath(word);
+    return path.isAbsolute(p) ? p : dir ? path.resolve(dir, p) : null;
+  };
+  const operatesIn = (dir) =>
+    block(
+      `this command operates in ${realise(dir)}, inside the production data root ${live.root}. Every ` +
+        `relative path it names resolves there, so a run from inside production data is refused. Run it ` +
+        `from outside ${live.root}. ${NO_OVERRIDE}`,
+    );
 
-  // 3. A command the guard could not read all the way through, and a `cd` whose target it
-  //    could not name (#169). Neither refuses on its own any more. The rules below run on
-  //    what the guard did read, and the warning says which piece it did not, so a session
-  //    that gets an allow knows what the allow was worth. Both are confined to sessions
-  //    that declared production data, above: a guard that narrated every backtick in a
-  //    project with nothing to protect is a guard people delete (L-05).
-  //
-  //    On a parse error the walk yields no segments, so the directory list is the
-  //    payload's own directory and rule 6 judges that. Rule 5 reads tokens, which the
-  //    parser was never asked for, so it judges every path-shaped token: absolute ones as
-  //    they are, relative ones against that same directory.
+  // A run is refused on every path-shaped word that resolves inside the root, tracked or
+  // not: code can reach whatever it is pointed at. A relative word with no directory to
+  // resolve against (after a `cd` the guard could not name) names no location it can test.
+  const judgeRun = (words, dir) => {
+    for (const word of pathCandidates(words)) {
+      const p = locate(word, dir);
+      if (p === null || !inside(p)) continue;
+      block(
+        `this command names ${JSON.stringify(word)}, which resolves to ${realise(p)}, inside the production ` +
+          `data root ${live.root}. A run pointed at production data is refused. ${NO_OVERRIDE}`,
+      );
+    }
+  };
+
+  const { segments } = commandSegments(command);
+  const segmentDir = (i) => (typeof walk.segmentDirs[i] === 'string' && path.isAbsolute(walk.segmentDirs[i]) ? walk.segmentDirs[i] : null);
+  // Whether anything on the line could reach the root: a directory it runs in, or a path
+  // it names, including the value of an assignment.
+  const lineReaches = () =>
+    dirs.some(inside) ||
+    segments.some((s, i) => pathCandidates(s.tokens).some((w) => {
+      const p = locate(w, segmentDir(i));
+      return p !== null && inside(p);
+    }));
+  const loops = new Map();
+
+  const refuseChange = (what, word, target, why) =>
+    block(
+      `${what} ${JSON.stringify(word)}, which resolves to ${target}, inside the production data root ` +
+        `${live.root}, and git cannot restore it: ${why}. Only a file git tracks, with no uncommitted change, ` +
+        `may be written, moved or deleted there. ${NO_OVERRIDE}`,
+    );
+
+  // A write, move or delete is refused only where git cannot put back what it changes. One
+  // whose location cannot be named (a variable the session does not define, or a relative
+  // path after a `cd` the guard could not name) is refused when the line could reach the
+  // root, and otherwise allowed with a warning.
+  const judgeWrite = (word, dir, into = [], what = 'this command changes') => {
+    const located = (expand(word, env, loops) ?? [null]).map((e) => (e === null ? null : locate(e, dir)));
+    if (located.includes(null)) {
+      if (lineReaches()) {
+        block(
+          `${what} ${JSON.stringify(word)}, and the guard cannot tell whether that lands inside the production ` +
+            `data root ${live.root}, which this line reaches. Give the path literally. ${NO_OVERRIDE}`,
+        );
+      }
+      warn(
+        `sandbox-guard: \`${command}\` changes ${JSON.stringify(word)}; the guard cannot tell where ${JSON.stringify(word)} ` +
+          `lands, and nothing on the line reaches the production data root ${live.root}, so it was allowed. Give ` +
+          `the path literally to get the full judgement.`,
+      );
+      return;
+    }
+    for (const p of located) {
+      const targets = into.length > 0 && isDirectory(p) ? into.map((src) => path.join(p, path.basename(normalizeHookPath(src)))) : [p];
+      for (const target of targets) {
+        const why = cannotRestore(realise(target), liveReal);
+        if (why !== null) refuseChange(what, word, realise(target), why);
+      }
+    }
+  };
+
+  // A git command that discards working-tree content with no pathspec reaches its whole
+  // repository, and so the root when the repository holds it.
+  const judgeRepository = (dir) => {
+    if (dir === null) return judgeWrite('.', null);
+    const top = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', windowsHide: true });
+    if (top.error || top.status !== 0) {
+      if (inside(dir)) refuseChange('this command changes', dir, realise(dir), 'git cannot read a repository there');
+      return;
+    }
+    const root = realise(top.stdout.trim());
+    const why = cannotRestore(root, liveReal);
+    if (why !== null) refuseChange('this command changes the whole working tree of', root, root, why);
+  };
+
+  // 3. A write tool names one target. It spawns no child, so the seam is not its concern.
+  if (fileTool) {
+    const target = toolFilePath(payload);
+    if (target !== null) judgeWrite(target, dirs[0] ?? null, [], `this ${tool} targets`);
+    return;
+  }
+
+  // 4. A command the guard could not read, or a `cd` whose target it could not name, is
+  //    judged on what it could read (#169), and the session is told which piece it was not.
   if (walk.parseError !== null) {
     warn(
       `sandbox-guard: \`${command}\` ${walk.parseError}, and this session declares production data at ` +
         `${live.root}. It was allowed on what could be read: the paths its tokens name, resolved against ` +
-        `${dirs[0] ?? 'nothing'}, the directory it runs in, the seam, and the live-run rule, all of which ` +
-        `read tokens rather than the parse. Reach hidden inside the part that could not be read was not ` +
-        `judged. Split it into commands that can be read one at a time to get the full judgement.`,
+        `${dirs[0] ?? 'nothing'}, the directory it runs in, the seam, and the live-run rule. Reach hidden ` +
+        `inside the part that could not be read was not judged. Split it into commands that can be read one ` +
+        `at a time to get the full judgement.`,
     );
   } else if (walk.unresolved) {
-    // A `cd` the guard cannot name. The directories the walk DID resolve are still
-    // judged, and so is every absolute path named. A relative token is not: it would
-    // resolve against a directory the command has already left, which is a claim about a
-    // location the guard does not have. That is what the warning is for.
     warn(
       `sandbox-guard: \`${command}\` changes directory to somewhere the guard cannot name (an expansion, a ` +
-        `glob, a bare \`cd\`, or \`cd -\`), and this session declares production data at ${live.root}. It was ` +
-        `allowed on what could be named: the directories the walk did resolve, the absolute paths it names, ` +
-        `the seam, and the live-run rule. Whether what follows the \`cd\` runs inside ${live.root} was not ` +
-        `judged, and a relative path after it was not resolved. Give the directory literally to get the ` +
-        `full judgement.`,
+        `glob, a bare \`cd\`, or \`cd -\`), and this session declares production data at ${live.root}. A run ` +
+        `after it was judged on the absolute paths it names, and a write after it with a relative target on ` +
+        `whether the line reaches the root. Give the directory literally to get the full judgement.`,
     );
   }
 
-  // 4. Every command on the line gets its own seam, because a prefix assignment binds to
-  //    the one command it prefixes. A seam that is set is refused when it is relative or
-  //    overlaps production data. A seam that is not set is allowed (#214): that refusal
-  //    read no production data and refused `gh issue view` in a live consumer.
-  //
-  //    BASH ONLY, AND DELIBERATELY. The seam is what a child process inherits, and a
-  //    file tool spawns no child and passes nothing on. Its target is the single path in
-  //    the payload, which rule 5 reads and judges directly.
-  if (!fileTool) {
-    for (const { data, dataSource } of seams) {
-      checkSeam(live, data, dataSource);
-    }
+  // 5. The seam each command inherits (L-03). An unset seam is not refused (#214).
+  for (const { data, dataSource } of seams) checkSeam(live, data, dataSource);
+
+  // 6. With no parse, every token is judged as a run's, against where the call starts.
+  if (walk.parseError !== null) {
+    if (dirs[0] && inside(dirs[0])) operatesIn(dirs[0]);
+    judgeRun(shellTokens(command), dirs[0] ?? null);
+    return;
   }
 
-  // 5. A call that names production data outright, whatever the environment says.
-  //
-  // ONE DIRECTION ONLY: a named path INSIDE the production root blocks; one that
-  // CONTAINS it does not. `rm -rf D:/` names an ancestor of production data and is
-  // allowed here. The seam rule twenty lines above tests both directions and this rule
-  // deliberately does not, because the other direction is `ls /` and `cd ..`, and a
-  // guard that refuses those is a guard that gets deleted. The limit is real: the
-  // 19,000-document incident was a sweeper run from the wrong root. What covers it is
-  // the seam, which the sweeper reads to decide where to sweep.
-  // A relative token resolves against the directory its own command runs in (#218):
-  // after `cd <other checkout> &&`, `data/x` is that checkout's `data/x`, not the
-  // session's. After a `cd` the guard could not name there is no such directory (#169),
-  // and resolving against the pre-`cd` one would refuse, or clear, a path that never
-  // resolves to what the guard tested. An absolute token is unaffected and still judged.
-  //
-  // A line whose every command only reads (#216) is judged on every word except those
-  // commands' own arguments: `ls <live>` and `du -sh <live>` run, `ls <live> > <live>/x`
-  // does not. The parse error above gets no exemption: with no segments there is nothing
-  // to tell an argument from a redirection target, so every token is judged as before,
-  // against the directory the call starts in.
-  //
-  // A git command that changes no working-tree file (#234) is judged the same way on a
-  // line with other commands on it, so `git add <live>/x && python run.py <live>/y` refuses
-  // on the second command only. Not when a pipe follows it anywhere on the line: `git
-  // ls-files <live> | xargs rm` deletes what the git command named. Not on a line that runs
-  // a command the parser did not open either, for the reason readOnlyLine gives; a commit
-  // message from `$(cat <<EOF ... EOF)` is text and does not count.
-  const liveReal = realise(live.root);
-  const parsed = commandSegments(command);
-  const readOnly = !fileTool && readOnlyLine(command, parsed);
-  const plain = parsed.error === null && !runsHiddenCommand(command);
-  const pipedFrom = (i) => parsed.segments.slice(i).some((s) => s.followedBy === '|');
-  const judged = (s, i) =>
-    ((readOnly || (plain && !pipedFrom(i))) && gitIndexJudged(s)) || (readOnly ? judgedWords([s]) : s.tokens);
-  const absolute = (d) => (typeof d === 'string' && path.isAbsolute(d) ? d : null);
-  // A file tool names exactly one location and names it plainly. A Bash command names as
-  // many as its tokens do, and which of them is a path has to be guessed at.
-  const named = fileTool
-    ? [{ candidates: [toolFilePath(payload)].filter((p) => p !== null), dir: dirs[0] ?? null }]
-    : walk.parseError !== null
-      ? [{ candidates: pathCandidates(shellTokens(command)), dir: dirs[0] ?? null }]
-      : parsed.segments.map((s, i) => ({
-          candidates: pathCandidates(judged(s, i)),
-          dir: absolute(walk.segmentDirs[i]),
-        }));
-  const checks = named.flatMap(({ candidates, dir }) => candidates.map((candidate) => ({ candidate, dir })));
-  for (const { candidate, dir } of checks) {
-    const p = normalizeHookPath(candidate);
-    // A relative token with no directory to resolve against names no location, so there
-    // is nothing to test.
-    const resolved = path.isAbsolute(p) ? p : dir && path.resolve(dir, p);
-    if (!resolved) continue;
-    if (!isPathInside(liveReal, realise(resolved))) continue;
-    block(
-      fileTool
-        ? `this ${tool} targets ${JSON.stringify(candidate)}, which resolves to ${realise(resolved)}, inside the ` +
-            `production data root ${live.root}. Production data is not reachable from a session. The write tools ` +
-            `are judged here; code that reads production data arrives as a Bash call and is judged as one, which ` +
-            `is the shape of L-03's second incident, six test call-sites reading a live 49,674-entry index. ` +
-            `${NO_OVERRIDE}`
-        : `this command names ${JSON.stringify(candidate)}, which resolves to ${realise(resolved)}, inside the ` +
-            `production data root ${live.root}. A run pointed at production data is refused. ${NO_OVERRIDE}`,
-    );
-  }
-
-  // 6. The directory the command runs IN. pathCandidates skips a token with no separator
-  //    in it, which is right on its own and a hole in combination with a `cd`: nothing in
-  //    `cd corpus && rm -rf index` carries a separator, so the rule above sees no
-  //    candidates at all while the command deletes production data. The same is true of a
-  //    session whose cwd already sits inside it and types no `cd`, and the Bash tool
-  //    persists its working directory between calls, so one `cd corpus` reaches both. The
-  //    directory is the claim, and the guard already resolved it. The directories judged
-  //    include the one a `git -C` or a `Start-Process -WorkingDirectory` names for its own
-  //    command (#229): `git -C corpus add index` is the same hole without a `cd`.
-  //
-  //    BASH ONLY, for the reason the rule is stated in: it covers the paths a command
-  //    names relatively and the guard therefore cannot see. A file tool names one target
-  //    and rule 5 has already judged it, resolved against this same directory when it was
-  //    relative. Running this rule as well would refuse a Write to an absolute path
-  //    OUTSIDE production data purely because the session happened to be sitting inside
-  //    it, and no production data is behind that refusal.
-  //
-  //    A line whose every command only reads may run in there too (#216), so a session
-  //    sitting in the live root can `ls` it, and `git -C <live> add x` runs while `git -C
-  //    <live> clean -fd` does not (#234). Not when it redirects to a relative target:
-  //    `ls > out.txt` writes into the directory it runs in, and rule 5 only judges a
-  //    target that carries a separator. An absolute target, `/dev/null` included, rule 5
-  //    has already judged.
-  if (fileTool) return;
-  if (readOnly && parsed.segments.every((s) => s.redirects.every((r) => path.isAbsolute(normalizeHookPath(r))))) return;
-  for (const dir of dirs) {
-    if (isPathInside(liveReal, realise(dir))) {
-      block(
-        `this command operates in ${realise(dir)}, inside the production data root ${live.root}. Every ` +
-          `relative path it names resolves there, so a run from inside production data is refused. Run it ` +
-          `from outside ${live.root}. ${NO_OVERRIDE}`,
-      );
+  // 7. Each command on the line, by what it does. A line that runs a command the parser
+  //    did not open is judged as runs throughout, including the words inside that command.
+  //    A read or a write whose output is piped into anything but a read is judged as a
+  //    run, because the next program acts on what it printed: `find <root> | xargs rm`.
+  const hidden = runsHiddenCommand(command);
+  if (hidden) judgeRun(command.split(/[\s"'`;|&()]+/), dirs[0] ?? null);
+  const kinds = segments.map((s) => (hidden ? { kind: 'run', judged: [] } : kindOf(s)));
+  const receiver = (j) => segments.findIndex((s, k) => k > j && s.tokens.length > 0);
+  const feedsRun = (i) =>
+    segments.some((s, j) => j >= i && s.followedBy === '|' && receiver(j) !== -1 && kinds[receiver(j)].kind !== 'read');
+  segments.forEach((s, i) => {
+    const dir = segmentDir(i);
+    const { kind, judged, discard } = kinds[i];
+    if (s.program === 'for' && s.args[1] === 'in' && s.args.slice(2).every((w) => !/[$`]/.test(w))) {
+      loops.set(s.args[0], s.args.slice(2));
     }
-  }
+    if (kind === 'run' || feedsRun(i)) {
+      // After a `cd` the guard could not name, a run is held to every directory the walk
+      // did resolve: `cd $X && python run.py` from inside the root may still run there.
+      const held = dir !== null ? [dir] : dirs;
+      const there = held.find((d) => inside(d));
+      if (s.tokens.length > 0 && there !== undefined) operatesIn(there);
+      judgeRun(s.tokens, dir);
+      return;
+    }
+    // The program itself and a leading assignment are judged on every command:
+    // `<root>/bin/ls` runs what production data holds, and so does `PATH=<root>/bin ls`.
+    judgeRun([...(s.program !== null && /[\\/]/.test(s.program) ? [s.program] : []), ...s.assignments, ...judged], dir);
+    const targets = kind === 'write' ? writeTargets(programName(s.program), s.args) : [];
+    for (const { word, into } of [...s.writes.map((word) => ({ word })), ...targets]) judgeWrite(word, dir, into);
+    if (kind !== 'discard') return;
+    let { paths } = discard;
+    if (discard.ambiguous !== undefined) {
+      const p = locate(discard.ambiguous, dir);
+      const isPath = discard.ambiguous === '.' || (p !== null && existsSync(p));
+      paths = isPath ? [discard.ambiguous] : discard.force ? [] : null;
+    }
+    if (paths === null) return;
+    if (paths.length === 0) judgeRepository(dir);
+    for (const word of paths) judgeWrite(word, dir);
+  });
 }
 
 // Importing this file must not run the gate, so the sentinel writer and the tests can
