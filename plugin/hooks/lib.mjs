@@ -791,6 +791,27 @@ function segmentGitTargets(segment) {
   return targets.length > 0 ? targets : undefined;
 }
 
+/** `Start-Process` and the two aliases PowerShell ships for it. */
+const START_PROCESS = /^(?:start-process|saps|start)$/i;
+
+/**
+ * The `-WorkingDirectory` of a `Start-Process` segment, in the same shape as
+ * segmentGitTargets: a one-element array, `[null]` when it cannot be named, or `undefined`
+ * when there is none. PowerShell accepts any unambiguous prefix down to `-wo` and a
+ * `-Name:value` form, case-insensitively; the parameter has no alias.
+ */
+function segmentStartProcessTargets(segment) {
+  if (segment.program === null || !START_PROCESS.test(segment.program)) return undefined;
+  const args = segment.args;
+  for (let i = 0; i < args.length; i++) {
+    const m = /^-(wo[a-z]*)(?::(.*))?$/i.exec(args[i]);
+    if (!m || !'workingdirectory'.startsWith(m[1].toLowerCase())) continue;
+    const target = m[2] ?? args[i + 1];
+    return [target === undefined || target === '' || /[$*?]/.test(target) ? null : target];
+  }
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Worktree resolution
 // ---------------------------------------------------------------------------
@@ -923,12 +944,13 @@ function walkOperation(payload, { env = process.env, cwd = process.cwd, platform
   for (const segment of segments) {
     if (segment.tokens.length > 0) dirs.push(current);
     // `git -C <dir>` runs its one command in <dir>, each `-C` relative to the one before
-    // it (#220). It moves nothing after it, so `current` stays as it was.
-    const gitTargets = segmentGitTargets(segment);
-    if (gitTargets === undefined) segmentDirs.push(moved ? current : undefined);
+    // it (#220), and so does `Start-Process -WorkingDirectory <dir>` (#227). Neither moves
+    // anything after it, so `current` stays as it was.
+    const runTargets = segmentGitTargets(segment) ?? segmentStartProcessTargets(segment);
+    if (runTargets === undefined) segmentDirs.push(moved ? current : undefined);
     else {
       let where = moved ? current : startDir(payload, { env, cwd, platform });
-      for (const t of gitTargets) where = t === null || where === null ? null : resolveCdTarget(t, where, p, platform);
+      for (const t of runTargets) where = t === null || where === null ? null : resolveCdTarget(t, where, p, platform);
       if (where === null) unresolved = true;
       segmentDirs.push(where);
     }
