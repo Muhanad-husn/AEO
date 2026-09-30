@@ -1818,6 +1818,90 @@ describe('a relative path in Start-Process resolves against -WorkingDirectory (#
 });
 
 // ---------------------------------------------------------------------------
+// A run directory inside the production data root is refused (#229)
+// ---------------------------------------------------------------------------
+//
+// `git -C <dir>` (#220) and `Start-Process -WorkingDirectory <dir>` (#227) give one
+// command its own directory. The rule that refuses a command running inside the live root
+// judged only the directories a `cd` reached, so a run directory inside the root with a
+// path argument carrying no separator was allowed. It is now refused the way a `cd` into
+// the root is, whatever the arguments.
+
+describe('a run directory inside the production data root is refused (#229)', () => {
+  const pwsh = (command, cwd) => ({ ...bash(command, cwd), tool_name: 'PowerShell' });
+  const setup = () => {
+    const base = tempDir();
+    const app = path.join(base, 'app');
+    const live = path.join(app, 'data');
+    const tools = path.join(base, 'tools');
+    for (const d of [path.join(live, 'logs'), path.join(app, 'src'), path.join(app, 'data-archive'), tools]) {
+      mkdirSync(d, { recursive: true });
+    }
+    return { base, app, live, tools, env: { [LIVE]: live } };
+  };
+  const saps = (wd) => `Start-Process python -ArgumentList "x.py","summary.md" -WorkingDirectory ${wd}`;
+
+  test('a cd into the root with a bare filename is refused, the baseline the others match', () => {
+    const { app, env } = setup();
+    for (const command of ['cd data; python x.py summary.md', 'cd data && git add summary.md']) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), OPERATES_IN, JSON.stringify(command));
+    }
+  });
+
+  test('git -C into the root with a bare filename is refused', () => {
+    const { app, tools, env } = setup();
+    for (const [command, cwd] of [
+      ['git -C data add summary.md', app],
+      ['git -C .. -C app -C data add summary.md', tools],
+      [`git -C ${path.join('..', 'app', 'data')} add summary.md`, tools],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, JSON.stringify(command));
+    }
+  });
+
+  test('Start-Process -WorkingDirectory into the root with a bare filename is refused', () => {
+    const { app, tools, env } = setup();
+    for (const [command, cwd] of [
+      [saps('data'), app],
+      [saps('"data"'), app],
+      [`Start-Process python -ArgumentList "x.py","summary.md" -WorkingDirectory:data`, app],
+      [saps(path.join('..', 'app', 'data')), tools],
+    ]) {
+      assertBlockedBecause(guard({ payload: pwsh(command, cwd), env }), OPERATES_IN, JSON.stringify(command));
+    }
+  });
+
+  test('a run directory nested inside the root is refused', () => {
+    const { app, tools, env } = setup();
+    for (const [command, cwd] of [
+      ['git -C data -C logs add summary.md', app],
+      ['git -C .. -C app -C data -C logs add summary.md', tools],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, JSON.stringify(command));
+    }
+  });
+
+  test('a run directory outside the root with a bare filename is still allowed', () => {
+    const { app, tools, env } = setup();
+    for (const [command, cwd] of [
+      ['git -C src add summary.md', app],
+      ['git -C data-archive add summary.md', app],
+      [`git -C ${path.join('..', 'app')} add summary.md`, tools],
+      ['git -C data -C .. add summary.md', app],
+    ]) {
+      assertAllowed(guard({ payload: bash(command, cwd), env }), JSON.stringify(command));
+    }
+    for (const [command, cwd] of [
+      [saps('src'), app],
+      [saps('data-archive'), app],
+      [saps(path.join('..', 'app')), tools],
+    ]) {
+      assertAllowed(guard({ payload: pwsh(command, cwd), env }), JSON.stringify(command));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A prefix assignment binds to one command, not to the line
 // ---------------------------------------------------------------------------
 //
