@@ -562,7 +562,8 @@ function isDirectory(p) {
  * has not recorded: `git status --ignored` lists nothing for it, and a single file is in
  * the index. An untracked or ignored file, an uncommitted edit, or a root git cannot read
  * at all, and it cannot. A file that does not exist yet loses nothing, so it is allowed when
- * it would join tracked content (newFileBesideTracked).
+ * it would join tracked content (newFileBesideTracked). `newFileOk` is false for a new
+ * directory (`mkdir`), which stays refused.
  */
 function cannotRestore(target, root, newFileOk = true) {
   const parts = target.split(/[\\/]/);
