@@ -2131,6 +2131,7 @@ describe('the guard judges only what git cannot restore (#237)', () => {
         'data/reports/edited.md': 'committed\n',
         'data/clean/c.md': 'tracked\n',
         'data/logs/old/summary.md': 'tracked\n',
+        '.gitignore': '*.tmp\n',
       },
     });
     const live = path.join(app, 'data');
@@ -2248,6 +2249,64 @@ describe('the guard judges only what git cannot restore (#237)', () => {
         guard({ payload: fileCall(tool, path.join(live, 'raw', 'new.json'), app), env }),
         /targets .*inside the\s+production data root .*git cannot restore it/,
         tool,
+      );
+    }
+  });
+
+  test('a pure read filter after a read runs, and one that can write a file refuses', () => {
+    const { app, env } = setup();
+    for (const command of [
+      'head -8 data/reports/dec-75-outcome.md | cut -c1-120',
+      'cat data/reports/dec-75-outcome.md | sort | uniq -c',
+      'jq . data/raw/a.json',
+      'cat data/raw/a.json | tr a b | nl | tac | rev | fold | paste - - | column -t | od -c | less',
+      'cat data/raw/a.json | sort -r | uniq',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+    for (const command of [
+      'sort -o data/raw/a.json data/raw/a.json',
+      'sort --output=data/raw/a.json data/raw/a.json',
+      'cat data/raw/a.json | uniq - data/raw/b.json',
+      'cat data/raw/a.json | awk 1',
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+  });
+
+  test('a new file beside tracked siblings runs, and any other new file refuses', () => {
+    const { app, live, env } = setup();
+    for (const command of [
+      'cp docs/reports/dec-75-outcome.md data/reports/new-report.md',
+      'echo x > data/reports/new-report.md',
+      'mv docs/reports/dec-75-outcome.md data/reports/moved.md',
+      'touch data/reports/new-report.md',
+      'cat docs/reports/dec-75-outcome.md | tee data/reports/new-report.md',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+    assertAllowed(
+      guard({ payload: pwsh('Copy-Item docs/reports/dec-75-outcome.md -Destination data/reports/new-report.md', app), env }),
+      'Copy-Item to a new file beside tracked ones',
+    );
+    for (const tool of FILE_TOOLS) {
+      assertAllowed(guard({ payload: fileCall(tool, path.join(live, 'reports', 'new-report.md'), app), env }), tool);
+    }
+    for (const command of [
+      'cp docs/reports/dec-75-outcome.md data/reports/draft.md', // exists, untracked
+      'cp docs/reports/dec-75-outcome.md data/reports/scratch.tmp', // git ignores it
+      'echo x > data/reports/scratch.tmp',
+      'cp docs/reports/dec-75-outcome.md data/newdir/new.md', // its directory does not exist
+      'mkdir data/reports/newdir',
+      'touch data/raw/new.json', // its directory holds nothing tracked
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), CHANGES_LIVE_DATA, JSON.stringify(command));
+    }
+    for (const rel of ['reports/scratch.tmp', 'reports/draft.md']) {
+      assertBlockedBecause(
+        guard({ payload: fileCall('Write', path.join(live, rel), app), env }),
+        /targets .*inside the\s+production data root .*git cannot restore it/,
+        rel,
       );
     }
   });
