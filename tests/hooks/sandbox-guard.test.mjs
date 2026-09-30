@@ -1754,7 +1754,8 @@ describe('a relative path in Start-Process resolves against -WorkingDirectory (#
       `-wo "${runs}"`,
       `-WorkingDir "${runs}"`,
       `-WorkingDirectory:"${runs}"`,
-      '-WorkingDirectory ..\\axial-runs',
+      // A backslash separates only on win32; on POSIX it is part of a directory name.
+      `-WorkingDirectory ${path.join('..', 'axial-runs')}`,
       `-WorkingDirectory "${runs}" -NoNewWindow -PassThru`,
     ]) {
       assertAllowed(guard({ payload: pwsh(sweep(python, wd), axial), env }), wd);
@@ -1770,7 +1771,7 @@ describe('a relative path in Start-Process resolves against -WorkingDirectory (#
     const python = path.join(runs, '.venv', 'Scripts', 'python.exe');
     for (const [wd, cwd] of [
       [`-WorkingDirectory "${axial}"`, runs],
-      ['-WorkingDirectory ..\\axial', runs],
+      [`-WorkingDirectory ${path.join('..', 'axial')}`, runs],
       ['-WorkingDirectory axial', base],
       [`-wo ${axial}`, runs],
       [`-WorkingDirectory:${axial}`, runs],
