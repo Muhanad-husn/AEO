@@ -139,8 +139,12 @@ at most four.
 
 ## 6. Models and what is set free
 
-The orchestrator is Fable 5.1 and chooses. No charter pins a tier. The plugin's only
-statement on tiering is one line in the dispatch reference: if a second reader is
+The orchestrator is Opus 5.5 and chooses. No charter pins a tier. The plugin's statement
+on tiering is two lines in the dispatch reference, and neither names a model. First, the
+builder's tier follows the slice's novelty and scope, not how risky the code sounds: work
+that follows a precedent starts at the cheaper tier and moves up after a second logic red;
+when the available models change, the orchestrator reads the vendor's current model-choice
+guidance before relying on any remembered ranking. Second, if a second reader is
 dispatched, it sits at or above the builder's tier, because two instances of one model is
 a rerun.
 
@@ -313,5 +317,11 @@ Made 2026-09-28: phase 4 runs on Axial's DEC-75 milestone (`Muhanad-husn/axial`,
 issues #853 to #860), `AEO_LIVE_DATA_ROOT` declared as Axial's `data/`; phase 5 waits for a
 fresh project from `new-project`. This supersedes the 2026-09-16 line that put phase 4 and 5
 on the fresh project.
+
+Made 2026-09-30: the orchestrator is Opus 5.5, not Fable 5.1, because Anthropic's
+published guidance shows no coding edge for Fable at 2.5 times the price; the dispatch
+reference chooses a builder's tier by novelty and scope and re-reads published guidance
+when the models change, because #229 was dispatched to Opus as hard and a parallel Sonnet
+run matched it at half the price.
 
 No decision is open.
