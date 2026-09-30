@@ -214,8 +214,9 @@ server-side, and it is deleted (see "Who merges" below).
 
 The rules `gate` runs, each still its own module under `plugin/hooks/`:
 
-- **sandbox-guard** — any command or file write that would reach declared
-  production data, and running the suite over a job that's still live.
+- **sandbox-guard**: a write, move or delete under the declared production
+  data root that git cannot restore, a run pointed at that root, and running
+  the suite over a job that's still live.
 - **redirect-guard** — a role subagent writing into `.claude/` through a shell
   redirect or command (`>`, `tee`, `cp`, `sed -i`, and PowerShell
   equivalents): the route around path-guard, which only sees the file-edit

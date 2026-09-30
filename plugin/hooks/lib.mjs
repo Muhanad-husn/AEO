@@ -500,10 +500,6 @@ function canonicalise(p) {
  * The loop resolves the deepest ancestor that exists and re-appends the rest, so a path
  * that has not been created yet still resolves to the place it would be created in.
  *
- * sandbox-guard.mjs carries the same logic privately as `realise`. That copy predates this
- * export and P1.5's gate is not open for edit; the two are one function and should become
- * one call.
- *
  * @param {string} p
  * @returns {string}
  */
@@ -682,7 +678,8 @@ function scanShell(command) {
       if (m) {
         if (word !== null && /^\d+$/.test(word)) word = null; // the fd in `2>&1`, not a word
         flush();
-        nextIsTarget = !/^[<>]&\s*[0-9-]+$/.test(m[0]);
+        // An input redirection reads its target; every other form writes it.
+        nextIsTarget = /^[<>]&\s*[0-9-]+$/.test(m[0]) ? false : /^<(?!>)/.test(m[0]) ? 'in' : 'out';
         i += m[0].length;
         continue;
       }
@@ -708,13 +705,14 @@ function scanShell(command) {
  * Each segment carries every word it contains, the redirection destinations among them
  * (`redirects`, added for #116: `printf x > .claude/y` and `printf x 2>> .claude/y` both
  * report `redirects: ['.claude/y']`, in the order they appear, fd-duplication forms like
- * `2>&1` excluded because they name a file descriptor, not a path), the `NAME=value`
+ * `2>&1` excluded because they name a file descriptor, not a path), the ones among those
+ * that write (`writes`, #237: `<` and `<<<` read their target), the `NAME=value`
  * assignments in its leading position, the program it runs, that program's arguments, and
  * the operator that follows it. `error` is non-null when the command could not be read;
  * `segments` is then empty and the caller decides, which for a fail-closed gate means
  * blocking.
  *
- * @returns {{segments: Array<{tokens: string[], redirects: string[], assignments: string[], program: string|null, args: string[], followedBy: string}>, error: string|null}}
+ * @returns {{segments: Array<{tokens: string[], redirects: string[], writes: string[], assignments: string[], program: string|null, args: string[], followedBy: string}>, error: string|null}}
  */
 export function commandSegments(command) {
   if (typeof command !== 'string' || command.trim() === '') return { segments: [], error: null };
@@ -729,16 +727,21 @@ export function commandSegments(command) {
   }
 
   const segments = [];
-  let current = { tokens: [], redirects: [], assignments: [], program: null, args: [], followedBy: '' };
+  const empty = () => ({ tokens: [], redirects: [], writes: [], assignments: [], program: null, args: [], followedBy: '' });
+  let current = empty();
   for (const item of items) {
     if (item.op !== undefined) {
       current.followedBy = item.op;
       segments.push(current);
-      current = { tokens: [], redirects: [], assignments: [], program: null, args: [], followedBy: '' };
+      current = empty();
       continue;
     }
     current.tokens.push(item.word);
-    if (item.target) { current.redirects.push(item.word); continue; } // runs nothing, assigns nothing
+    if (item.target) { // runs nothing, assigns nothing
+      current.redirects.push(item.word);
+      if (item.target === 'out') current.writes.push(item.word);
+      continue;
+    }
     if (NOT_A_PROGRAM.has(item.word)) continue;
     if (current.program !== null) current.args.push(item.word);
     else if (ASSIGNMENT.test(item.word)) current.assignments.push(item.word);
