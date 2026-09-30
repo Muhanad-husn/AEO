@@ -1020,7 +1020,7 @@ describe('read-only commands may name production data (#216)', () => {
       `git diff --ext-diff -- ${vault}`,
       `git diff --textconv -- ${vault}`,
       `git -c core.fsmonitor=x status ${vault}`,
-      `git add ${a}`,
+      `git rm ${a}`,
       `ls ${vault} && rm -rf ${path.join(vault, 'x')}`,
       `ls ${vault} ; npm test`,
       `./ls ${vault}`,
@@ -1667,11 +1667,11 @@ describe('a relative path after git -C resolves against the -C target (#220)', (
   test('a -C into the live checkout from outside it refuses a relative path inside the live root', () => {
     const { base, axial, runs, env } = setup();
     for (const [command, cwd] of [
-      [`git -C ${msys(axial)} add ${spec}`, runs],
-      [`git -C ../axial add ${spec}`, runs],
-      [`git -C axial add ${spec}`, base],
-      [`git -C .. -C axial add ${spec}`, runs],
-      [`git -C ${runs} -C ../axial add ${spec}`, base],
+      [`git -C ${msys(axial)} rm ${spec}`, runs],
+      [`git -C ../axial rm ${spec}`, runs],
+      [`git -C axial rm ${spec}`, base],
+      [`git -C .. -C axial rm ${spec}`, runs],
+      [`git -C ${runs} -C ../axial rm ${spec}`, base],
     ]) {
       assertBlockedBecause(guard({ payload: bash(command, cwd), env }), NAMES_LIVE_DATA, JSON.stringify(command));
     }
@@ -1684,7 +1684,7 @@ describe('a relative path after git -C resolves against the -C target (#220)', (
     const { base, axial, runs, env } = setup();
     for (const opt of ['--git-dir .git', '--work-tree .', '--namespace ns', '--super-prefix p/', '--config-env core.x=VAR']) {
       assertBlockedBecause(
-        guard({ payload: bash(`git ${opt} -C ../axial add ${spec}`, runs), env }),
+        guard({ payload: bash(`git ${opt} -C ../axial rm ${spec}`, runs), env }),
         NAMES_LIVE_DATA,
         opt,
       );
@@ -1695,7 +1695,7 @@ describe('a relative path after git -C resolves against the -C target (#220)', (
       'a --git-dir inside the runs checkout',
     );
     assertBlockedBecause(
-      guard({ payload: bash(`git --git-dir=.git -C axial add ${spec}`, base), env }),
+      guard({ payload: bash(`git --git-dir=.git -C axial rm ${spec}`, base), env }),
       NAMES_LIVE_DATA,
       'the = form',
     );
@@ -1703,7 +1703,7 @@ describe('a relative path after git -C resolves against the -C target (#220)', (
 
   test('a -C does not reach the commands around it', () => {
     const { axial, runs, env } = setup();
-    for (const command of [`git -C ${runs} status && git add ${spec}`, `git add ${spec} && git -C ${runs} status`]) {
+    for (const command of [`git -C ${runs} status && git rm ${spec}`, `git rm ${spec} && git -C ${runs} status`]) {
       assertBlockedBecause(guard({ payload: bash(command, axial), env }), NAMES_LIVE_DATA, JSON.stringify(command));
     }
     assertAllowed(guard({ payload: bash(`git -C ${runs} status && git -C ${runs} add ${spec}`, axial), env }), 'each -C on its own');
@@ -1714,7 +1714,7 @@ describe('a relative path after git -C resolves against the -C target (#220)', (
     for (const command of [`git -C $RUNS add ${spec}`, `git -C "$RUNS" add ${spec}`]) {
       assertWarned(guard({ payload: bash(command, axial), env }), WARNS_UNNAMED_CD, JSON.stringify(command));
     }
-    assertBlockedBecause(guard({ payload: bash(`git -C $RUNS status && git add ${spec}`, axial), env }), NAMES_LIVE_DATA, 'a later command');
+    assertBlockedBecause(guard({ payload: bash(`git -C $RUNS status && git rm ${spec}`, axial), env }), NAMES_LIVE_DATA, 'a later command');
   });
 });
 
@@ -1843,7 +1843,7 @@ describe('a run directory inside the production data root is refused (#229)', ()
 
   test('a cd into the root with a bare filename is refused, the baseline the others match', () => {
     const { app, env } = setup();
-    for (const command of ['cd data; python x.py summary.md', 'cd data && git add summary.md']) {
+    for (const command of ['cd data; python x.py summary.md', 'cd data && git rm summary.md']) {
       assertBlockedBecause(guard({ payload: bash(command, app), env }), OPERATES_IN, JSON.stringify(command));
     }
   });
@@ -1851,9 +1851,9 @@ describe('a run directory inside the production data root is refused (#229)', ()
   test('git -C into the root with a bare filename is refused', () => {
     const { app, tools, env } = setup();
     for (const [command, cwd] of [
-      ['git -C data add summary.md', app],
-      ['git -C .. -C app -C data add summary.md', tools],
-      [`git -C ${path.join('..', 'app', 'data')} add summary.md`, tools],
+      ['git -C data rm summary.md', app],
+      ['git -C .. -C app -C data rm summary.md', tools],
+      [`git -C ${path.join('..', 'app', 'data')} rm summary.md`, tools],
     ]) {
       assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, JSON.stringify(command));
     }
@@ -1874,8 +1874,8 @@ describe('a run directory inside the production data root is refused (#229)', ()
   test('a run directory nested inside the root is refused', () => {
     const { app, tools, env } = setup();
     for (const [command, cwd] of [
-      ['git -C data -C logs add summary.md', app],
-      ['git -C .. -C app -C data -C logs add summary.md', tools],
+      ['git -C data -C logs rm summary.md', app],
+      ['git -C .. -C app -C data -C logs rm summary.md', tools],
     ]) {
       assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, JSON.stringify(command));
     }
@@ -1897,6 +1897,191 @@ describe('a run directory inside the production data root is refused (#229)', ()
       [saps(path.join('..', 'app')), tools],
     ]) {
       assertAllowed(guard({ payload: pwsh(command, cwd), env }), JSON.stringify(command));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Git index operations may name files under the data root (#234)
+// ---------------------------------------------------------------------------
+//
+// Axial, 2026-09-30: `git add -f data/logs/.../*.py data/runs/883-arm-A/summary.json` was
+// refused as a run pointed at production data. `git add` changes no file under the root:
+// it writes git's own store. A git command that only reads the working tree or writes
+// git's store is no longer judged on the paths it names. One that rewrites or deletes
+// working-tree files keeps today's judgement, and so does everything around it on the line.
+
+describe('git index operations may name files under the data root (#234)', () => {
+  const setup = () => {
+    const base = tempDir();
+    const app = path.join(base, 'app');
+    const live = path.join(app, 'data');
+    for (const d of [path.join(live, 'logs', 'run'), path.join(live, 'runs', 'arm-A'), path.join(app, 'config')]) {
+      mkdirSync(d, { recursive: true });
+    }
+    return { base, app, live, env: { [LIVE]: live } };
+  };
+  const x = path.join('data', 'logs', 'run', 'summary.md');
+  const y = path.join('data', 'runs', 'arm-A', 'summary.json');
+
+  test("the issue's command runs", () => {
+    const { app, env } = setup();
+    const command =
+      'git pull -q && git add config/briefs/cross && git add -f data/logs/2026-09-30-883-brief-set/*.py ' +
+      'data/logs/2026-09-30-883-brief-set/summary.md data/runs/883-arm-A/summary.json ' +
+      'data/runs/883-arm-C/summary.json && git status --short';
+    assertAllowed(guard({ payload: bash(command, app), env }), 'the issue command');
+  });
+
+  test('each subcommand that reads the tree or writes only the index runs', () => {
+    const { base, app, live, env } = setup();
+    for (const [command, cwd] of [
+      [`git add ${x}`, app],
+      [`git add -f ${x} ${y}`, app],
+      [`git add ${path.join(live, 'logs', 'run', 'summary.md')}`, app],
+      [`git commit -m "run log" ${x}`, app],
+      [`git commit -F ${x}`, app],
+      [`git status ${x}`, app],
+      [`git diff --stat -- ${x}`, app],
+      [`git log --oneline -- ${x}`, app],
+      [`git show HEAD -- ${x}`, app],
+      [`git blame ${x}`, app],
+      [`git ls-files ${x}`, app],
+      [`git stash list`, app],
+      [`git stash show -p -- ${x}`, app],
+      [`git restore --staged ${x}`, app],
+      [`git restore -S -- ${x}`, app],
+      [`git reset ${x}`, app],
+      [`git reset -q -- ${x}`, app],
+      [`git reset --soft HEAD~1`, app],
+      [`git reset --mixed HEAD -- ${x}`, app],
+      [`git rm --cached ${x}`, app],
+      [`git rm -r --cached ${path.join('data', 'logs')}`, app],
+      [`git -C ${app} add ${x}`, base],
+      [`git -C app add ${x}`, base],
+      [`git --no-pager log -- ${x}`, app],
+      [`git --git-dir=.git --work-tree=. add ${x}`, app],
+      [`git add ${x} && git commit -m "run 883" && git push`, app],
+    ]) {
+      assertAllowed(guard({ payload: bash(command, cwd), env }), JSON.stringify(command));
+    }
+  });
+
+  test('a subcommand that rewrites or deletes working-tree files still refuses', () => {
+    const { app, env } = setup();
+    for (const command of [
+      `git rm ${x}`,
+      `git rm -f ${x}`,
+      `git checkout -- ${x}`,
+      `git checkout HEAD ${x}`,
+      `git restore ${x}`,
+      `git restore --worktree ${x}`,
+      `git restore --staged --worktree ${x}`,
+      `git restore -W -S ${x}`,
+      `git restore --source=HEAD~1 --staged ${x}`,
+      `git reset --hard -- ${x}`,
+      `git reset --merge -- ${x}`,
+      `git reset --keep -- ${x}`,
+      `git reset --ha -- ${x}`,
+      `git clean -fd ${path.join('data', 'logs')}`,
+      `git mv ${x} ${y}`,
+      `git stash push -- ${x}`,
+      `git stash -- ${x}`,
+      `git stash pop -- ${x}`,
+      `git diff --output=${y}`,
+      `git log --output ${y}`,
+      `git show --outp=${y}`,
+      `git diff --ext-diff -- ${x}`,
+      `git -c core.hooksPath=${path.join('data', 'hooks')} commit -m x`,
+      `git -c core.pager=less add ${x}`,
+      `git --git-dir=${path.join('data', 'repo.git')} add summary.md`,
+      `git --work-tree ${path.join('data', 'logs')} checkout .`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+  });
+
+  test('a redirect into the root is still refused', () => {
+    const { app, env } = setup();
+    for (const command of [`git show HEAD:x > ${y}`, `git diff > ${path.join('data', 'x.patch')}`, `git status >> ${y}`]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+  });
+
+  test('the commands around a git index operation are judged as before', () => {
+    const { app, env } = setup();
+    for (const command of [
+      `git add ${x} && python run.py ${y}`,
+      `git add ${x}; rm -rf ${y}`,
+      `git ls-files ${path.join('data', 'logs')} | xargs rm`,
+      `( git ls-files ${path.join('data', 'logs')} ) | xargs rm`,
+      `git diff --name-only -- ${x} | xargs rm`,
+      `git commit -m "$(cat notes.txt)" ${x}`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+  });
+
+  test('a run directory inside the root is judged by the same subcommand rule', () => {
+    const { app, live, env } = setup();
+    for (const [command, cwd] of [
+      ['git -C data add summary.md', app],
+      ['git -C data -C logs status', app],
+      ['cd data && git add summary.md', app],
+      ['git add summary.md', live],
+      ['git commit -m "run log"', live],
+    ]) {
+      assertAllowed(guard({ payload: bash(command, cwd), env }), JSON.stringify(command));
+    }
+    for (const [command, cwd] of [
+      ['git -C data clean -fd', app],
+      ['git -C data rm summary.md', app],
+      ['git -C data checkout -- summary.md', app],
+      ['cd data && git clean -fd', app],
+      ['git clean -fd', live],
+      ['git -C data add summary.md && git -C data clean -fd', app],
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, JSON.stringify(command));
+    }
+  });
+
+  // The way a Claude Code session commits: the message is a heredoc read by `cat` inside a
+  // command substitution. Its body is message text, not a path to judge.
+  const message = (delim, body) => `"$(cat <<${delim}\n${body}\nEOF\n)"`;
+
+  test('a commit message from cat of a heredoc is message text', () => {
+    const { app, live, env } = setup();
+    const body = `run log for ${x}\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`;
+    for (const [command, cwd] of [
+      [`git commit -m ${message("'EOF'", body)} ${x}`, app],
+      [`git commit -m ${message('EOF', body)} ${x}`, app],
+      [`git commit -m ${message('"EOF"', body)}`, app],
+      [`git commit -m "$(cat <<-'EOF'\n\t${body}\n\tEOF\n\t)" ${x}`, app],
+      [`git add ${x} ${y} && git commit -m ${message("'EOF'", body)}`, app],
+      [`git commit -m ${message("'EOF'", 'run log')}`, live],
+    ]) {
+      assertAllowed(guard({ payload: bash(command, cwd), env }), JSON.stringify(command));
+    }
+  });
+
+  test('any other command substitution keeps the judgement', () => {
+    const { app, live, env } = setup();
+    const rmY = `rm -rf ${y}`;
+    for (const command of [
+      `git commit -m "$(sh <<'EOF'\n${rmY}\nEOF\n)" ${x}`,
+      `git commit -m "$(cat <<'EOF' | sh\n${rmY}\nEOF\n)" ${x}`,
+      `git commit -m "$(cat <<'EOF'\nmsg\nEOF\n; ${rmY})" ${x}`,
+      `git commit -m "$(cat <<EOF\nmsg $(${rmY})\nEOF\n)" ${x}`,
+      `git commit -m ${message("'EOF'", 'msg')}"$(${rmY})" ${x}`,
+      `git commit -m "\`cat notes.txt\`" ${x}`,
+      `python run.py ${message("'EOF'", 'msg')} ${y}`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+    // A backtick inside double quotes is a command substitution the parser does not open,
+    // so a line carrying one is no longer read-only either.
+    for (const command of ['ls "`rm -rf summary.md`"', 'git status "`rm -rf summary.md`"']) {
+      assertBlockedBecause(guard({ payload: bash(command, live), env }), OPERATES_IN, JSON.stringify(command));
     }
   });
 });
