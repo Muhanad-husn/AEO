@@ -23,9 +23,10 @@
 // Everything else passes, whatever paths it names. Phase 4 on Axial refused five pieces
 // of legitimate work (#214, #216, #218, #234, #236), each a command that named the root
 // and could not lose data git does not hold, and PLAN.md's kill line says a layer that
-// refuses legitimate work is removed. A command whose effect on the root cannot be
-// decided, a write whose location the guard cannot name, or a root git cannot read, is
-// refused, and the message says why.
+// refuses legitimate work is removed. It fails closed where the effect cannot be decided:
+// a write whose location it cannot name, or under a root git cannot read, is refused. A
+// command it cannot parse is judged as a run on the paths its tokens name and the
+// directory it starts in, and otherwise allowed with a warning (#169).
 //
 // THE LINE. A tracked file with no uncommitted change can be put back with git, so
 // overwriting or deleting it is allowed; the founder can undo it. A file git does not
@@ -89,10 +90,8 @@ function overlaps(a, b) {
 // ---------------------------------------------------------------------------
 
 // A token is a run of non-space characters with quoted spans allowed inside it, so
-// `--data-dir="D:/corpus one"` is one token rather than two. Shell parsing beyond this
-// is deliberately not attempted: the tokens feed a containment test whose false
-// positives cost a message. Its false negatives are not covered when no seam is set
-// (#214).
+// `--data-dir="D:/corpus one"` is one token rather than two. Used where the command could
+// not be segmented, and by the sentinel rule.
 const TOKEN = /(?:"[^"]*"|'[^']*'|[^\s"']+)+/g;
 
 /** The command split into tokens, with quotes removed. */
@@ -129,20 +128,9 @@ export function pathCandidates(tokens) {
 
 /**
  * Interpreters generic enough that their own name carries no identity: what they run is
- * named by the argument after them, not by the interpreter itself (#136). This is a fixed,
- * small set rather than a heuristic on purpose: an interpreter's identity lives in its
- * script argument, and no positional or lexical signal — not position, not extension, not
- * a trailing slash — can substitute for naming them. `go test pkg/...` and `pytest
- * tests/` both put a path-shaped token straight after a plain program, and only one of
- * those programs is generic; a rule that tried to tell them apart by shape alone gets one
- * of the two wrong.
- *
- * `cmd`, `powershell` and `pwsh` are deliberately absent (#136). Their own flags are
- * path-shaped by the same `/[\\/]/` test a script argument is — `/c` and `-File` both
- * contain a slash or a dash the same way a path does — so `cmd /c scripts\check.cmd`
- * mis-reduces to `['cmd', 'c']`, the flag's own basename, not the script's. No declared
- * test command in this corpus starts with a Windows shell, and a set entry that
- * mis-reduces is worse than one that is simply absent.
+ * named by the argument after them (#136). A fixed set, because no shape tells `go test
+ * pkg/...` from `bash scripts/check.sh`. `cmd`, `powershell` and `pwsh` are absent: their
+ * own flags (`/c`, `-File`) are path-shaped and would be reduced in place of the script.
  */
 const GENERIC_INTERPRETERS = new Set(['sh', 'bash', 'zsh', 'dash', 'node', 'python', 'python3', 'ruby', 'perl']);
 
@@ -171,30 +159,15 @@ function reduceInterpreterScript(tokens, i) {
  * particular file.
  *
  * A path-shaped token is kept, reduced to its basename, ONLY when it is a generic
- * interpreter's own script argument — reachable from the interpreter by walking back
- * over any flags in between (see reduceInterpreterScript). `bash scripts/check.sh`
- * becomes `['bash', 'check.sh']`, whatever relative prefix that script carries:
- * `bash ./scripts/check.sh` reduces the same way, because dropping it as a relative
- * argument the way `go test ./...` is dropped would reopen #134 for every script path
- * written the ordinary way, with a leading `./` (#136). Any other path-shaped token —
- * relative or not, adjacent to a flag or to nothing — is dropped the same way: it is a
- * target the suite runs over, not part of what identifies it, which is what lets a bare
- * `pytest` still match `pytest tests/unit/test_api.py`.
+ * interpreter's own script argument, found by walking back over flags
+ * (reduceInterpreterScript): `bash ./scripts/check.sh` becomes `['bash', 'check.sh']`.
+ * Any other path-shaped token is a target the suite runs over and is dropped, so a bare
+ * `pytest` still matches `pytest tests/unit/test_api.py`. Keeping every path token broke
+ * that (#136); dropping every one made `bash scripts/check.sh` match any `bash <x>`,
+ * including a supervisor's own `stop` during a run (#134).
  *
- * Two earlier versions of this rule got it wrong in opposite directions. Keeping every
- * path-shaped token once anything plain survived made a declared command with a
- * directory argument fail to match its own plain invocation — `pytest tests/` no longer
- * matched a bare `pytest` (#136). Dropping every path-shaped token whenever a plain one
- * survived, before that, made `bash scripts/check.sh` collapse to just `bash`, so any
- * `bash <anything>` matched it, including a supervisor's own `status` and `stop`
- * commands, unreachable for the life of a run (#134). A third version required strict,
- * un-walked adjacency on this side while the invoked side walked back over flags — that
- * asymmetry is gone; both sides now read a flag-skipping predecessor the same way.
- *
- * When nothing survives — no plain token and no interpreter+script pair — the first kept
- * token (flags and globs still excluded) keeps its basename, so `vendor/bin/phpunit`
- * still matches a bare `phpunit`, and `vendor/bin/phpunit tests/` still reduces to
- * `['phpunit']` rather than folding `tests/` into the suite's identity by accident (#136).
+ * When nothing survives, the first kept token keeps its basename, so `vendor/bin/phpunit
+ * tests/` reduces to `['phpunit']` (#136).
  */
 function significantTokens(command) {
   const wanted = [];
@@ -231,53 +204,16 @@ function isOrderedSubsequence(tokens, wanted) {
  * declared command wraps it, `cd sub && pytest` with it, and a script run directly as
  * `./scripts/check.sh`, whose basename is the program.
  *
- * The first form reads the invoked command's own tokens through reduceInterpreterScript
- * before comparing, the same reduction significantTokens applies to the declared side, so
- * an interpreter's script survives flags typed between them on either side (#136). The
- * second form reduces a segment's program to a plain basename unconditionally: a program
- * IS the thing invoked, not an argument to something else, so there is no interpreter to
- * require there. Both are deliberately narrower than reducing every path-shaped invoked
- * token regardless of what precedes it: doing that made `git add tools/pytest` and `cat
- * .venv/bin/pytest` match a bare declared `pytest`, because `tools/pytest` reduces to the
- * same basename as the declared suite even though it is `git add`'s and `cat`'s argument,
- * not an interpreter's.
+ * The first form reduces the invoked tokens the way significantTokens reduces the
+ * declared ones (#136), and no further: reducing every path token made `git add
+ * tools/pytest` match a declared `pytest`. The second form takes the program position
+ * only: anywhere in the command, the literal `test` refused `grep -r test .` and `mkdir
+ * test` during a live run.
  *
- * The second form used to accept that token anywhere in the command. Because flags and
- * globs are dropped, the final declared token is the literal `test` for Node, Go, Rust
- * and Maven, so during a live run `grep -r test .`, `mkdir test` and `git add test` were
- * each refused with "`npm test` will not run", naming a command nobody typed. A guard
- * people cannot work around is a guard people delete, which is the failure this whole
- * gate is trying not to cause.
- *
- * A KNOWN MISS, in the other direction: `node --test` is not recognised, and it is how
- * this project's own suite runs. The recorded command is `npm test`, and what that
- * expands to is the package manager's business, not this function's to guess. During a
- * live run a hand-typed `node --test` is not held by anything (D30): nothing runs a
- * suite as a side effect of a commit any more, so there is no second check downstream of
- * this one to catch what it misses. The same miss now also covers a project that declares
- * its suite with a target, `node --test tests/`: the bare `node --test` a developer
- * actually types omits `tests/`, so it no longer carries the token the declared command's
- * identity needs — accepted, because reading identity off flag-skipped adjacency both
- * ways is what lets that declared command recognise its own full invocation and the
- * `node --experimental-vm-modules node_modules/.bin/jest`-shaped ones like it (#136).
- *
- * A SECOND KNOWN MISS, of the same shape (#134): a different interpreter running the same
- * script, as in `sh scripts/check.sh` against a declared `bash scripts/check.sh`. The
- * script's basename is an ARGUMENT to `sh` there, not the program in program position, so
- * neither form catches it — catching it would mean treating `sh` and `bash` as
- * equivalent, which is a different question from which programs are generic enough to
- * need a script argument at all. GENERIC_INTERPRETERS answers only the second question;
- * it is not an interchangeability table between shells, and does not grow into one.
- *
- * A THIRD KNOWN MISS (#136): a wrapper that runs a script through a sub-command rather
- * than an interpreter — `uv run scripts/check.py`, and the same for `deno`, `bun` or
- * poetry's own `run` — still collapses to `['uv', 'run']`, because `run` is not in
- * GENERIC_INTERPRETERS and the script argument after it is dropped like any other target.
- * Any `uv run <anything>` then matches the declared suite, the same over-match #134 fixed
- * for a bare interpreter. `poetry run python scripts/check.py` does not have this
- * problem: its script follows `python`, a real interpreter, and reduces correctly. Adding
- * `run` (or `uv`, `deno`, `bun`) to the set is not the fix — `npm run build` and `cargo
- * run` are "run" too, and neither takes a script argument that identifies a suite.
+ * Known misses, accepted: `node --test` against a declared `npm test` (what npm expands
+ * to is not this function's to guess, and nothing downstream catches it since D30); `sh
+ * scripts/check.sh` against a declared `bash scripts/check.sh` (#134); and `uv run
+ * <script>`, which collapses to `['uv', 'run']` and so matches any `uv run` (#136).
  */
 export function invokesDeclaredSuite(command, declared) {
   const rawTokens = shellTokens(command);
@@ -644,23 +580,10 @@ function readLiveDeclarationFromFile(dir) {
 /**
  * The directory whose .claude/settings.json holds this session's declaration.
  *
- * `payload.cwd` first, not CLAUDE_PROJECT_DIR: it is the Bash tool's own persisted
- * directory, so it reflects whichever worktree the session is actually sitting in.
- * CLAUDE_PROJECT_DIR is session-fixed -- set once, at launch, at the main checkout -- and
- * wrong for a worktree session, the same V-02 lesson lib.mjs's own directory walk is
- * built around. `process.cwd()` is the same last resort that walk uses.
- *
- * worktreeAnchor (sentinel.mjs) then walks up to the checkout that directory sits in,
- * resolving a LINKED WORKTREE TO ITSELF: every worktree of a project has its own
- * working-tree copy of a tracked file, so a session in a feature worktree must read that
- * worktree's own settings.json, not the main checkout's (#133, the case the issue was
- * filed from). projectAnchor, used below for the sentinel, answers the opposite question
- * on purpose: sentinels are shared across every worktree of a project, a declaration is
- * not.
- *
- * Spawn-free, for the same reason worktreeAnchor itself is (sentinel.mjs): this runs
- * before every Bash and file-tool call, and a git subprocess there is a cost paid on
- * every tool use.
+ * `payload.cwd` first: CLAUDE_PROJECT_DIR is fixed at launch and wrong for a worktree
+ * session (V-02). worktreeAnchor resolves a linked worktree to itself, because each
+ * worktree has its own copy of a tracked settings file (#133); the sentinel, by contrast,
+ * is shared across worktrees (projectAnchor). Spawn-free: this runs on every call.
  */
 export function settingsDeclarationDir(payload, env, cwd = process.cwd) {
   const fromPayload = typeof payload?.cwd === 'string' ? payload.cwd.trim() : '';
@@ -672,42 +595,16 @@ export function settingsDeclarationDir(payload, env, cwd = process.cwd) {
 /**
  * Where production data is, and where the data of EACH command on this line will resolve.
  *
- * THE LIVE DECLARATION comes from `<dir>/.claude/settings.json` first (#133), re-read on
- * this call rather than trusted from a previous one, and falls back to
- * `env[AEO_LIVE_DATA_ROOT]` only when the file makes no statement: missing, unreadable,
- * malformed, or the key absent. `dir` is the caller's job to resolve
- * (settingsDeclarationDir, for the gate itself) -- resolveRoots stays a pure function of
- * what it is handed, which is what keeps it unit-testable with no filesystem at all when
- * `dir` is omitted. An explicitly exported AEO_LIVE_DATA_ROOT with no settings file (or
- * no `dir` passed at all) still arms the guard exactly as before: an existing setup that
- * has never adopted a settings file does not silently disarm.
+ * The declaration comes from `<dir>/.claude/settings.json`, re-read on every call, and
+ * from `env` only when the file says nothing (#133). With no `dir` this is a pure
+ * function of what it is handed.
  *
- * An inline `AEO_DATA_ROOT=...` wins over the inherited value, because that is what the
- * child will see. This is the sanctioned way to redirect one command inside a session: it
- * is visible in the command string and the guard validates it like any other value.
- *
- * ONE SEAM PER COMMAND, NOT ONE PER LINE. A prefix assignment binds to the single command
- * it prefixes and the shell carries it no further, so every command on the line gets its
- * own answer and the guard judges them all. Reading one seam for the whole line let
- * `AEO_DATA_ROOT=<sandbox> npm run build && npm test` run the suite against production —
- * `npm test` never saw that assignment — and it leaked backwards just as freely, so
- * `npm test && AEO_DATA_ROOT=<sandbox> echo ok` did the same. Both exited 0.
- *
- * ONLY IN LEADING POSITION, and within one command the last one wins. Taking the value
- * from any token that started with the name was not the shell's rule either, and it
- * defeated the gate with the gate's own advice: told to set the variable, a model runs
- * `echo 'AEO_DATA_ROOT=<safe>' >> .claude/settings.json && npm test`, the guard read the
- * safe value out of the echoed string and allowed, and the child still ran with the
- * production-pointing seam, because writing a settings file changes no running process. A
- * grep pattern, a commit message and a heredoc body named the variable just as cheaply.
- * Assignments before this one are allowed, so
- * `NODE_ENV=test AEO_DATA_ROOT=<sandbox> npm test` is read the way the shell reads it.
- *
- * A segment that runs no program sets nothing a child can inherit — a bare assignment
- * makes a shell variable, not an exported one — so it contributes no seam and is not
- * judged. A command with no segments at all still gets the session's own seam, so a
- * session seam that is relative or overlaps production data is refused whether or not
- * there is a command to read. A seam that is not set is not refused (#214).
+ * ONE SEAM PER COMMAND. A prefix assignment binds to the one command it prefixes, so
+ * `AEO_DATA_ROOT=<sandbox> npm run build && npm test` gives `npm test` the inherited seam.
+ * Only an assignment in leading position counts, the last one winning: reading it from
+ * any token let `echo 'AEO_DATA_ROOT=<safe>' >> .claude/settings.json && npm test` pass
+ * while the child ran with the old seam. A segment that runs no program contributes none;
+ * a line with no segments gets the session's seam. An unset seam is not refused (#214).
  *
  * @returns {{live: object, seams: Array<{data: object, dataSource: string}>}}
  */

@@ -202,6 +202,13 @@ describe("commandSegments' redirects field", () => {
     assert.deepEqual(segment.redirects, ['out.txt']);
     assert.equal(segment.program, 'echo');
   });
+
+  // #237: the sandbox guard judges a redirect that writes, and not one that reads.
+  test('writes holds the targets a redirect writes, and not the ones it reads', () => {
+    const segment = commandSegments('sort < in.txt > out.txt 2>> err.txt <<< text <> both.txt').segments[0];
+    assert.deepEqual(segment.redirects, ['in.txt', 'out.txt', 'err.txt', 'text', 'both.txt']);
+    assert.deepEqual(segment.writes, ['out.txt', 'err.txt', 'both.txt']);
+  });
 });
 
 // ---------------------------------------------------------------------------
