@@ -45,7 +45,7 @@
 // survives a process boundary, and a set seam is refused when it is relative or overlaps
 // the root. An unset seam is not refused (#214).
 
-import { readFileSync, statSync, writeSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -342,15 +342,62 @@ function gitIndexOp(segment) {
   return GIT_INDEX_OPS.has(args[i]) && gitIndexOnly(args[i], args.slice(i + 1)) ? judged : null;
 }
 
+/** A `reset` option that discards working-tree content, by any prefix git accepts. */
+const discardsOnReset = (o) => /^--[a-z]{2,}$/.test(o) && ['hard', 'merge', 'keep'].some((f) => f.startsWith(o.slice(2)));
+
+/**
+ * For a `git` command that discards working-tree content git may not hold, what it
+ * reaches: `{ paths }`, the pathspecs it is limited to, or no paths for the whole
+ * repository; `{ ambiguous, force }` for `checkout <one word>`, which is a branch or a
+ * path depending on what is on disk. `null` for any other command. These are `clean`
+ * (except a dry run), `reset --hard`, `--merge` and `--keep`, `checkout` and `restore` of
+ * paths, a forced `checkout` or `switch`, and `stash` bare, `push` or `save`. A `checkout`
+ * or `switch` that is not forced refuses to overwrite local changes, so it is not here.
+ * With `-c`, `--git-dir` or `--work-tree` the command stays a run.
+ */
+function gitDiscards(segment) {
+  if (programName(segment.program) !== 'git') return null;
+  const args = segment.args;
+  let i = 0;
+  while (i < args.length && args[i].startsWith('-')) {
+    if (args[i] === '-C') i += 2;
+    else if (GIT_QUIET_GLOBALS.has(args[i])) i += 1;
+    else return null;
+  }
+  const sub = args[i];
+  const rest = args.slice(i + 1);
+  const dash = rest.indexOf('--');
+  const after = dash === -1 ? [] : rest.slice(dash + 1);
+  const before = dash === -1 ? rest : rest.slice(0, dash);
+  const options = before.filter((a) => a.startsWith('-'));
+  const words = before.filter((a, k) => !a.startsWith('-') && !['-s', '--source', '-b', '-B'].includes(before[k - 1]));
+  const force = options.some((o) => ['-f', '--force', '--discard-changes'].includes(o));
+  if (sub === 'clean') return options.some((o) => o === '-n' || o === '--dry-run') ? null : { paths: [...words, ...after] };
+  if (sub === 'reset') return options.some(discardsOnReset) ? { paths: after } : null;
+  if (sub === 'stash') {
+    if (words[0] !== undefined && !['push', 'save'].includes(words[0])) return null;
+    return { paths: [...(words[0] === 'push' ? words.slice(1) : []), ...after] };
+  }
+  if (sub === 'restore') return words.length + after.length > 0 ? { paths: [...words, ...after] } : null;
+  if (sub === 'switch') return force ? { paths: [] } : null;
+  if (sub !== 'checkout') return null;
+  if (after.length > 0 || words.length >= 2) return { paths: [...words.slice(1), ...after] };
+  if (words.length === 1) return { ambiguous: words[0], force };
+  return force ? { paths: [] } : null;
+}
+
 /**
  * What one command does to the root: `read` (reads, or writes only git's store), `write`
- * (changes the paths writeTargets names), or `run` (anything else, whose arguments and
- * directory are judged). `judged` is what a read still has judged as a run's words.
+ * (changes the paths writeTargets names), `discard` (a git command gitDiscards reads), or
+ * `run` (anything else, whose arguments and directory are judged). `judged` is what a read
+ * still has judged as a run's words.
  */
 function kindOf(segment) {
   if (segment.program === null || segment.program === 'cd' || segment.program === 'pushd') return { kind: 'read', judged: [] };
   const git = gitIndexOp(segment);
   if (git !== null) return { kind: 'read', judged: git };
+  const discard = gitDiscards(segment);
+  if (discard !== null) return { kind: 'discard', judged: [], discard };
   const name = programName(segment.program);
   const args = segment.args;
   if (
@@ -454,22 +501,24 @@ function runsHiddenCommand(command) {
 }
 
 /**
- * `word` with a leading `~` and every `$NAME`, `${NAME}` or `$env:NAME` read from the session
- * environment, or null when one of them is not defined there: a loop variable, or one set
- * earlier on the same line, names a location the guard cannot know.
+ * Every value `word` can take, with a leading `~` and each `$NAME`, `${NAME}` or
+ * `$env:NAME` read from the session environment, or from `loops`: the literal words of a
+ * `for NAME in ...` earlier on the line. Null when a variable is in neither, since it then
+ * names a location the guard cannot know.
  */
-function expand(word, env) {
-  let unknown = false;
-  const value = (name) => {
-    const v = env?.[name];
-    if (typeof v === 'string') return v;
-    unknown = true;
-    return '';
-  };
-  const out = word
-    .replace(/^~(?=$|[\\/])/, () => (typeof env?.HOME === 'string' ? env.HOME : value('USERPROFILE')))
-    .replace(/\$(?:env:(\w+)|\{(\w+)\}|(\w+))/gi, (_, ps, braced, bare) => value(ps ?? braced ?? bare));
-  return unknown ? null : out;
+function expand(word, env, loops) {
+  const home = typeof env?.HOME === 'string' ? env.HOME : env?.USERPROFILE;
+  if (/^~(?=$|[\\/])/.test(word)) {
+    if (typeof home !== 'string') return null;
+    word = home + word.slice(1);
+  }
+  const m = /\$(?:env:(\w+)|\{(\w+)\}|(\w+))/i.exec(word);
+  if (m === null) return [word];
+  const name = m[1] ?? m[2] ?? m[3];
+  const values = typeof env?.[name] === 'string' ? [env[name]] : loops.get(name);
+  const tails = values === undefined ? null : expand(word.slice(m.index + m[0].length), env, new Map(loops));
+  if (tails === null) return null;
+  return values.flatMap((v) => tails.map((t) => word.slice(0, m.index) + v + t));
 }
 
 function isDirectory(p) {
@@ -732,27 +781,66 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
     }
   };
 
-  // A write, move or delete is refused only where git cannot put back what it changes.
+  const { segments } = commandSegments(command);
+  const segmentDir = (i) => (typeof walk.segmentDirs[i] === 'string' && path.isAbsolute(walk.segmentDirs[i]) ? walk.segmentDirs[i] : null);
+  // Whether anything on the line could reach the root: a directory it runs in, or a path
+  // it names, including the value of an assignment.
+  const lineReaches = () =>
+    dirs.some(inside) ||
+    segments.some((s, i) => pathCandidates(s.tokens).some((w) => {
+      const p = locate(w, segmentDir(i));
+      return p !== null && inside(p);
+    }));
+  const loops = new Map();
+
+  const refuseChange = (what, word, target, why) =>
+    block(
+      `${what} ${JSON.stringify(word)}, which resolves to ${target}, inside the production data root ` +
+        `${live.root}, and git cannot restore it: ${why}. Only a file git tracks, with no uncommitted change, ` +
+        `may be written, moved or deleted there. ${NO_OVERRIDE}`,
+    );
+
+  // A write, move or delete is refused only where git cannot put back what it changes. One
+  // whose location cannot be named (a variable the session does not define, or a relative
+  // path after a `cd` the guard could not name) is refused when the line could reach the
+  // root, and otherwise allowed with a warning.
   const judgeWrite = (word, dir, into = [], what = 'this command changes') => {
-    const expanded = expand(word, env);
-    const p = expanded === null ? null : locate(expanded, dir);
-    if (p === null) {
-      block(
-        `${what} ${JSON.stringify(word)}, and the guard cannot tell whether that lands inside the production ` +
-          `data root ${live.root}: ${expanded === null ? 'it names a variable the session does not define' : 'it follows a cd the guard cannot name'}. ` +
-          `Give the path literally. ${NO_OVERRIDE}`,
+    const located = (expand(word, env, loops) ?? [null]).map((e) => (e === null ? null : locate(e, dir)));
+    if (located.includes(null)) {
+      if (lineReaches()) {
+        block(
+          `${what} ${JSON.stringify(word)}, and the guard cannot tell whether that lands inside the production ` +
+            `data root ${live.root}, which this line reaches. Give the path literally. ${NO_OVERRIDE}`,
+        );
+      }
+      warn(
+        `sandbox-guard: \`${command}\` changes ${JSON.stringify(word)}; the guard cannot tell where ${JSON.stringify(word)} ` +
+          `lands, and nothing on the line reaches the production data root ${live.root}, so it was allowed. Give ` +
+          `the path literally to get the full judgement.`,
       );
+      return;
     }
-    const targets = into.length > 0 && isDirectory(p) ? into.map((src) => path.join(p, path.basename(normalizeHookPath(src)))) : [p];
-    for (const target of targets) {
-      const why = cannotRestore(realise(target), liveReal);
-      if (why === null) continue;
-      block(
-        `${what} ${JSON.stringify(word)}, which resolves to ${realise(target)}, inside the production data root ` +
-          `${live.root}, and git cannot restore it: ${why}. Only a file git tracks, with no uncommitted change, ` +
-          `may be written, moved or deleted there. ${NO_OVERRIDE}`,
-      );
+    for (const p of located) {
+      const targets = into.length > 0 && isDirectory(p) ? into.map((src) => path.join(p, path.basename(normalizeHookPath(src)))) : [p];
+      for (const target of targets) {
+        const why = cannotRestore(realise(target), liveReal);
+        if (why !== null) refuseChange(what, word, realise(target), why);
+      }
     }
+  };
+
+  // A git command that discards working-tree content with no pathspec reaches its whole
+  // repository, and so the root when the repository holds it.
+  const judgeRepository = (dir) => {
+    if (dir === null) return judgeWrite('.', null);
+    const top = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', windowsHide: true });
+    if (top.error || top.status !== 0) {
+      if (inside(dir)) refuseChange('this command changes', dir, realise(dir), 'git cannot read a repository there');
+      return;
+    }
+    const root = realise(top.stdout.trim());
+    const why = cannotRestore(root, liveReal);
+    if (why !== null) refuseChange('this command changes the whole working tree of', root, root, why);
   };
 
   // 3. A write tool names one target. It spawns no child, so the seam is not its concern.
@@ -776,8 +864,8 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
     warn(
       `sandbox-guard: \`${command}\` changes directory to somewhere the guard cannot name (an expansion, a ` +
         `glob, a bare \`cd\`, or \`cd -\`), and this session declares production data at ${live.root}. A run ` +
-        `after it was judged on the absolute paths it names; a write after it with a relative target is ` +
-        `refused. Give the directory literally to get the full judgement.`,
+        `after it was judged on the absolute paths it names, and a write after it with a relative target on ` +
+        `whether the line reaches the root. Give the directory literally to get the full judgement.`,
     );
   }
 
@@ -795,7 +883,6 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
   //    did not open is judged as runs throughout, including the words inside that command.
   //    A read or a write whose output is piped into anything but a read is judged as a
   //    run, because the next program acts on what it printed: `find <root> | xargs rm`.
-  const { segments } = commandSegments(command);
   const hidden = runsHiddenCommand(command);
   if (hidden) judgeRun(command.split(/[\s"'`;|&()]+/), dirs[0] ?? null);
   const kinds = segments.map((s) => (hidden ? { kind: 'run', judged: [] } : kindOf(s)));
@@ -803,8 +890,11 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
   const feedsRun = (i) =>
     segments.some((s, j) => j >= i && s.followedBy === '|' && receiver(j) !== -1 && kinds[receiver(j)].kind !== 'read');
   segments.forEach((s, i) => {
-    const dir = typeof walk.segmentDirs[i] === 'string' && path.isAbsolute(walk.segmentDirs[i]) ? walk.segmentDirs[i] : null;
-    const { kind, judged } = kinds[i];
+    const dir = segmentDir(i);
+    const { kind, judged, discard } = kinds[i];
+    if (s.program === 'for' && s.args[1] === 'in' && s.args.slice(2).every((w) => !/[$`]/.test(w))) {
+      loops.set(s.args[0], s.args.slice(2));
+    }
     if (kind === 'run' || feedsRun(i)) {
       // After a `cd` the guard could not name, a run is held to every directory the walk
       // did resolve: `cd $X && python run.py` from inside the root may still run there.
@@ -819,6 +909,16 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
     judgeRun([...(s.program !== null && /[\\/]/.test(s.program) ? [s.program] : []), ...s.assignments, ...judged], dir);
     const targets = kind === 'write' ? writeTargets(programName(s.program), s.args) : [];
     for (const { word, into } of [...s.writes.map((word) => ({ word })), ...targets]) judgeWrite(word, dir, into);
+    if (kind !== 'discard') return;
+    let { paths } = discard;
+    if (discard.ambiguous !== undefined) {
+      const p = locate(discard.ambiguous, dir);
+      const isPath = discard.ambiguous === '.' || (p !== null && existsSync(p));
+      paths = isPath ? [discard.ambiguous] : discard.force ? [] : null;
+    }
+    if (paths === null) return;
+    if (paths.length === 0) judgeRepository(dir);
+    for (const word of paths) judgeWrite(word, dir);
   });
 }
 

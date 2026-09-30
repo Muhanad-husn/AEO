@@ -2018,7 +2018,9 @@ describe('git index operations may name files under the data root (#234)', () =>
       `git --git-dir=${path.join('data', 'repo.git')} add summary.md`,
       `git --work-tree ${path.join('data', 'logs')} checkout .`,
     ]) {
-      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+      // A run names the path; a discard (#237) is judged by git, which cannot read a root
+      // outside any repository. Either refusal is the one under test.
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), /(?:names|changes) .*inside the production data root/, JSON.stringify(command));
     }
   });
 
@@ -2062,7 +2064,8 @@ describe('git index operations may name files under the data root (#234)', () =>
       ['git clean -fd', live],
       ['git -C data add summary.md && git -C data clean -fd', app],
     ]) {
-      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), OPERATES_IN, JSON.stringify(command));
+      // `git rm` runs there; the discards (#237) are judged by git, which reads no repository here.
+      assertBlockedBecause(guard({ payload: bash(command, cwd), env }), /operates in|changes .*inside the production data root/, JSON.stringify(command));
     }
   });
 
@@ -2262,7 +2265,7 @@ describe('the guard judges only what git cannot restore (#237)', () => {
     ]) {
       assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
     }
-    for (const command of ['cd data && python run.py', 'git -C data clean -fd', 'cd data && sqlite3 entries.db']) {
+    for (const command of ['cd data && python run.py', 'git -C data rm x.md', 'cd data && sqlite3 entries.db']) {
       assertBlockedBecause(guard({ payload: bash(command, app), env }), OPERATES_IN, JSON.stringify(command));
     }
   });
