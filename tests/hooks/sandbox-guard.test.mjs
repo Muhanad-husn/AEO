@@ -2087,6 +2087,193 @@ describe('git index operations may name files under the data root (#234)', () =>
 });
 
 // ---------------------------------------------------------------------------
+// The guard judges only what git cannot restore (#237)
+// ---------------------------------------------------------------------------
+//
+// Four refusals of legitimate work in Axial (#214, #216, #218, #234) and a fifth (#236):
+// each command named the live root and none could lose data git does not hold. The guard
+// now refuses a write, move or delete under the root only when git cannot put back what
+// it changes: a file git does not track, one with uncommitted changes, or a directory or
+// glob that reaches such a file. A run against the root is refused whatever git holds.
+// Tracked status is read from a real repository here, the way the guard reads it.
+
+describe('the guard judges only what git cannot restore (#237)', () => {
+  const setup = () => {
+    const app = makeRepo({
+      base: {
+        'aeo-tests.json': JSON.stringify({ test: 'npm test' }),
+        'docs/reports/dec-75-outcome.md': 'outcome v2\n',
+        'data/reports/dec-75-outcome.md': 'outcome v1\n',
+        'data/reports/edited.md': 'committed\n',
+        'data/clean/c.md': 'tracked\n',
+        'data/logs/old/summary.md': 'tracked\n',
+      },
+    });
+    const live = path.join(app, 'data');
+    // What git does not hold: run output imported by the founder, and an uncommitted edit.
+    for (const [rel, body] of [
+      ['data/reports/draft.md', 'untracked\n'],
+      ['data/raw/a.json', '{}\n'],
+      ['data/logs/2026-09-30-883-brief-set/summary.md', 'untracked\n'],
+      ['data/logs/2026-09-30-883-brief-set/x.py', 'print(1)\n'],
+      ['data/runs/883-arm-A/summary.json', '{}\n'],
+      ['data/map/X/m.json', '{}\n'],
+    ]) {
+      mkdirSync(path.dirname(path.join(app, rel)), { recursive: true });
+      writeFileSync(path.join(app, rel), body);
+    }
+    writeFileSync(path.join(app, 'data', 'reports', 'edited.md'), 'uncommitted\n');
+    const runs = tempDir('aeo-p15-runs-');
+    mkdirSync(path.join(runs, 'data', 'map', 'X'), { recursive: true });
+    const { sandbox } = roots();
+    return { app, live, runs, sandbox, env: { [LIVE]: live } };
+  };
+  const pwsh = (command, cwd) => ({ ...bash(command, cwd), tool_name: 'PowerShell' });
+  const CHANGES = /this command changes .*inside the production data root .*git cannot restore it/;
+  const UNDECIDED = /cannot tell whether .* lands inside the production data root/;
+
+  test('every command from the five false refusals runs', () => {
+    const { app, live, runs, sandbox, env } = setup();
+    const compare = 'python -m axial.cli map compare data/map/X data/map/X-category --vocabulary-dir data/vocabulary';
+    for (const command of [
+      // #236
+      'cp docs/reports/dec-75-outcome.md data/reports/dec-75-outcome.md && diff docs/reports/dec-75-outcome.md data/reports/dec-75-outcome.md && echo SAME',
+      // #214
+      `cd ${app} && gh issue view 853 && gh issue view 855`,
+      `cd ${app} && ${DATA}=${sandbox} gh issue view 853`,
+      `gh issue create --title "guard" --body "the live root ${path.join(live, 'runs')} was named"`,
+      `${DATA}=${sandbox} npm test | tail -5`,
+      `${DATA}=${sandbox} npm test ; echo done`,
+      // #216
+      `git -C ${app} ls-files data/runs`,
+      `ls ${live}`,
+      `du -sh ${path.join(live, 'raw')}`,
+      `dir ${live}`,
+      `find ${sandbox} -type f | wc -l`,
+      `find ${live} -type f | wc -l`,
+      'env | grep AXIAL',
+      `robocopy ${live} ${path.join(sandbox, 'copy')} /L /E`,
+      // #218
+      `cd ${runs} && ${compare} > ${path.join(sandbox, 'compare.txt')} 2>&1`,
+      // #234
+      'git pull -q && git add config/briefs/cross && git add -f data/logs/2026-09-30-883-brief-set/*.py ' +
+        'data/logs/2026-09-30-883-brief-set/summary.md data/runs/883-arm-A/summary.json ' +
+        'data/runs/883-arm-C/summary.json && git status --short',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+  });
+
+  test('a write, move or delete that git can undo runs', () => {
+    const { app, live, sandbox, env } = setup();
+    for (const command of [
+      'cp docs/reports/dec-75-outcome.md data/reports/',
+      'echo more >> data/reports/dec-75-outcome.md',
+      'printf x > data/clean/c.md',
+      'rm -rf data/clean',
+      'rm data/logs/old/summary.md',
+      `mv data/clean/c.md ${path.join(sandbox, 'c.md')}`,
+      `cp data/raw/a.json ${path.join(sandbox, 'a.json')}`,
+      `robocopy ${live} ${path.join(sandbox, 'copy')} /E`,
+      `cat data/raw/a.json > ${path.join(sandbox, 'a.json')}`,
+      'ls data/raw ; npm test',
+      'grep -rn outcome data/reports',
+    ]) {
+      assertAllowed(guard({ payload: bash(command, app), env }), JSON.stringify(command));
+    }
+    assertAllowed(
+      guard({ payload: pwsh('Copy-Item docs/reports/dec-75-outcome.md -Destination data/reports/dec-75-outcome.md', app), env }),
+      'Copy-Item onto a tracked file',
+    );
+    for (const tool of FILE_TOOLS) {
+      assertAllowed(guard({ payload: fileCall(tool, path.join(live, 'reports', 'dec-75-outcome.md'), app), env }), tool);
+    }
+  });
+
+  test('a write, move or delete that reaches what git does not hold refuses', () => {
+    const { app, live, env } = setup();
+    for (const command of [
+      'cp docs/reports/dec-75-outcome.md data/raw/new.json',
+      'cp docs/reports/dec-75-outcome.md data/reports/draft.md',
+      'cp docs/reports/dec-75-outcome.md data/reports/edited.md',
+      'rm -rf data/reports',
+      'rm -rf data/logs/2026-09-30-883-brief-set/*.py',
+      'rm -rf data',
+      'rm -rf .',
+      'rm -rf *',
+      'mv data/raw/a.json data/raw/b.json',
+      'echo x > data/raw/a.json',
+      'ls > data/raw/listing.txt',
+      'touch data/raw/new.json',
+      'mkdir -p data/raw/new',
+      `cat docs/reports/dec-75-outcome.md | tee data/raw/a.json`,
+      `cd ${live} && rm -rf raw`,
+      `cd data/raw && echo x > a.json`,
+      `robocopy ${app} ${live} /MIR`,
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), CHANGES, JSON.stringify(command));
+    }
+    assertBlockedBecause(
+      guard({ payload: pwsh('Remove-Item -Recurse -Force data/raw', app), env }),
+      CHANGES,
+      'Remove-Item of an untracked directory',
+    );
+    for (const tool of FILE_TOOLS) {
+      assertBlockedBecause(
+        guard({ payload: fileCall(tool, path.join(live, 'raw', 'new.json'), app), env }),
+        /targets .*inside the\s+production data root .*git cannot restore it/,
+        tool,
+      );
+    }
+  });
+
+  test('a run against the root refuses whatever git holds', () => {
+    const { app, env } = setup();
+    for (const command of [
+      'python run.py data/reports/dec-75-outcome.md',
+      'python run.py < data/raw/a.json',
+      'cat data/raw/a.json | python x.py',
+      `find data/raw -name '*.tmp' | xargs rm`,
+      'git ls-files data/logs | xargs rm',
+      'for f in data/raw/*; do rm $f; done',
+      'ls "$(rm -rf data/raw)"',
+    ]) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), NAMES_LIVE_DATA, JSON.stringify(command));
+    }
+    for (const command of ['cd data && python run.py', 'git -C data clean -fd', 'cd data && sqlite3 entries.db']) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), OPERATES_IN, JSON.stringify(command));
+    }
+  });
+
+  test('a write whose location the guard cannot name refuses', () => {
+    const { app, env } = setup();
+    for (const command of ['cd $DIR && rm -rf raw', 'cd - && touch x', 'rm -rf "$NOT_SET_ANYWHERE/raw"']) {
+      assertBlockedBecause(guard({ payload: bash(command, app), env }), UNDECIDED, JSON.stringify(command));
+    }
+    // A variable the session environment defines is read from it.
+    assertAllowed(
+      guard({ payload: bash('rm -rf "$SCRATCH_DIR/x"', app), env: { ...env, SCRATCH_DIR: tempDir() } }),
+      'a defined variable outside the root',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash('rm -rf "$LIVE_RAW"', app), env: { ...env, LIVE_RAW: path.join(app, 'data', 'raw') } }),
+      CHANGES,
+      'a defined variable inside the root',
+    );
+  });
+
+  test('a root git cannot read fails closed', () => {
+    const { live } = roots();
+    const repo = makeRepo();
+    mkdirSync(path.join(live, 'index'), { recursive: true });
+    writeFileSync(path.join(live, 'index', 'a.json'), '{}\n');
+    const r = guard({ payload: bash(`cp README ${path.join(live, 'index', 'a.json')}`, repo), env: { [LIVE]: live } });
+    assertBlockedBecause(r, CHANGES, 'no repository around the root');
+    assert.match(r.stderr, /git cannot read a repository there/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A prefix assignment binds to one command, not to the line
 // ---------------------------------------------------------------------------
 //
