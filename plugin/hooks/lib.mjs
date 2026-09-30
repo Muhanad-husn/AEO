@@ -945,13 +945,15 @@ function walkOperation(payload, { env = process.env, cwd = process.cwd, platform
     if (segment.tokens.length > 0) dirs.push(current);
     // `git -C <dir>` runs its one command in <dir>, each `-C` relative to the one before
     // it (#220), and so does `Start-Process -WorkingDirectory <dir>` (#227). Neither moves
-    // anything after it, so `current` stays as it was.
+    // anything after it, so `current` stays as it was. The command still runs there, so the
+    // directory joins `dirs` the way a `cd` target does (#229).
     const runTargets = segmentGitTargets(segment) ?? segmentStartProcessTargets(segment);
     if (runTargets === undefined) segmentDirs.push(moved ? current : undefined);
     else {
       let where = moved ? current : startDir(payload, { env, cwd, platform });
       for (const t of runTargets) where = t === null || where === null ? null : resolveCdTarget(t, where, p, platform);
       if (where === null) unresolved = true;
+      else dirs.push(where);
       segmentDirs.push(where);
     }
     const target = segmentCdTarget(segment);

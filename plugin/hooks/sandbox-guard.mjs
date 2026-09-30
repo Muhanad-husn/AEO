@@ -847,7 +847,9 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
   //    candidates at all while the command deletes production data. The same is true of a
   //    session whose cwd already sits inside it and types no `cd`, and the Bash tool
   //    persists its working directory between calls, so one `cd corpus` reaches both. The
-  //    directory is the claim, and the guard already resolved it.
+  //    directory is the claim, and the guard already resolved it. The directories judged
+  //    include the one a `git -C` or a `Start-Process -WorkingDirectory` names for its own
+  //    command (#229): `git -C corpus add index` is the same hole without a `cd`.
   //
   //    BASH ONLY, for the reason the rule is stated in: it covers the paths a command
   //    names relatively and the guard therefore cannot see. A file tool names one target
