@@ -60,6 +60,19 @@ harness red twice is one defect in the suite, not two in the tests.
 Deleting a test without a smaller replacement that fails for a logic reason is
 not one of the available moves.
 
+## Git state is settled by the builder, before and after
+
+Before starting an issue and before finishing it, the building agent looks at
+branches, worktrees and unstaged files and settles them itself. The founder was
+writing "check the git i suspect a stale branch or work tree" and "decide over the
+changed unstaged files" mid-session (#239). A worktree whose branch is merged is
+removed. A merged branch is named in one line for the orchestrator to delete,
+because `block-merge` keeps branch deletion with the orchestrator. An unmerged stale
+branch or worktree is reported in one line and left alone. Unstaged files are
+sorted: its own work is committed, generated output is ignored or cleaned, and a
+file it did not touch is left alone and named in one line. The founder is asked
+only when git history cannot tell whose a file is.
+
 ## A small fix goes straight to a pull request
 
 No planning ceremony for a fix-sized change. One worktree, one branch, one pull
