@@ -58,8 +58,11 @@ not widen its own scope.
 
 The tier is chosen per slice by the orchestrator and stated in one line: which tier, and
 why this slice needs it. No charter pins it and no default carries over from the last
-dispatch. A hard slice takes the expensive tier, an easy one the cheap tier, and prose that
-is code-grade (a rule, a reference) takes its slice's tier rather than the cheap one.
+dispatch. The builder's tier follows the slice's novelty and scope, not how risky the code
+sounds. Work that follows a precedent starts at the cheaper tier and moves up after a
+second logic red (#229). When the available models change, the orchestrator reads the
+vendor's current model-choice guidance before relying on any remembered ranking. Prose
+that is code-grade (a rule, a reference) takes its slice's tier rather than the cheap one.
 
 If a second reader is dispatched, it sits at or above the builder's tier. Two instances of
 one model reading one change is a rerun, not a review, and it reads back the same blind
