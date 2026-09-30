@@ -25,7 +25,11 @@ what it cost, and which consumer number it expects to move.
 
 **How an issue is built** (the founder's rules, 2026-09-05, carried from RLM):
 1. One git worktree per issue.
-2. Code is written by a dispatched agent: Opus for a hard slice, Sonnet for an easy one.
+2. Code is written by a dispatched agent. Sonnet 5.5 by default: a slice that follows a
+   precedent or is well scoped. Opus 5.5 for novel logic, multi-file design, or
+   security-critical code, and for any slice where Sonnet used both logic-red attempts.
+   Fable is not used for code. When a new model ships, the orchestrator reads Anthropic's
+   model-choice page and launch post and proposes an update to this line.
 3. Prose is written by a dispatched Haiku agent. A rule or a skill is code-grade prose
    and takes the slice's tier instead.
 4. Prose gets no mechanical test. Text is read, diffed and fixed by hand. The eval scripts
