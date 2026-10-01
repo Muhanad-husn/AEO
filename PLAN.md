@@ -128,7 +128,7 @@ One row per phase, written by the phase's closing pull request.
 | 1 Invariants | done | consumer: none (phase 1 has no consumer) | plugin: bash 1 node, grep 0, read 0, task 0<br>harness: bash 1 node, grep 0, read 0, task 0; session start 836 lines; tests 1.72 of source (17021 / 9899) | 2026-09-16 |
 | 2 Sensorium | done | score: 7 Compare done, sample 4 recall 86.4 (8 of 8 phases done)<br>bar: Phase 5 under 70 on sample 1 after $25 spent means the method is wrong.<br>dollars: 18.95 of 50, balance 31.05 (LEDGER.md)<br>runs: none live<br>last run: none<br>commitment: none declared<br>executed: none declared<br>(empty git repository) score: none declared | harness: bash 1 node, grep 0, read 0, task 0; session start 834 lines<br>harness: bash 1 node, grep 0, read 0, task 0; session start 834 lines; tests 1.72 of source (17995 / 10489) | 2026-09-16 |
 | 3 Knowledge | done | consumer: none (phase 3 has no consumer)<br>grade-plugin: 0 of 20 expectations failing<br>then: 4 | plugin: session start 6 lines (budget 150)<br>prose: 1,067 lines under `plugin/skills` and `plugin/references` (budget 800, over by 267, see the pull request)<br>harness: bash 1 node, grep 0, read 0, task 0; session start 836 lines; tests 1.58 of source (15865 / 10064) | 2026-09-16 |
-| 4 Run 1 | not started | | | |
+| 4 Run 1 | done, bar missed | consumer: Muhanad-husn/axial<br>milestone: DEC-75, 2026-09-28 to 2026-10-01<br>days: 4<br>dollars: none declared<br>prs: 7 merged<br>interventions: 14.14 per merged PR (99 messages, 15 merge decisions excluded, 8 sessions), against RLM's 1.40<br>harness friction: 4.29 per merged PR (11 guard, 19 process), against RLM's 0.19 (0 guard)<br>false refusals: seven (#214, #216, #218, #234, #236, and two filed on #237 after the milestone), all fixed by 0.4.2<br>executed: none declared | harness: bash 2 node, grep 0, read 0, task 0; session start 839 lines; tests 0.38 of source (51772 / 137662) | 2026-10-01 |
 | 5 Run 2 | not started | | | |
 | 6 Removal | not started | | | |
 
@@ -326,5 +326,7 @@ published guidance shows no coding edge for Fable at 2.5 times the price; the di
 reference chooses a builder's tier by novelty and scope and re-reads published guidance
 when the models change, because #229 was dispatched to Opus as hard and a parallel Sonnet
 run matched it at half the price.
+
+Made 2026-10-01: phase 4 closes with its bar missed. Most of Axial's founder messages were about the work itself, and the harness's own share was 4.29 per merged pull request against RLM's 0.19. The kill line is applied by cutting down rather than removing: the sandbox guard now judges only what git cannot restore (#237) and building agents settle their own git state (#239), because the guard is the only protection Axial's live data has. Phase 5's bar is harness friction per merged pull request, founder messages about the harness itself, at or under RLM's 0.19.
 
 No decision is open.
