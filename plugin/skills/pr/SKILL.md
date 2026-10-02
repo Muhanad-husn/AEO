@@ -19,7 +19,7 @@ the body, in whatever order reads best:
   dollars, or the consumer's own score row. A change that moves nothing says so
   plainly and lets the founder decide.
 
-There is no template. `safe-pr` shipped one, with an evidence packet the same
+There is no template. The first build's PR skill shipped one, with an evidence packet the same
 size for a one-line fix as for a new subsystem, and nothing in it could be
 trimmed because the shape was fixed rather than argued. Writing three answers
 from scratch costs less than editing a form down.

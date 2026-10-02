@@ -198,7 +198,7 @@ function remoteHeads(remote) {
  *
  * `gh pr merge --delete-branch` deletes the LOCAL branch first and returns on that
  * failure, so it never reaches the remote delete. A worktree holds its branch checked
- * out, and `sprint-start` gives every actor a worktree, so the local delete failed every
+ * out, and the first build gave every actor a worktree, so the local delete failed every
  * time; the merge had already gone through, the error named the local branch, and the
  * remote branch survived unmentioned. Nothing else in this plugin would ever notice: the
  * skill is local-only, deliberately, and stays that way. This reports; the founder
