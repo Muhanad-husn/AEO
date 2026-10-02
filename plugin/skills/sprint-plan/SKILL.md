@@ -15,7 +15,7 @@ disk first, then created through the GitHub issue tools.
 ## Procedure
 
 1. **Scope the work.** Read the spec section the founder names. Dispatch
-   `triage` to size it against the current code when that helps. Restate
+   an agent to size it against the current code when that helps. Restate
    the outcome in two sentences and confirm with the founder if it's at
    all ambiguous.
 
@@ -83,8 +83,9 @@ disk first, then created through the GitHub issue tools.
    slice plan and the plans index with the real issue numbers, cross-linked
    in both directions.
 
-6. **Report** `DONE` with the filed issue list. `sprint-start` begins the
-   first one.
+6. **Report** `DONE` with the filed issue list. The founder starts the
+   first unblocked issue by asking a session to build it by number, for
+   example "build #6": one issue per session and worktree.
 
 ## Labels
 
@@ -98,7 +99,7 @@ existing labels before creating any.
 - Nothing is filed before founder approval of the drafts.
 - Every issue links its plan and spec section; every plan links its
   issue.
-- Dependencies are explicit. `sprint-start` picks by them.
+- Dependencies are explicit. Issues are started in the order they give.
 - One slice per issue. An issue that needs "and" is two issues.
 - GitHub issues are the record; nothing here duplicates them by hand
   ([D5](${CLAUDE_PLUGIN_ROOT}/DECISIONS.md)).

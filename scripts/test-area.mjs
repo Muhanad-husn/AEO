@@ -77,7 +77,7 @@ export const AREAS = {
   'plugin-manifest': {
     src: ['plugin/skills/*/SKILL.md', 'plugin/VENDORED.md', 'plugin/UPSTREAM-LICENSE',
       'plugin/.claude-plugin/**'],
-    tests: [`${T}/skills/skill-frontmatter.test.mjs`, `${T}/skills/vendored-manifest.test.mjs`],
+    tests: [`${T}/skills/skill-frontmatter.test.mjs`, `${T}/skills/retired-skill-names.test.mjs`, `${T}/skills/vendored-manifest.test.mjs`],
   },
 };
 
