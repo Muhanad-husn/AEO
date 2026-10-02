@@ -852,6 +852,103 @@ describe('paths named in the command', () => {
 });
 
 // ---------------------------------------------------------------------------
+// A SQLite URI that opens read-only (#246)
+// ---------------------------------------------------------------------------
+//
+// decision-model-poc exports from its production database with a script that opens it
+// only through `file:<root>/db/cip.sqlite?mode=ro`. SQLite refuses writes on that
+// connection, so the run cannot change the file. Before #246 the guard let every URI
+// through by accident: the `=` in `?mode=` cut the token to its query value, and a
+// `file:` prefix made the rest neither absolute nor URL-shaped. So `mode=rw` passed too.
+
+describe('a SQLite URI that opens read-only (#246)', () => {
+  const setup = () => {
+    const { live, sandbox } = roots();
+    mkdirSync(path.join(live, 'db'), { recursive: true });
+    const L = live.replace(/\\/g, '/');
+    const db = `${L}/db/cip.sqlite`;
+    const slash = L.startsWith('/') ? '' : '/';
+    return { live, L, db, slash, repo: makeRepo(), env: { [LIVE]: live, [DATA]: sandbox } };
+  };
+
+  test('a run whose only reference to the root is a mode=ro URI passes', () => {
+    const { db, slash, repo, env } = setup();
+    for (const command of [
+      `uv run python src/cip_export.py --db "file:${db}?mode=ro"`,
+      `uv run python src/cip_export.py --db 'file:${db}?mode=ro'`,
+      `uv run python src/cip_export.py --db file:${db}?mode=ro`,
+      `uv run python src/cip_export.py --db=file:${db}?mode=ro`,
+      `uv run python src/cip_export.py --db "file://${slash}${db}?mode=ro"`,
+      `uv run python src/cip_export.py --db "file://localhost${slash}${db}?mode=ro"`,
+      `uv run python src/cip_export.py --db "file:${db}?mode=ro&cache=shared"`,
+      `uv run python src/cip_export.py --db "file:${db}?mode=ro" --out data/cip/`,
+    ]) {
+      assertAllowed(guard({ payload: bash(command, repo), env }), command);
+      assertAllowed(guard({ payload: bash(command, repo, { tool_name: 'PowerShell' }), env }), `PowerShell: ${command}`);
+    }
+  });
+
+  test('the command from the issue passes with the root declared as D:/CIP-data', { skip: process.platform !== 'win32' }, () => {
+    const repo = makeRepo();
+    const command = 'uv run python src/cip_export.py --db "file:D:/CIP-data/db/cip.sqlite?mode=ro"';
+    assertAllowed(guard({ payload: bash(command, repo), env: { [LIVE]: 'D:/CIP-data' } }), command);
+    assertBlockedBecause(
+      guard({ payload: bash(command.replace('mode=ro', 'mode=rw'), repo), env: { [LIVE]: 'D:/CIP-data' } }),
+      NAMES_LIVE_DATA,
+      'the same command with mode=rw',
+    );
+  });
+
+  test('a URI that does not open read-only is a run against the root', () => {
+    const { L, db, slash, repo, env } = setup();
+    const encoded = `${L.replace(/production$/, 'pr%6Fduction')}/db/cip.sqlite`;
+    for (const uri of [
+      `file:${db}?mode=rw`,
+      `file:${db}?mode=rwc`,
+      `file:${db}?mode=memory`,
+      `file:${db}`,
+      `file:${db}?cache=shared`,
+      `file:${db}?mode=ro&mode=rw`,
+      `file:${db}?mode=rw&mode=ro`,
+      `file:${db}?mode=RO`,
+      `file:${db}?mode=ro&immutable=1`,
+      `file:${db}?mode=ro&vfs=unix-none`,
+      `file://${slash}${db}?mode=rw`,
+      `file:${encoded}?mode=rw`,
+    ]) {
+      for (const command of [`uv run python src/cip_export.py --db "${uri}"`, `uv run python src/cip_export.py --db=${uri}`]) {
+        assertBlockedBecause(guard({ payload: bash(command, repo), env }), NAMES_LIVE_DATA, command);
+      }
+    }
+  });
+
+  test('a mode=ro URI does not cover anything else the run reaches', () => {
+    const { live, L, db, repo, env } = setup();
+    const uri = `"file:${db}?mode=ro"`;
+    assertBlockedBecause(
+      guard({ payload: bash(`uv run python src/cip_export.py --db ${uri} --out ${L}/exports`, repo), env }),
+      NAMES_LIVE_DATA,
+      'a ro URI plus a plain root path',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash(`uv run python src/cip_export.py --db ${uri}`, live), env }),
+      OPERATES_IN,
+      'run from inside the root',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash(`cd ${live} && uv run python src/cip_export.py --db ${uri}`, repo), env }),
+      OPERATES_IN,
+      'a cd into the root',
+    );
+    assertBlockedBecause(
+      guard({ payload: bash(`uv run python src/cip_export.py --db ${uri} > ${L}/out.csv`, repo), env }),
+      /inside the\s+production data root/,
+      'a redirect into the root',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The directory the command runs in
 // ---------------------------------------------------------------------------
 //
