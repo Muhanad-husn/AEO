@@ -63,6 +63,7 @@ export const AREAS = {
     tests: [`${T}/scripts/runlog.test.mjs`, `${T}/scripts/runlog-worker.test.mjs`,
       `${T}/scripts/run-monitor.test.mjs`, `${T}/scripts/run-sentinel.test.mjs`],
   },
+  'worktree-links': { src: ['plugin/scripts/worktree-links.mjs'], tests: [`${T}/scripts/worktree-links.test.mjs`] },
   evals: {
     src: ['evals/**'],
     tests: [`${T}/evals/grade-plugin.test.mjs`, `${T}/evals/trigger-eval.test.mjs`],
