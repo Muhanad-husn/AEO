@@ -31,7 +31,7 @@ const RETIRED = [
 ];
 
 const alt = RETIRED.join('|');
-const SLASH_RE = new RegExp(`/aeo:(?:${alt})(?![\w-])`);
+const SLASH_RE = new RegExp(String.raw`/aeo:(?:${alt})(?![\w-])`);
 const BACKTICK_RE = new RegExp('`(?:' + alt + ')`');
 
 function walk(dir) {
