@@ -34,6 +34,9 @@
     "inert until AEO_LIVE_DATA_ROOT is filled in, so a blank pair is the safe default rather than an",
     "accidentally-enabled one. It is Claude Code's own settings file, not the project config",
     "file D10 forbids, and it is tracked in git: .gitignore excludes only settings.local.json.",
+    "It also carries a permissions.allow list for the git and gh work the plugin's skills hand",
+    "an agent (issue #247), so auto mode's safety check does not refuse a merge the founder",
+    "approved. It grants no merge authority: block-merge still gates merging.",
     "",
     "A step carrying \"when\" is written only when the founder's answers match it: every key",
     "in the object names an entry in \"answers\", and the answer given must be one of the",
@@ -83,7 +86,7 @@
       "stage": 0,
       "path": ".claude/settings.json",
       "role": "repository",
-      "content": "{\n  \"env\": {\n    \"AEO_LIVE_DATA_ROOT\": \"\",\n    \"AEO_DATA_ROOT\": \"\"\n  }\n}\n"
+      "content": "{\n  \"env\": {\n    \"AEO_LIVE_DATA_ROOT\": \"\",\n    \"AEO_DATA_ROOT\": \"\"\n  },\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git branch:*)\",\n      \"Bash(git push:*)\",\n      \"Bash(git worktree:*)\",\n      \"Bash(git rebase:*)\",\n      \"Bash(gh pr create:*)\",\n      \"Bash(gh pr merge:*)\"\n    ]\n  }\n}\n"
     },
     {
       "stage": 0,

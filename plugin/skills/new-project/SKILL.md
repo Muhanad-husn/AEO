@@ -62,6 +62,10 @@ Before any of that, file the founder's own Markdown from the project root into
 this skill starts from, not something it produces (issue #124). A name already taken under
 `docs/` stays at the root and is named in the report.
 
+`.claude/settings.json` also carries a `permissions.allow` list for the git and gh work a
+building agent does. `block-merge` still gates merging; the allow rules only stop the
+auto-mode safety check refusing a merge the founder approved.
+
 Steps carrying `from` take path and content from the chosen stack's seed. Node is the only
 seeded stack, because node is the one toolchain this plugin already requires (D8). For any
 other stack write the manifest, one trivial passing test and `aeo-tests.json` yourself, to
@@ -117,3 +121,6 @@ Scaffold only into the directory the founder named, never into this plugin's own
 repository and never into `~/.claude`. A table producing an answer nobody gave is how a
 project ends up with a bar it never chose. This skill does not merge and does not open a
 pull request on its own judgement.
+
+When the report is done, tell the founder the next step: run `/sprint-plan` in a fresh
+session to slice the PRD into issues, before any product code.
