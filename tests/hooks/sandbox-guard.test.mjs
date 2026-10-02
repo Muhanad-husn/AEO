@@ -916,7 +916,7 @@ describe('a SQLite URI that opens read-only (#246)', () => {
       `file://${slash}${db}?mode=rw`,
       `file:${encoded}?mode=rw`,
     ]) {
-      for (const command of [`uv run python src/cip_export.py --db "${uri}"`, `uv run python src/cip_export.py --db=${uri}`]) {
+      for (const command of [`uv run python src/cip_export.py --db "${uri}"`, `uv run python src/cip_export.py --db='${uri}'`]) {
         assertBlockedBecause(guard({ payload: bash(command, repo), env }), NAMES_LIVE_DATA, command);
       }
     }
