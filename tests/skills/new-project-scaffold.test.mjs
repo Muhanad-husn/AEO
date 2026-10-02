@@ -524,6 +524,22 @@ describe('the sandbox variables are declared blank at scaffold time (P6.2, issue
     );
   });
 
+  test('it carries the git and gh allow rules a building agent needs (issue #247)', () => {
+    const parsed = JSON.parse(readFileSync(settingsAbsPath(), 'utf8'));
+    const allow = parsed.permissions?.allow;
+    assert.ok(Array.isArray(allow), `${settingsRelPath} has no permissions.allow list`);
+    for (const rule of [
+      'Bash(git branch:*)',
+      'Bash(git push:*)',
+      'Bash(git worktree:*)',
+      'Bash(git rebase:*)',
+      'Bash(gh pr create:*)',
+      'Bash(gh pr merge:*)',
+    ]) {
+      assert.ok(allow.includes(rule), `permissions.allow is missing ${rule}`);
+    }
+  });
+
   // Not an assumption about sandbox-guard.mjs — the real gate, spawned the way hooks.json
   // wires it, fed exactly the pair the scaffold just wrote. readRoot() in sandbox-guard.mjs
   // treats an empty string as an explicit disarm, so this placeholder must leave the guard
