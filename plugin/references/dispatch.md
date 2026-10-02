@@ -7,7 +7,7 @@ those three facts, and each one has an incident behind it.
 ## Three shapes of dispatch, and the cap is only on one
 
 **Writers, capped at four.** A writer takes an issue from a failing test to an open pull
-request. It gets one worktree, one branch and one pull request, linked to the project's declared working data with `scripts/worktree-links.mjs link` after `git worktree add` and unlinked with `unlink` before `git worktree remove`, and no more than four run
+request. It gets one worktree, one branch and one pull request, linked to the project's declared working data with `node "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-links.mjs" link <worktree>` after `git worktree add` and unlinked with `unlink` before `git worktree remove`, and no more than four run
 at once (D11). The four is a founder-set operating parameter, not a tuned constant: the
 routine is four worktrees for four issues, which is what one person can read in a day. It
 was never measured off a machine or derived from core count, and there is no experiment

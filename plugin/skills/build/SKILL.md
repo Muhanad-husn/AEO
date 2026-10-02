@@ -73,7 +73,7 @@ sorted: its own work is committed, generated output is ignored or cleaned, and a
 file it did not touch is left alone and named in one line. The founder is asked
 only when git history cannot tell whose a file is.
 
-A project that declares `AEO_WORKTREE_LINKS` in `.claude/settings.json` has git-ignored working data (such as `data/` and `runs/`) that exists only in the main checkout, so after `git worktree add` the builder runs `node ${CLAUDE_PLUGIN_ROOT}/scripts/worktree-links.mjs link <worktree>`, and a run slice names its run ids with the issue number. Before `git worktree remove` it runs the same script with `unlink`, because removal follows a link and deletes the data behind it: never remove a worktree that still holds a link, and never `rmdir /s` or `Remove-Item -Recurse` one before unlinking.
+A project that declares `AEO_WORKTREE_LINKS` in `.claude/settings.json` has git-ignored working data (such as `data/` and `runs/`) that exists only in the main checkout, so after `git worktree add` the builder runs `node "${CLAUDE_PLUGIN_ROOT}/scripts/worktree-links.mjs" link <worktree>`, and a run slice names its run ids with the issue number. Before `git worktree remove` it runs the same script with `unlink`, because removal follows a link and deletes the data behind it: never remove a worktree that still holds a link, and never `rmdir /s` or `Remove-Item -Recurse` one before unlinking.
 
 ## A small fix goes straight to a pull request
 
