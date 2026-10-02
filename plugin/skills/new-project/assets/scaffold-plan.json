@@ -29,8 +29,8 @@
     "the manifest writes the record: for a stack with no seed the agent writes both, and the",
     "command it records is the one it just ran green in step 5.",
     "",
-    "The .claude/settings.json step (P6.2, issue #64) declares AEO_LIVE_DATA_ROOT and",
-    "AEO_DATA_ROOT both blank. sandbox-guard.mjs reads an empty string as not-set and stays",
+    "The .claude/settings.json step (P6.2, issue #64) declares AEO_LIVE_DATA_ROOT,",
+    "AEO_DATA_ROOT and AEO_WORKTREE_LINKS (#252) all blank. sandbox-guard.mjs reads an empty string as not-set and stays",
     "inert until AEO_LIVE_DATA_ROOT is filled in, so a blank pair is the safe default rather than an",
     "accidentally-enabled one. It is Claude Code's own settings file, not the project config",
     "file D10 forbids, and it is tracked in git: .gitignore excludes only settings.local.json.",
@@ -86,7 +86,7 @@
       "stage": 0,
       "path": ".claude/settings.json",
       "role": "repository",
-      "content": "{\n  \"env\": {\n    \"AEO_LIVE_DATA_ROOT\": \"\",\n    \"AEO_DATA_ROOT\": \"\"\n  },\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git branch:*)\",\n      \"Bash(git push:*)\",\n      \"Bash(git worktree:*)\",\n      \"Bash(git rebase:*)\",\n      \"Bash(gh pr create:*)\",\n      \"Bash(gh pr merge:*)\"\n    ]\n  }\n}\n"
+      "content": "{\n  \"env\": {\n    \"AEO_LIVE_DATA_ROOT\": \"\",\n    \"AEO_DATA_ROOT\": \"\",\n    \"AEO_WORKTREE_LINKS\": \"\"\n  },\n  \"permissions\": {\n    \"allow\": [\n      \"Bash(git branch:*)\",\n      \"Bash(git push:*)\",\n      \"Bash(git worktree:*)\",\n      \"Bash(git rebase:*)\",\n      \"Bash(gh pr create:*)\",\n      \"Bash(gh pr merge:*)\"\n    ]\n  }\n}\n"
     },
     {
       "stage": 0,

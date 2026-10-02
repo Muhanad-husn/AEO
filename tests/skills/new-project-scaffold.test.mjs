@@ -515,11 +515,11 @@ describe('the sandbox variables are declared blank at scaffold time (P6.2, issue
     assert.ok(existsSync(settingsAbsPath()), `${settingsRelPath} is in the write log but not on disk`);
   });
 
-  test('it parses as JSON and declares both sandbox variables as an explicit, blank placeholder', () => {
+  test('it parses as JSON and declares the sandbox variables and AEO_WORKTREE_LINKS as explicit, blank placeholders', () => {
     const parsed = JSON.parse(readFileSync(settingsAbsPath(), 'utf8'));
     assert.deepEqual(
       parsed.env,
-      { AEO_LIVE_DATA_ROOT: '', AEO_DATA_ROOT: '' },
+      { AEO_LIVE_DATA_ROOT: '', AEO_DATA_ROOT: '', AEO_WORKTREE_LINKS: '' },
       `${settingsRelPath} does not declare AEO_LIVE_DATA_ROOT and AEO_DATA_ROOT as a blank pair`,
     );
   });
