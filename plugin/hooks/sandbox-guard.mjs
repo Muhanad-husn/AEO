@@ -20,6 +20,9 @@
 //     under it, whatever git holds, because code can reach anything it is pointed at;
 //   - a seam (AEO_DATA_ROOT) that is relative or overlaps the root;
 //   - the declared suite while a live-run sentinel is up.
+// A run whose only reference to the root is a SQLite URI with `mode=ro` is not a run
+// against it (#246): SQLite refuses every write on that connection, so the URI answers the
+// guard's question, whether this can change a file under the root.
 // Everything else passes, whatever paths it names. Phase 4 on Axial refused five pieces
 // of legitimate work (#214, #216, #218, #234, #236), each a command that named the root
 // and could not lose data git does not hold, and PLAN.md's kill line says a layer that
@@ -102,6 +105,53 @@ export function shellTokens(command) {
 
 const URL_LIKE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 
+const SQLITE_URI = /^file:/i;
+
+/** `%HH` decoded the way SQLite decodes a URI: two hex digits or the text is left as it is. */
+const uriDecode = (s) => s.replace(/%([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+
+/**
+ * A SQLite URI filename (#246): the path SQLite opens for `file:<path>?<query>`, and
+ * whether the query opens it read-only. Null when the word does not start with `file:`.
+ *
+ * Read-only means exactly `file:`, an empty or `localhost` authority, at least one `mode`
+ * and every `mode` equal to `ro`, and no parameter but `mode` and `cache`. SQLite then
+ * refuses every write on the connection. Anything else is not read-only and its path is
+ * judged as a run's. `immutable=1` is refused on purpose: SQLite opens the file read-only
+ * but stops taking locks and checking for changes, so it reads a file a live writer is
+ * changing with nothing to tell it so; `nolock` and `vfs` are refused for the same reason
+ * and because the guard does not vouch for what a VFS does.
+ */
+export function sqliteUri(word) {
+  if (!SQLITE_URI.test(word)) return null;
+  const rest = word.slice(5);
+  const hash = rest.indexOf('#');
+  const body = hash === -1 ? rest : rest.slice(0, hash);
+  const q = body.indexOf('?');
+  let file = q === -1 ? body : body.slice(0, q);
+  let hostOk = true;
+  if (file.startsWith('//')) {
+    const slash = file.indexOf('/', 2);
+    const host = slash === -1 ? file.slice(2) : file.slice(2, slash);
+    hostOk = host === '' || host.toLowerCase() === 'localhost';
+    file = slash === -1 ? '' : file.slice(slash);
+  }
+  file = uriDecode(file);
+  if (/^\/[A-Za-z]:/.test(file)) file = file.slice(1);
+  const params = q === -1 ? [] : body.slice(q + 1).split('&').filter((p) => p !== '').map((p) => {
+    const eq = p.indexOf('=');
+    return eq === -1 ? [uriDecode(p), ''] : [uriDecode(p.slice(0, eq)), uriDecode(p.slice(eq + 1))];
+  });
+  const modes = params.filter(([k]) => k === 'mode').map(([, v]) => v);
+  const readOnly =
+    word.startsWith('file:') &&
+    hostOk &&
+    modes.length > 0 &&
+    modes.every((m) => m === 'ro') &&
+    params.every(([k]) => k === 'mode' || k === 'cache');
+  return { path: file, readOnly };
+}
+
 /**
  * The tokens that could name a filesystem location.
  *
@@ -111,13 +161,21 @@ const URL_LIKE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
  *
  * A comma separates the items of a PowerShell argument list (#227), so each item is judged
  * on its own: `"data/x",` names `data/x`, and `"a","<live>/y"` names both.
+ *
+ * A SQLite URI names the path it opens, whatever its query holds (#246). With
+ * `skipReadOnlyUris`, one that opens read-only (sqliteUri) names nothing.
  */
-export function pathCandidates(tokens) {
+export function pathCandidates(tokens, { skipReadOnlyUris = false } = {}) {
   const out = new Set();
   for (const raw of tokens) {
     const eq = raw.indexOf('=');
-    for (const item of (eq > 0 ? raw.slice(eq + 1) : raw).split(',')) {
+    for (const item of (eq > 0 && !SQLITE_URI.test(raw) ? raw.slice(eq + 1) : raw).split(',')) {
       const t = item.trim();
+      const uri = sqliteUri(t);
+      if (uri !== null) {
+        if (uri.path !== '' && !(skipReadOnlyUris && uri.readOnly)) out.add(uri.path);
+        continue;
+      }
       if (t === '' || URL_LIKE.test(t)) continue;
       if (!/[\\/]/.test(t)) continue;
       out.add(t);
@@ -821,7 +879,7 @@ export function sandboxGuard(payload, { env = process.env, cwd = process.cwd, no
   // not: code can reach whatever it is pointed at. A relative word with no directory to
   // resolve against (after a `cd` the guard could not name) names no location it can test.
   const judgeRun = (words, dir) => {
-    for (const word of pathCandidates(words)) {
+    for (const word of pathCandidates(words, { skipReadOnlyUris: true })) {
       const p = locate(word, dir);
       if (p === null || !inside(p)) continue;
       block(
