@@ -50,8 +50,7 @@
     "file that drops its marker leaves the sensorium printing \"none declared\" for that line",
     "while the file itself still looks written: the status table under a Status heading is",
     "the score (phase 2 decision 3), the **Kill line.** item is the bar (phase 2 decision",
-    "4), Ceiling $<n> is where dollars come from (phase 0 decision 2), and the Date /",
-    "Recommendation / Executed header is the commitment ledger (phase 0 decision 4).",
+    "4), and Ceiling $<n> is where dollars come from (phase 0 decision 2).",
     "",
     "answers holds the two questions SKILL.md asks before it writes a line. The oracle is",
     "the one project-specific thing (PLAN.md section 2): a key and rubric, an acceptance",
@@ -130,13 +129,6 @@
     },
     {
       "stage": 0,
-      "path": "COMMITMENTS.md",
-      "role": "repository",
-      "authored": true,
-      "requires": ["| Date | Recommendation | Executed |"]
-    },
-    {
-      "stage": 0,
       "path": "README.md",
       "role": "repository",
       "authored": true
@@ -186,7 +178,6 @@
       "RULES.md",
       "PLAN.md",
       "LEDGER.md",
-      "COMMITMENTS.md",
       "LICENSE.md",
       "CONTRIBUTING.md",
       "CODE_OF_CONDUCT.md",

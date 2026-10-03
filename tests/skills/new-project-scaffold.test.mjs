@@ -44,7 +44,6 @@ import path from 'node:path';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { HEADER_LINE, parseCommitments } from '../../plugin/hooks/commitments.mjs';
 import { resolveTestPlan } from '../../plugin/hooks/stack.mjs';
 import { parseStatusTable } from '../../plugin/hooks/status-table.mjs';
 
@@ -652,13 +651,13 @@ describe('the emitted tree records a test command, and that command is green', (
 });
 
 // ---------------------------------------------------------------------------
-// issue #199 — the oracle answer, the four files it writes, and what the
+// issue #199 — the oracle answer, the files it writes, and what the
 // sensorium reads back out of the scaffolded project
 // ---------------------------------------------------------------------------
 //
 // The scaffold is where the goal enters the project (PLAN.md section 3). Before this
-// slice a scaffolded repository had no status table, no kill line, no ledger and no
-// commitment file, so its first session start printed "none declared" on every line the
+// slice a scaffolded repository had no status table, no kill line, and no
+// ledger, so its first session start printed "none declared" on every line the
 // sensorium exists to fill. These tests walk the plan with each of the two answer sets
 // the acceptance criterion names and then run the real hook against the tree, because
 // the tree is only half the claim: what matters is that the readers in plugin/hooks/
@@ -666,10 +665,10 @@ describe('the emitted tree records a test command, and that command is green', (
 //
 // `scaffolded` above is already the founder-as-reader, no-money case, so the ordering,
 // shape, commit and sandbox assertions earlier in this file all run over a tree that
-// carries the four files too.
+// carries the files too.
 
-/** The four files, and the reader in plugin/hooks/ that each one exists for. */
-const ORACLE_FILES = ['RULES.md', 'PLAN.md', 'LEDGER.md', 'COMMITMENTS.md'];
+/** The files, and the reader in plugin/hooks/ that each one exists for. */
+const ORACLE_FILES = ['RULES.md', 'PLAN.md', 'LEDGER.md'];
 
 const withCeiling = world('founder-as-reader-with-ceiling', 'aeo-199-');
 
@@ -732,10 +731,12 @@ describe('the scaffold writes the files the sensorium reads (issue #199)', () =>
     assert.ok(table.rows.length > 0, 'the status table has no rows, so there are no phases to score');
   });
 
-  test('COMMITMENTS.md exists with the phase 0 decision 4 header and no rows yet', () => {
-    const markdown = readFileSync(path.join(scaffolded.root, 'COMMITMENTS.md'), 'utf8');
-    assert.ok(markdown.includes(HEADER_LINE), `COMMITMENTS.md does not carry ${HEADER_LINE}`);
-    assert.deepEqual(parseCommitments(markdown), [], 'a freshly scaffolded commitment ledger already has rows');
+  test('COMMITMENTS.md is not written', () => {
+    assert.equal(
+      existsSync(path.join(scaffolded.root, 'COMMITMENTS.md')),
+      false,
+      'the scaffold still writes COMMITMENTS.md',
+    );
   });
 
   test('LEDGER.md is not written when the founder answers that money does not move', () => {
@@ -765,9 +766,9 @@ describe('the scaffold writes the files the sensorium reads (issue #199)', () =>
     }
   });
 
-  test('all four files land in the one commit on main', () => {
+  test('all the files land in the one commit on main', () => {
     const tracked = git(scaffolded.root, ['ls-files']).split(/\r?\n/);
-    for (const name of ['RULES.md', 'PLAN.md', 'COMMITMENTS.md']) {
+    for (const name of ['RULES.md', 'PLAN.md']) {
       assert.ok(tracked.includes(name), `${name} is not in the first commit: ${tracked.join(', ')}`);
     }
     assert.ok(!tracked.includes('LEDGER.md'), 'LEDGER.md is tracked in a project whose answers say no money moves');
@@ -801,10 +802,10 @@ describe('the sensorium reads the scaffolded project, not "none declared" (issue
     assert.equal(bar, `bar: ${sentence}`);
   });
 
-  test('the commitment ledger is present and empty, so the newest row is none declared', () => {
+  test('the block prints no commitment: or executed: line', () => {
     assert.ok(
-      block.includes('commitment: none declared'),
-      `the sensorium does not print "commitment: none declared":\n${block.join('\n')}`,
+      !block.some((line) => line.startsWith('commitment:') || line.startsWith('executed:')),
+      `the sensorium still prints a ledger line:\n${block.join('\n')}`,
     );
   });
 

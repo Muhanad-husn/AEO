@@ -112,7 +112,7 @@ describe('the founderDocs rule is declared, not left to a filename pattern (issu
   });
 
   test('the exclude list keeps every Markdown file the scaffold itself writes at the root', () => {
-    // README.md and CLAUDE.md were the original two. Issue #199 adds four more, and they
+    // README.md and CLAUDE.md were the original two. Issue #199 adds more, and they
     // matter more than the first two did: the move runs before the steps array is
     // walked, so a founder who drafted their own PLAN.md or RULES.md before scaffolding
     // would have it filed under docs/ and then silently replaced by the scaffold's.
@@ -134,7 +134,7 @@ describe('the founderDocs rule is declared, not left to a filename pattern (issu
 });
 
 // ---------------------------------------------------------------------------
-// issue #199 — the oracle answer, and the four files the scaffold writes from it
+// issue #199 — the oracle answer, and the files the scaffold writes from it
 // ---------------------------------------------------------------------------
 //
 // The integration test walks the plan with a real answer set and asserts the tree and
@@ -142,15 +142,14 @@ describe('the founderDocs rule is declared, not left to a filename pattern (issu
 // manifest declares, and that the fixture the other test answers from stays inside that
 // declaration.
 //
-// Why these four files are declared rather than left to the handbook. The sensorium
+// Why these files are declared rather than left to the handbook. The sensorium
 // reads them from a consuming project's root and prints what it finds: the status table
 // under a Status heading is the score (phase 2 decision 3), RULES.md's Kill line is the
-// bar (phase 2 decision 4), LEDGER.md's ceiling is where dollars come from (phase 0
-// decision 2), and COMMITMENTS.md is the commitment ledger (phase 0 decision 4). A
-// scaffold that skips them hands the founder a project whose every session start says
-// "none declared".
+// bar (phase 2 decision 4), and LEDGER.md's ceiling is where dollars come from (phase 0
+// decision 2). A scaffold that skips them hands the founder a project whose every
+// session start says "none declared".
 
-const ORACLE_FILES = ['RULES.md', 'PLAN.md', 'LEDGER.md', 'COMMITMENTS.md'];
+const ORACLE_FILES = ['RULES.md', 'PLAN.md', 'LEDGER.md'];
 
 const FIXTURE_PATH = path.resolve(
   import.meta.dirname,
@@ -195,7 +194,7 @@ describe('the plan declares the answers new-project asks for (issue #199)', () =
   });
 });
 
-describe('the four oracle files are declared as stage-0 authored steps (issue #199)', () => {
+describe('the oracle files are declared as stage-0 authored steps (issue #199)', () => {
   const plan = JSON.parse(raw);
   const byPath = new Map(plan.steps.map((s) => [s.path, s]));
 
@@ -220,11 +219,10 @@ describe('the four oracle files are declared as stage-0 authored steps (issue #1
     assert.ok(byPath.get('RULES.md').requires.includes('**Kill line.**'));
     assert.ok(byPath.get('PLAN.md').requires.includes('## Status'));
     assert.ok(byPath.get('PLAN.md').requires.includes('| Phase | State | Score |'));
-    assert.ok(byPath.get('COMMITMENTS.md').requires.includes('| Date | Recommendation | Executed |'));
     assert.ok(byPath.get('LEDGER.md').requires.includes('Ceiling $'));
   });
 
-  test('all four are declared before every product-code step', () => {
+  test('all are declared before every product-code step', () => {
     const stage0 = plan.steps.filter((s) => s.stage === 0);
     for (const name of ORACLE_FILES) {
       const at = stage0.findIndex((s) => s.path === name);

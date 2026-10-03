@@ -1,4 +1,4 @@
-// Acceptance tests for the interventions and executed lines. They read the
+// Acceptance tests for the interventions line. They read the
 // synthetic transcripts under tests/fixtures/score/transcripts/ and a temporary
 // home directory built from them, so nothing here touches a real transcript.
 import { test } from 'node:test';
@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { windowOf } from '../../scripts/score/consumer.mjs';
-import { countCommitments, line, scanTranscripts } from '../../scripts/score/interventions.mjs';
-import { projectSlug, readCommitments, readInterventions } from '../../scripts/score/sources.mjs';
+import { line, scanTranscripts } from '../../scripts/score/interventions.mjs';
+import { projectSlug, readInterventions } from '../../scripts/score/sources.mjs';
 
 const fixtures = fileURLToPath(new URL('../fixtures/score/', import.meta.url));
 const transcripts = join(fixtures, 'transcripts');
@@ -31,7 +31,6 @@ function snapshot(extra = {}) {
       { number: 3, mergedAt: '2026-09-07T09:00:00Z' },
     ],
     interventions: null,
-    commitments: null,
     ...extra,
   };
 }
@@ -88,19 +87,8 @@ test('a consumer with no transcript directory scans to null', () => {
   assert.equal(readInterventions('Absent-consumer', windowOf(snapshot()), home), null);
 });
 
-test('a consumer with no COMMITMENTS.md declares nothing', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'score-consumer-'));
-  assert.equal(readCommitments(dir), null);
-  const out = line(snapshot()).split('\n');
-  assert.equal(out[1], 'executed: none declared');
-});
-
-test('the ledger counts executed rows over marked rows', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'score-consumer-'));
-  cpSync(join(fixtures, 'commitments-sample.md'), join(dir, 'COMMITMENTS.md'));
-  const counts = readCommitments(dir);
-  assert.deepEqual(counts, { marked: 2, total: 4 });
-  assert.deepEqual(countCommitments('no table here'), { marked: 0, total: 0 });
-  const out = line(snapshot({ commitments: counts })).split('\n');
-  assert.equal(out[1], 'executed: 2 of 4 marked');
+test('the line is the interventions line alone, with no executed: line', () => {
+  const out = line(snapshot());
+  assert.equal(out, 'interventions: no transcripts');
+  assert.ok(!out.includes('executed:'));
 });

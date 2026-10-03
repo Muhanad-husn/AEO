@@ -26,7 +26,6 @@ const openExpected = [
   'dollars: none declared',
   'prs: 0 merged',
   'interventions: no transcripts',
-  'executed: none declared',
   'harness: bash 1 node, grep 0, read 0, task 0; session start 120 lines; tests 0.44 of source (400 / 900)',
   '',
 ].join('\n');
@@ -46,7 +45,6 @@ const closedExpected = [
   'dollars: 2.05',
   'prs: 3 merged',
   'interventions: 2.00 per merged PR (6 messages, 3 merge decisions excluded, 3 sessions)',
-  'executed: none declared',
   'harness: bash 1 node, grep 0, read 0, task 0; session start 60 lines; tests 0.00 of source (0 / 0)',
   '',
 ].join('\n');

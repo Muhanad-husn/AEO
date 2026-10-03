@@ -469,8 +469,8 @@ export async function renderStatusView(root) {
     return ['**Status:** not inside a git worktree; nothing to render.', ''].join('\n');
   }
 
-  // The sensorium's block (#181): score and bar today, dollars/runs/the commitment
-  // ledger/the harness cost in later slices. First, ahead of everything this renderer
+  // The sensorium's block (#181): score and bar today, dollars/runs/the harness
+  // cost in later slices. First, ahead of everything this renderer
   // printed before this slice -- the consumer's own number is what a reader wants
   // before issues, PRs or the Decision Log.
   const lines = [...(await renderSensorium(root)), ''];

@@ -44,10 +44,10 @@ export const AREAS = {
     tests: [`${T}/skills/status.test.mjs`, `${T}/skills/status-render-smoke.test.mjs`],
   },
   sensorium: {
-    src: [`${H}/sensorium.mjs`, `${H}/sensorium/**`, `${H}/ledger.mjs`, `${H}/commitments.mjs`,
+    src: [`${H}/sensorium.mjs`, `${H}/sensorium/**`, `${H}/ledger.mjs`,
       `${H}/status-table.mjs`, `${H}/harness-cost.mjs`, `${T}/fixtures/sensorium/**`],
     tests: [`${T}/hooks/sensorium.test.mjs`, `${T}/hooks/sensorium-dollars.test.mjs`,
-      `${T}/hooks/sensorium-runs.test.mjs`, `${T}/hooks/sensorium-commitment.test.mjs`,
+      `${T}/hooks/sensorium-runs.test.mjs`,
       `${T}/hooks/sensorium-harness.test.mjs`],
   },
   score: {

@@ -4,7 +4,7 @@
 // its gate health section, renderStatusView first; see each file's own comment on why.
 //
 // Directory discovery is the one decision that lets slices 02 to 05 (dollars, runs,
-// the commitment ledger, the harness cost) each add one file under sensorium/ and
+// the harness cost) each add one file under sensorium/ and
 // touch no shared list. A section whose render() throws is reported as unknown, by
 // name, rather than taking the rest of the block down with it.
 
