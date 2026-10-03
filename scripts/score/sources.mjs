@@ -8,6 +8,7 @@ import {
   parseStatusTable, phaseNumber, isDone, phaseRow, milestoneOf, splitRow, windowOf,
 } from './consumer.mjs';
 import { scanTranscripts } from './interventions.mjs';
+import { readRules } from './rules.mjs';
 import { measure } from './harness.mjs';
 
 function run(command, args, cwd) {
@@ -183,6 +184,7 @@ export function readMilestone(dir, title) {
   // Derived counts, not transcripts: a replay reads these and never a session
   // file. Appended after the keys the window itself is computed from.
   const window = windowOf(snapshot);
+  snapshot.rules = readRules(projectSlug(dir), window);
   snapshot.interventions = readInterventions(dir, window);
   return snapshot;
 }
@@ -219,6 +221,7 @@ export function read(dir, phases) {
   // Derived counts, not transcripts: a replay reads these and never a session
   // file. Appended after the keys the window itself is computed from.
   const window = windowOf(snapshot);
+  snapshot.rules = readRules(projectSlug(dir), window);
   snapshot.interventions = readInterventions(dir, window);
   return snapshot;
 }

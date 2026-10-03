@@ -15,6 +15,7 @@ import * as consumer from './score/consumer.mjs';
 import * as interventions from './score/interventions.mjs';
 import * as harness from './score/harness.mjs';
 import * as record from './score/record.mjs';
+import * as rules from './score/rules.mjs';
 
 function parseArgv(argv) {
   const options = { dir: null, phases: null, milestone: null, snapshot: null, from: null, record: null };
@@ -60,7 +61,8 @@ function main(argv) {
       writeFileSync(options.snapshot, sources.serialise(snapshot));
     }
   }
-  const out = [consumer.row(snapshot), interventions.line(snapshot), harness.line(snapshot)];
+  const out = [consumer.row(snapshot), interventions.line(snapshot), harness.line(snapshot), rules.block(snapshot)]
+    .filter((part) => part !== null);
   process.stdout.write(out.join('\n') + '\n');
   return 0;
 }
