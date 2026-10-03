@@ -1,6 +1,6 @@
 ---
 name: status
-description: Render the repository's live state instead of recalling it - the sensorium's score, bar, dollars, runs, commitment and harness cost, then open issues triaged, open pull requests with their check state, the Decision Log and any planned-against-built slice chains. Use when asked where things stand, what is next, or for ground truth at the start of a session.
+description: Render the repository's live state instead of recalling it - the sensorium's score, bar, dollars, runs and harness cost, then open issues triaged, open pull requests with their check state, the Decision Log and any planned-against-built slice chains. Use when asked where things stand, what is next, or for ground truth at the start of a session.
 ---
 
 # `status`: read the record, never the memory
@@ -32,11 +32,6 @@ in filename order and prints its lines first. Seven fields, over five sections:
   sentinels and directory errors named rather than dropped.
 - `last run:` the newest `logs/<dir>/run.jsonl`'s last record, one line. A
   session reads the structured record, never a run's prose (#183).
-- `commitment:` the newest row of `COMMITMENTS.md` and, beside it, `executed:`
-  whether the previous recommendation was carried out. The ledger is written by
-  `plugin/scripts/commitment.mjs`, called by the model; nothing fires at session
-  end, because a hook cannot read a recommendation out of prose (phase 2
-  decision 5).
 - `harness:` node processes per tool and lines read at session start. The
   tests-over-source ratio walks the source tree and stays in the score script
   (phase 2 decision 6).

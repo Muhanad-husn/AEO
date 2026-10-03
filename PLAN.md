@@ -32,16 +32,10 @@ Nothing prescribes.
 | Layer | Kind | What it does | Fires |
 |---|---|---|---|
 | Invariants | code, PreToolUse, fails closed, no override | Merge and branch deletion stay with the founder. Production data is unreachable. A declared test command does not run while a long job's sentinel is live. A role does not rewrite the config that governs it. | Only on the matching tool and command. Nothing fires on Read, Grep, Glob, Task or MCP calls that are not a merge. |
-| Sensorium | code, SessionStart and `/status`, writes nothing | Prints what the model cannot passively see: the product number and its bar, dollars spent of the cap, open issues and pull requests, live runs and their last progress line, the last recommendation and whether it was executed, and the harness's own cost this session. | Every session start, and on demand. |
+| Sensorium | code, SessionStart and `/status`, writes nothing | Prints what the model cannot passively see: the product number and its bar, dollars spent of the cap, open issues and pull requests, live runs and their last progress line, and the harness's own cost this session. | Every session start, and on demand. |
 | Knowledge | prose, description-triggered, advisory | How this shop does a thing and why, with the incident behind each rule. Tests red first for behaviour; the existing suite as oracle for the rest. A pull request says what, what it cost, which number it expects to move. Branch cleanup classifies before it deletes. A long job is watched from its run log, not its shell. | When the model judges it relevant. No skill refuses, no skill is operator-only except `sprint-plan`, no skill names a step order. |
 
 Two mechanisms sit across the layers.
-
-**The commitment ledger.** Every session ends with one recommendation. The sensorium reads
-it back at the next session start with one word beside it: executed, partial, not. That is
-the paper's reflection-action gap measured on ourselves at zero cost, and the first drift
-signal the first build never had. The model tracks its own thread; the harness only shows
-it the thread.
 
 **The persistence cap.** Two attempts per shape, then the shape changes or the model says
 the method is wrong. A harness red gets minutes. A method question is a first-class
@@ -86,11 +80,11 @@ The plugin is scored on projects that use it, never on itself.
 | Project | Status | Record |
 |---|---|---|
 | Past record | closed | `D:\RLM`: phases 0 to 5, 4 days, $3.50, 48 PRs under one hook and two skills. `RLM-Challenge`: 16 days, $20.58, 122 PRs, no report, under the first build. `D:\CIP-code`: issues #127, #130, #133, #134 against the first build, an hour lost to a flaky gate, a day to harness noise, two lockouts. Neither project runs another phase; neither is a live consumer or a continuous benchmark. |
-| Live consumer | open | A fresh project from `new-project`, named by the founder. The plugin is scored on its phases: days from first issue to the phase's gate, dollars, founder interventions per merged pull request (a message that corrects, re-asks or unblocks), and the commitment ledger's executed rate. Read by a script from git, GitHub and the consumer's own ledger; nothing hand-counted. The harness's own cost is printed beside it: node processes per Bash call, lines read at session start, tests over source. |
+| Live consumer | open | A fresh project from `new-project`, named by the founder. The plugin is scored on its phases: days from first issue to the phase's gate, dollars, founder interventions per merged pull request (a message that corrects, re-asks or unblocks). Read by a script from git, GitHub and the consumer's own ledger; nothing hand-counted. The harness's own cost is printed beside it: node processes per Bash call, lines read at session start, tests over source. |
 
 **The score**, per consumer phase: days from first issue to the phase's gate, dollars,
 founder interventions per merged pull request (a message that corrects, re-asks or
-unblocks), and the commitment ledger's executed rate. Read by a script from git, GitHub
+unblocks). Read by a script from git, GitHub
 and the consumer's own ledger; nothing hand-counted. The harness's own cost is printed
 beside it: node processes per Bash call, lines read at session start, tests over source.
 
@@ -334,5 +328,7 @@ Made 2026-10-02: phase 5 and phase 6 run on decision-model-poc (`D:\decision-mod
 Made 2026-10-03: phase 5 closes with its bar missed. Harness friction was 0.72 per merged pull request (0 guard, 13 process) against RLM's 0.19, on decision-model-poc's 18 merged pull requests; most of it came in the scaffold and plugin-update hours and was fixed during the run (#248, #250, #252). The sandbox guard refused legitimate work in a second phase (#246), which the kill line says removes the layer, so phase 6 first audits every guard refusal across Axial's DEC-75 and decision-model-poc and removes any rule that never stopped real harm.
 
 Made 2026-10-03, slicing phase 6: the trimmed plugin is rerun on diligence-reader's first UI milestone, because decision-model-poc is closed with no work ahead; this supersedes the 2026-10-02 line that ran phase 6 on decision-model-poc. block-merge's rules and the sandbox guard's rule against a write git cannot restore are counted in the audit but kept, because the merge and the data stay gated in code and two runs cannot show an irreversible harm will not come.
+
+Made 2026-10-03: the commitment ledger is removed (`COMMITMENTS.md`, its sensorium lines `commitment:` and `executed:`, `plugin/scripts/commitment.mjs`, the score row's `executed:` line, and the `new-project` scaffold entry), because neither consumer wrote one: Axial and decision-model-poc both printed `executed: none declared` or `0 of 0 marked` for the whole run.
 
 No decision is open.

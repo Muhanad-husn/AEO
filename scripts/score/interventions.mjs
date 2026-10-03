@@ -1,16 +1,8 @@
-// Founder messages per merged pull request, and the commitment ledger's rate.
+// Founder messages per merged pull request.
 // Nothing here reads a home directory or a project path; the caller passes the
 // file paths in, and line() formats from the snapshot alone.
-//
-// countCommitments moved to plugin/hooks/commitments.mjs (#184), which the
-// sensorium's commitment section also reads. Re-exported here, unchanged in
-// contract, so this module's own callers and tests/scripts/score-interventions.test.mjs
-// see no difference.
 import { readFileSync } from 'node:fs';
 import { calendarDate, mergedPullRequests } from './consumer.mjs';
-import { countCommitments } from '../../plugin/hooks/commitments.mjs';
-
-export { countCommitments };
 
 const DECISION = /\b(approve|approved|merge|lgtm)\b/i;
 const DECISION_WORDS = 12;
@@ -108,12 +100,6 @@ function interventionsLine(snapshot) {
   return `interventions: ${(counts.messages / merged).toFixed(2)} per merged PR (${detail})`;
 }
 
-function executedLine(snapshot) {
-  const counts = snapshot?.commitments;
-  if (!counts) return 'executed: none declared';
-  return `executed: ${counts.marked} of ${counts.total} marked`;
-}
-
 export function line(snapshot) {
-  return `${interventionsLine(snapshot)}\n${executedLine(snapshot)}`;
+  return interventionsLine(snapshot);
 }

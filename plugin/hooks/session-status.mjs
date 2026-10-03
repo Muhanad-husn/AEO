@@ -169,8 +169,8 @@ async function run(payload) {
   // resolved) because the sensorium needs it too.
   const { toplevel: root } = resolveWorktree(payload ?? {});
 
-  // The sensorium's block (#181): score and bar today, dollars/runs/the commitment
-  // ledger/the harness cost in later slices. After gate health (D8 still reads first:
+  // The sensorium's block (#181): score and bar today, dollars/runs/the harness
+  // cost in later slices. After gate health (D8 still reads first:
   // a broken runtime outranks the consumer's own number) and before the data root.
   lines.push(...(await renderSensorium(root)), '');
 

@@ -26,12 +26,11 @@ const expected = [
   'dollars: 20.58',
   'prs: 117 merged of 122',
   'interventions: no transcripts',
-  'executed: none declared',
   'harness: no checkout',
   '',
 ].join('\n');
 
-test('scoring the committed record prints the eight-line row', () => {
+test('scoring the committed record prints the seven-line row', () => {
   assert.equal(run(recordFile), expected);
 });
 
@@ -55,7 +54,6 @@ test('a record missing its "record" field is rejected', () => {
     dollars: 20.58,
     pullRequests: { total: 122, merged: 117 },
     interventions: null,
-    commitments: null,
     harness: null,
   }));
   assert.throws(() => load(file), /record/);

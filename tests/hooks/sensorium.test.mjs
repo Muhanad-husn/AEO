@@ -183,10 +183,8 @@ describe('renderSensorium', () => {
 // ---------------------------------------------------------------------------
 
 describe('the score section, against RLM\'s own status table and Kill line', () => {
-  // Both repos here carry no COMMITMENTS.md, so the commitment section (#184, added
-  // after this slice) always declares none; its two lines are asserted against
-  // directly in tests/hooks/sensorium-commitment.test.mjs. This checks the score
-  // section's own two lines still come first, not that they are the whole block --
+  // This checks the score section's own two lines still come first, not that they
+  // are the whole block --
   // directory discovery means later slices append sections here without this file
   // needing to enumerate them.
   test('renderSensorium prints the score and its bar first', async () => {
@@ -227,7 +225,7 @@ describe('session-status.mjs prints the sensorium after gate health and before t
     // between.
     const between = stdout.slice(gateIndex, dataRootIndex);
     assert.ok(
-      between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\ndollars: none declared\nruns: none live\nlast run: none\ncommitment: none declared\nexecuted: none declared\n${EXPECTED_HARNESS}\n`),
+      between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\ndollars: none declared\nruns: none live\nlast run: none\n${EXPECTED_HARNESS}\n`),
       'score then bar then harness, as their own three lines, right after the gate section',
     );
   });
@@ -238,7 +236,7 @@ describe('session-status.mjs prints the sensorium after gate health and before t
     assert.match(
       stdout,
       new RegExp(
-        `not one where none was wired\\.\\n\\nscore: none declared\\nbar: none declared\\ndollars: none declared\\nruns: none live\\nlast run: none\\ncommitment: none declared\\nexecuted: none declared\\n${EXPECTED_HARNESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`,
+        `not one where none was wired\\.\\n\\nscore: none declared\\nbar: none declared\\ndollars: none declared\\nruns: none live\\nlast run: none\\n${EXPECTED_HARNESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`,
       ),
     );
   });

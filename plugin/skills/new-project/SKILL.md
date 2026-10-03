@@ -1,6 +1,6 @@
 ---
 name: new-project
-description: Stand up a new project repository with its goal already written down, so its first session start reads a real number instead of "none declared". Asks which product oracle the project has before writing a line, then writes the tree with logs/ first, RULES.md with a kill line, PLAN.md with a status table, LEDGER.md when money moves and COMMITMENTS.md, lands one green commit on main, and prepares the GitHub remote and its branch protection for the founder. Trigger on starting a new project, repo or codebase from scratch, on scaffolding or bootstrapping an empty folder, or on asking what to do first after installing this plugin.
+description: Stand up a new project repository with its goal already written down, so its first session start reads a real number instead of "none declared". Asks which product oracle the project has before writing a line, then writes the tree with logs/ first, RULES.md with a kill line, PLAN.md with a status table, LEDGER.md when money moves, lands one green commit on main, and prepares the GitHub remote and its branch protection for the founder. Trigger on starting a new project, repo or codebase from scratch, on scaffolding or bootstrapping an empty folder, or on asking what to do first after installing this plugin.
 ---
 
 # New project
@@ -40,9 +40,6 @@ both questions, and the stack question, before writing anything.
 - **`LEDGER.md`**, when money moves: first line holding `Ceiling $<n>`, then a table with
   `Phase`, `Dollars` and `Balance` columns. A phase's dollars are summed from here and
   never from the status table (phase 0 decision 2).
-- **`COMMITMENTS.md`**, empty apart from its `| Date | Recommendation | Executed |`
-  header. One row per session's closing recommendation, judged at the next session start
-  (phase 0 decision 4). Empty is the right starting state; absent is not.
 - **`README.md`**, one paragraph in the founder's own words about what this product is.
 
 Each of those strings is a marker a reader under `plugin/hooks/` matches on, which is why

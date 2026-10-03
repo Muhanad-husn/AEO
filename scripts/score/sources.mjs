@@ -9,13 +9,6 @@ import {
 } from './consumer.mjs';
 import { scanTranscripts } from './interventions.mjs';
 import { measure } from './harness.mjs';
-// readCommitments moved to plugin/hooks/commitments.mjs (#184), which the
-// sensorium's commitment section also reads. Re-exported here, unchanged in
-// contract, so this module's own callers and tests/scripts/score-interventions.test.mjs
-// see no difference.
-import { readCommitments } from '../../plugin/hooks/commitments.mjs';
-
-export { readCommitments };
 
 function run(command, args, cwd) {
   return execFileSync(command, args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).trim();
@@ -191,7 +184,6 @@ export function readMilestone(dir, title) {
   // file. Appended after the keys the window itself is computed from.
   const window = windowOf(snapshot);
   snapshot.interventions = readInterventions(dir, window);
-  snapshot.commitments = readCommitments(dir);
   return snapshot;
 }
 
@@ -228,7 +220,6 @@ export function read(dir, phases) {
   // file. Appended after the keys the window itself is computed from.
   const window = windowOf(snapshot);
   snapshot.interventions = readInterventions(dir, window);
-  snapshot.commitments = readCommitments(dir);
   return snapshot;
 }
 
