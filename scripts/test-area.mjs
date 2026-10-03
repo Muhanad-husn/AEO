@@ -54,7 +54,8 @@ export const AREAS = {
     src: ['scripts/score.mjs', 'scripts/score/**', `${T}/fixtures/score/**`],
     tests: [`${T}/scripts/score.test.mjs`, `${T}/scripts/score-interventions.test.mjs`,
       `${T}/scripts/score-harness.test.mjs`, `${T}/scripts/score-record.test.mjs`,
-      `${T}/scripts/score-milestone.test.mjs`, `${T}/scripts/score-synthetic.test.mjs`],
+      `${T}/scripts/score-milestone.test.mjs`, `${T}/scripts/score-synthetic.test.mjs`,
+      `${T}/scripts/score-rules.test.mjs`],
   },
   independence: { src: ['plugin/scripts/independence.mjs'], tests: [`${T}/scripts/independence.test.mjs`] },
   runlog: {
