@@ -40,16 +40,16 @@ describe('globs', () => {
 
 describe('selecting areas for changed paths', () => {
   test('a hook change picks its own area and its own test file only', () => {
-    const { areas, unmapped } = selectAreas(['plugin/hooks/path-guard.mjs'], { root: repoRoot });
-    assert.ok(areas.includes('path-guard'));
+    const { areas, unmapped } = selectAreas(['plugin/hooks/block-merge.mjs'], { root: repoRoot });
+    assert.ok(areas.includes('block-merge'));
     assert.ok(!areas.includes('sandbox-guard'));
     assert.deepEqual(unmapped, []);
-    assert.deepEqual(testFilesFor(['path-guard']), ['tests/hooks/path-guard.test.mjs']);
+    assert.deepEqual(testFilesFor(['block-merge']), ['tests/hooks/block-merge.test.mjs']);
   });
 
   test('a change to lib.mjs pulls in every area whose source imports it', () => {
     const { areas } = selectAreas(['plugin/hooks/lib.mjs'], { root: repoRoot });
-    for (const a of ['lib', 'block-merge', 'path-guard', 'redirect-guard', 'sandbox-guard',
+    for (const a of ['lib', 'block-merge', 'sandbox-guard',
       'session-status', 'gate', 'stack', 'collect-evidence', 'status']) {
       assert.ok(areas.includes(a), `${a} should be picked`);
     }
@@ -97,10 +97,10 @@ describe('selecting areas for changed paths', () => {
 
 describe('test files for areas', () => {
   test('several areas give one de-duplicated list', () => {
-    const files = testFilesFor(['lib', 'lib', 'path-guard']);
+    const files = testFilesFor(['lib', 'lib', 'block-merge']);
     assert.equal(new Set(files).size, files.length);
     assert.ok(files.includes('tests/hooks/lib.test.mjs'));
-    assert.ok(files.includes('tests/hooks/path-guard.test.mjs'));
+    assert.ok(files.includes('tests/hooks/block-merge.test.mjs'));
   });
 
   test('an unknown area throws and names the valid ones', () => {

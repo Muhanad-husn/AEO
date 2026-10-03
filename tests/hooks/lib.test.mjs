@@ -27,7 +27,6 @@ import {
   commandSegments,
   currentBranch,
   git,
-  gitCommonDir,
   gitToplevel,
   isAeoRole,
   isAnyAeoRole,
@@ -161,17 +160,11 @@ describe('normalizeHookPath', () => {
 });
 
 // ---------------------------------------------------------------------------
-// commandSegments' redirects field (#116) — the guarantee redirect-guard is built on
+// commandSegments' redirects field (#116)
 // ---------------------------------------------------------------------------
 //
-// redirect-guard.mjs's own JSDoc on commandSegments guarantees that a fd-duplication
-// redirect (`2>&1`) is excluded from `redirects` because it names a file descriptor, not
-// a path. Nothing pinned that at the unit level before this (review, #116): the only gate
-// test exercising it, `echo x 2>&1 > out.txt` -> allowed, passes whether or not `1` is
-// (wrongly) pushed as a target, because `1` would resolve to an ordinary, unfenced path.
-// The failure this guarantee actually prevents is a false positive on an ordinary line:
-// `cd .claude/... && some-cmd 2>&1` would refuse a ROLE'S OWN redirect-free stderr
-// duplication if `1` were ever treated as a write target inside a fenced directory.
+// A fd-duplication redirect (`2>&1`) is excluded from `redirects` because it names a
+// file descriptor, not a path.
 
 describe("commandSegments' redirects field", () => {
   test('a bare redirect target is captured', () => {
@@ -537,30 +530,6 @@ describe('git helpers', () => {
     assert.ok(gitToplevel(repo));
     assert.equal(currentBranch(repo), 'release/1');
     assert.equal(currentBranch(tempDir('aeo-p11-plain2-')), null);
-  });
-
-  // gitCommonDir (#113): the primitive path-guard's worktree discriminator is built on.
-  // git always reports forward slashes even on win32, so comparisons go through
-  // path.resolve on both sides, same as the discriminator itself does.
-  describe('gitCommonDir', () => {
-    test('a plain checkout reports its own .git as its common dir', () => {
-      const repo = makeRepo({ branch: 'main' });
-      assert.equal(path.resolve(gitCommonDir(repo)), path.resolve(repo, '.git'));
-    });
-
-    test('a linked worktree reports the MAIN checkout\'s .git, not its own', () => {
-      const main = makeRepo({ branch: 'main' });
-      const worktree = path.join(main, 'wt');
-      run(main, 'worktree', 'add', '-q', '-b', 'feat/wt', worktree);
-      assert.equal(path.resolve(gitCommonDir(worktree)), path.resolve(main, '.git'));
-      // Its own toplevel, by contrast, IS itself -- the exact ambiguity gitToplevel
-      // alone can't resolve, and the reason path-guard needs this second primitive.
-      assert.equal(path.resolve(gitToplevel(worktree)), path.resolve(worktree));
-    });
-
-    test('returns null outside a repository', () => {
-      assert.equal(gitCommonDir(tempDir('aeo-p11-nocommondir-')), null);
-    });
   });
 });
 
@@ -966,66 +935,6 @@ describe('runGate (C-06)', () => {
       const r = runHook('gate.mjs', { raw, mode: 'block' });
       assert.ok(r.status === 0 || r.status === 2, `${JSON.stringify(raw)} exited ${r.status}`);
     }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// warn — a gate that allows and still has something to say (#169)
-// ---------------------------------------------------------------------------
-//
-// The shape matters as much as the text. A hook says something to the session by
-// writing one JSON object on stdout; two objects, or a line of prose beside it, and the
-// whole thing is discarded. So these tests parse stdout rather than matching it.
-
-describe('warn (#169)', () => {
-  const payload = {
-    hook_event_name: 'PreToolUse',
-    tool_name: 'Bash',
-    tool_input: { command: 'echo "unterminated' },
-  };
-
-  test('a latched warning writes one JSON object on stdout and exits 0', () => {
-    const r = runHook('gate.mjs', { payload, mode: 'warn' });
-    assert.equal(r.status, 0, r.stderr);
-    const parsed = JSON.parse(r.stdout);
-    assert.equal(parsed.hookSpecificOutput.hookEventName, 'PreToolUse');
-    assert.equal(parsed.hookSpecificOutput.permissionDecision, undefined, 'a warning must not decide permission');
-    assert.equal(parsed.hookSpecificOutput.permissionDecisionReason, undefined);
-  });
-
-  test('the warning text reaches additionalContext and systemMessage', () => {
-    const r = runHook('gate.mjs', { payload, mode: 'warn' });
-    const parsed = JSON.parse(r.stdout);
-    assert.match(parsed.hookSpecificOutput.additionalContext, /fixture warned about the command/);
-    assert.match(parsed.systemMessage, /fixture warned about the command/);
-  });
-
-  test('two warnings arrive as one object, both texts kept', () => {
-    const r = runHook('gate.mjs', { payload, mode: 'warn-twice' });
-    assert.equal(r.status, 0, r.stderr);
-    const parsed = JSON.parse(r.stdout);
-    assert.match(parsed.hookSpecificOutput.additionalContext, /fixture warned first/);
-    assert.match(parsed.hookSpecificOutput.additionalContext, /fixture warned again/);
-  });
-
-  test('a gate that warns about nothing writes nothing on stdout', () => {
-    const r = runHook('gate.mjs', { payload, mode: 'allow' });
-    assert.equal(r.status, 0);
-    assert.equal(r.stdout, '');
-  });
-
-  // The point of the rule: a warning is advice, and advice does not decide.
-  test('a warning does not change a block exit code', () => {
-    const r = runHook('gate.mjs', { payload, mode: 'warn-block' });
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /^BLOCKED: fixture blocked Bash/m);
-    assert.equal(r.stdout, '');
-  });
-
-  test('a warning does not change a crash exit code', () => {
-    const r = runHook('gate.mjs', { payload, mode: 'warn-throw' });
-    assert.equal(r.status, 2);
-    assert.match(r.stderr, /BLOCKED: the fixture-gate gate could not evaluate this call/);
   });
 });
 

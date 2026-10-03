@@ -18,9 +18,6 @@
 //    Two cases sit outside it and are pinned by tests rather than claimed as covered:
 //    a gate file that crashes at module scope before runGate is entered, and a gate
 //    that breaks the contract above and calls process.exit itself.
-//    A gate that allows and still has something to say calls warn(text) instead. A
-//    warning is not a decision: it never changes an exit code, and runGate writes it as
-//    one JSON object on stdout on the clean path only.
 //
 // 2. IDENTITY IS WHOLE-TOKEN OR WHOLE-SEGMENT, NEVER SUBSTRING (V-12). An argv identity
 //    test goes through matchesGitSubcommand; a path containment test goes through
@@ -89,54 +86,27 @@ export function block(reason) {
   throw new BlockDecision(blockLatched);
 }
 
-// Latched the same way, and for the same reason: a gate that wraps its own body in
-// try/catch must not be able to lose what it said. A warning is not a decision, so this
-// latch is read only where the gate already decided to allow.
-let warnLatched = null;
-
 /**
- * Say something about this call without deciding it (#169).
- *
- * A gate warns when it allowed on what it could read and something it could not read is
- * worth naming. runGate writes it on the clean path, as one JSON object on stdout. It
- * never changes an exit code: a call that blocks still blocks, and a call that crashes
- * still blocks. Two warnings arrive as one object, one per line, because a hook that
- * writes two objects has its whole output discarded.
- *
- * @param {string} text Stated to the session. Blank text records nothing.
- */
-export function warn(text) {
-  const line = String(text ?? '').trim();
-  if (line === '') return;
-  warnLatched = warnLatched === null ? line : `${warnLatched}\n${line}`;
-}
-
-/**
- * What a gate's run came to, as runGate reports it: the exit code and the exact text for
- * stderr and stdout, at most one of them set. Reads both latches and clears them, so a
- * caller that decides more than one call in one process starts each from nothing. runGate
- * decides one call and exits, so the clearing changes nothing there.
+ * What a gate's run came to, as runGate reports it: the exit code and the text for
+ * stderr. Reads the block latch and clears it, so a caller that decides more than one
+ * call in one process starts each from nothing. runGate decides one call and exits, so
+ * the clearing changes nothing there.
  *
  * `caught` is `{err}` when the run threw, null when it returned.
  *
- * @returns {{code: 0|2, stderr: string|null, stdout: string|null}}
+ * @returns {{code: 0|2, stderr: string|null}}
  */
-export function settleGate(name, payload, caught) {
+export function settleGate(name, caught) {
   const blocked = blockLatched;
-  const warned = warnLatched;
   blockLatched = null;
-  warnLatched = null;
-  const refuse = (message) => ({ code: 2, stderr: asLine(message), stdout: null });
+  const refuse = (message) => ({ code: 2, stderr: asLine(message) });
 
   if (caught !== null) {
     if (caught.err instanceof BlockDecision) return refuse(`BLOCKED: ${caught.err.reason}`);
     return refuse(`BLOCKED: the ${name} gate could not evaluate this call (${describeError(caught.err)}). ${CANNOT_DECIDE}`);
   }
-  // A warning never changes an exit code (#169), so the block latch is read first and a
-  // warning latched beside it is dropped: the stderr reason is what a blocked call needs.
   if (blocked !== null) return refuse(`BLOCKED: ${blocked}`);
-  if (warned !== null) return { code: 0, stderr: null, stdout: warningLine(payload, warned) };
-  return { code: 0, stderr: null, stdout: null };
+  return { code: 0, stderr: null };
 }
 
 /**
@@ -144,10 +114,10 @@ export function settleGate(name, payload, caught) {
  *
  * Malformed or empty payload => allow, with a line on stderr (see runGate).
  *
- * @returns {{payload: object, outcome: null} | {payload: null, outcome: {code: 0, stderr: string, stdout: null}}}
+ * @returns {{payload: object, outcome: null} | {payload: null, outcome: {code: 0, stderr: string}}}
  */
 export function parseHookPayload(name, raw) {
-  const allow = (message) => ({ payload: null, outcome: { code: 0, stderr: asLine(message), stdout: null } });
+  const allow = (message) => ({ payload: null, outcome: { code: 0, stderr: asLine(message) } });
   if (!raw.trim()) return allow(`${name}: empty hook payload; nothing to judge, allowing.`);
   let payload;
   try {
@@ -172,52 +142,6 @@ function finish(code, message) {
     }
   }
   process.exit(code);
-}
-
-/**
- * The stdout of a gate that warned: one JSON object on one line (#169).
- *
- * `hookSpecificOutput.additionalContext` is the field the running Claude Code surfaces
- * to the model, confirmed live on 2.1.270 against a probe that put a different string in
- * each field. `systemMessage` carries the same text to the user's transcript, so the
- * person reading along sees what the model was told. No permission decision is stated:
- * a control run showed the warning is delivered without one, and stating `allow` could
- * skip the user's own permission prompt for a command the gate could not read.
- */
-function warningLine(payload, text) {
-  const event = typeof payload?.hook_event_name === 'string' && payload.hook_event_name !== ''
-    ? payload.hook_event_name
-    : 'PreToolUse';
-  const body = {
-    hookSpecificOutput: {
-      hookEventName: event,
-      additionalContext: text,
-    },
-    systemMessage: text,
-  };
-  try {
-    return `${JSON.stringify(body)}\n`;
-  } catch {
-    return null; // Unserialisable text is not worth an exit code. The call was allowed.
-  }
-}
-
-/** Write what settleGate or parseHookPayload decided, then exit with its code. */
-function emit(name, { code, stderr, stdout }) {
-  if (stdout !== null) {
-    try {
-      writeSync(1, stdout);
-    } catch {
-      // Loud skip, never a quiet pass (L-08): the call still proceeds, and losing the
-      // warning must not change that, but it is said somewhere.
-      try {
-        writeSync(2, `${name}: a warning could not be written to stdout.\n`);
-      } catch {
-        // Both streams are gone. The call was allowed; there is nothing left to say.
-      }
-    }
-  }
-  return finish(code, stderr);
 }
 
 const CANNOT_DECIDE =
@@ -292,7 +216,7 @@ export async function runGate({ name, run }) {
   let payload;
   try {
     const parsed = parseHookPayload(name, await readStdin());
-    if (parsed.outcome !== null) return emit(name, parsed.outcome);
+    if (parsed.outcome !== null) return finish(parsed.outcome.code, parsed.outcome.stderr);
     payload = parsed.payload;
   } catch (err) {
     return finish(0, `${name}: unreadable hook payload (${describeError(err)}); allowing.`);
@@ -304,7 +228,8 @@ export async function runGate({ name, run }) {
   } catch (err) {
     caught = { err };
   }
-  return emit(name, settleGate(name, payload, caught));
+  const outcome = settleGate(name, caught);
+  return finish(outcome.code, outcome.stderr);
 }
 
 /**
@@ -1046,20 +971,6 @@ export function gitToplevel(dir) {
 }
 
 /**
- * The absolute path to `dir`'s git COMMON directory, or null (#113). For an ordinary
- * checkout this is that repository's own `.git`. For a linked worktree it is the MAIN
- * checkout's `.git`, which is exactly what distinguishes "this directory is another
- * worktree of that project" from "this directory is a genuinely separate repository
- * that happens to live on disk under that project" -- two shapes `gitToplevel` alone
- * cannot tell apart, since a linked worktree's own toplevel is itself, same as any
- * other repository's. `--path-format=absolute` sidesteps resolving a relative
- * `--git-common-dir` answer by hand; every git this project requires supports it.
- */
-export function gitCommonDir(dir) {
-  return git(dir, 'rev-parse', '--path-format=absolute', '--git-common-dir');
-}
-
-/**
  * The checked-out branch name of `dir`, or null.
  *
  * On a detached HEAD this returns the literal string `HEAD`, which is what
@@ -1072,135 +983,6 @@ export function gitCommonDir(dir) {
  */
 export function currentBranch(dir) {
   return git(dir, 'rev-parse', '--abbrev-ref', 'HEAD');
-}
-
-// ---------------------------------------------------------------------------
-// The harness fence: is a path inside a project's own .claude/? (#116)
-// ---------------------------------------------------------------------------
-//
-// Shared by path-guard (Edit/Write/MultiEdit/NotebookEdit) and redirect-guard (Bash/
-// PowerShell write targets), so the V-11/#113 escalation walk lives in exactly one
-// place. #113 found a real hole in an EARLIER version of this walk: a bypass that
-// returned out of the whole loop dropped every fence above it, not only the level it
-// applied to. A second, hand-copied version of the loop is exactly how that bug would
-// come back a level deeper. Every gate that needs "does this path sit inside a
-// project's harness config" calls isPathIntoHarness; none re-derives it.
-
-/** The directory name every AEO gate fences. */
-export const HARNESS_DIRNAME = '.claude';
-
-/**
- * True when `dirPath`'s own basename is `.claude`, a whole path segment, not a
- * substring anywhere in the path (V-12). Case-insensitive on Windows, where the
- * filesystem is; a real distinction on a case-sensitive host.
- */
-export function isHarnessNamed(dirPath) {
-  const base = path.basename(dirPath);
-  return process.platform === 'win32' ? base.toLowerCase() === HARNESS_DIRNAME : base === HARNESS_DIRNAME;
-}
-
-/** True when any whole segment of `p` is `.claude`. Same segment rule, applied along the path. */
-export function hasHarnessSegment(p) {
-  return path.resolve(p).split(/[\\/]+/).some(isHarnessNamed);
-}
-
-/**
- * The nearest ancestor of `dir` that exists on disk, or null when none does (the walk
- * reaches a filesystem root that itself does not exist, which does not happen on a real
- * filesystem but is not assumed away). The target file, and its parent directory, may
- * not exist yet.
- */
-export function nearestExistingAncestor(dir) {
-  let probe = dir;
-  while (probe && !existsSync(probe)) {
-    const parent = path.dirname(probe);
-    if (parent === probe) return null;
-    probe = parent;
-  }
-  return probe || null;
-}
-
-/**
- * True when `inner` is a linked worktree of `outer` -- an ordinary checkout of the SAME
- * project, not a second repository that happens to live under it (#113). A linked
- * worktree's `--git-common-dir` resolves to the MAIN checkout's `.git`; a genuinely
- * separate repository's resolves to its own, which is never `outer`'s. `gitCommonDir`
- * returns null on any failure (not a repo, git too old for `--path-format`), and that
- * reads as "not proven a worktree", the same fail-closed direction the escalation walk
- * already takes when `outer` or containment can't be established.
- */
-export function isLinkedWorktreeOf(inner, outer) {
-  const common = gitCommonDir(inner);
-  if (!common) return false;
-  return path.resolve(common) === path.resolve(outer, '.git');
-}
-
-/**
- * Whether an already-resolved absolute path `full` sits inside a project's own harness
- * config.
- *
- * Returns null when it does not. Returns `{root, rel}` when it does: `root` is the
- * repository root whose `.claude/` fenced it (`null` when `full` is not inside any git
- * worktree at all -- see below), and `rel` is `full`'s path relative to `root`, forward
- * slashes, for a message (or `full` itself, unrooted, when `root` is null). The return
- * is truthy exactly when the path is fenced, so `isPathIntoHarness(full)` alone reads as
- * the boolean most callers want; a caller that has to say WHERE the fence fired -- both
- * path-guard and redirect-guard do, in their block message -- reads `root`/`rel` off the
- * same call instead of re-walking to find out.
- *
- * Two cases, ported from path-guard's own walk (its header comment has the long form of
- * V-11 and #113; this is that walk, unchanged in substance, with the block() calls
- * turned into return values):
- *
- * 1. No git worktree contains `full` at all. There is no root to be relative to, so the
- *    fence runs the same whole-segment `.claude` test (V-12) over the absolute path:
- *    `~/.claude/settings.json` on a machine where `$HOME` is not a repository is still
- *    fenced this way.
- * 2. `full` sits inside a git worktree. The root-named-.claude case (V-11: `.claude/`
- *    made its own repository, so `rev-parse --show-toplevel` resolves to the harness
- *    directory itself) and ordinary containment (`<root>/.claude` contains `full`) are
- *    both checked at each root, re-run against every enclosing root in turn, with the
- *    #113 linked-worktree discriminator skipping ONLY that level's containment block --
- *    never returning out of the loop, so a genuine vendored repository one level further
- *    out still gets its own fence.
- */
-export function isPathIntoHarness(full) {
-  const ancestor = nearestExistingAncestor(path.dirname(full));
-  const toplevel = ancestor ? gitToplevel(ancestor) : null;
-
-  if (!toplevel) {
-    return hasHarnessSegment(full) ? { root: null, rel: full } : null;
-  }
-
-  let root = path.resolve(toplevel);
-  // The root the loop escalated FROM, so the worktree discriminator has something to
-  // check the NEXT root against. Null on the first iteration: the target's own toplevel
-  // has not escalated from anything, so its own `.claude/` containment below is the
-  // ordinary, unconditional fence, never the worktree bypass.
-  let child = null;
-  for (;;) {
-    if (isHarnessNamed(root)) return { root, rel: relativeToHarnessRoot(root, full) };
-    if (isPathInside(path.join(root, HARNESS_DIRNAME), full)) {
-      // #113: `child` is a linked worktree of THIS root, so containment here only holds
-      // because the worktree happens to be parked under root/.claude/. That bypasses
-      // THIS level's block only -- fall through to escalation exactly as if this level
-      // had found no containment, so an outer genuinely-vendored repository (V-11) can
-      // still fire its own fence.
-      const bypassed = child && isLinkedWorktreeOf(child, root);
-      if (!bypassed) return { root, rel: relativeToHarnessRoot(root, full) };
-    }
-    if (!hasHarnessSegment(root)) return null; // no outer root can change either answer
-    const parent = path.dirname(root);
-    if (parent === root) return null; // filesystem root
-    const outer = gitToplevel(parent);
-    if (!outer || !isPathInside(outer, parent)) return null;
-    child = root;
-    root = path.resolve(outer);
-  }
-}
-
-function relativeToHarnessRoot(root, full) {
-  return path.relative(root, full).split(path.sep).join('/');
 }
 
 // D30: defaultBranch (D14/D16) is deleted. It resolved the repository's protected

@@ -30,30 +30,30 @@ export const RULES = [
   { id: 'block-merge/default-branch-unresolved', current: false, match: [/^this repository does not say what its default branch is/] },
   // lib.mjs: a gate that threw is a refusal too.
   { id: 'gate/could-not-evaluate', current: true, match: [/^the \S+ gate could not evaluate this call/] },
-  // path-guard.mjs, wording unchanged since #116; two rules deleted in fb2443c.
-  { id: 'path-guard/harness-config', current: true, match: [/^role subagents may not touch \.claude\//] },
+  // path-guard.mjs, wording unchanged since #116; two rules deleted in fb2443c, the module in #259.
+  { id: 'path-guard/harness-config', current: false, match: [/^role subagents may not touch \.claude\//] },
   { id: 'path-guard/unresolved-dir', current: false, match: [/^cannot resolve a directory for the target path/] },
   { id: 'path-guard/outside-worktree', current: false, match: [/^target is not inside a git worktree/] },
-  // redirect-guard.mjs, wording unchanged since #116.
-  { id: 'redirect-guard/unresolved-target', current: true, match: [/^role subagents may not write into \.claude\/ through a shell command[\s\S]*could not be fully resolved/] },
-  { id: 'redirect-guard/unparsed-command', current: true, match: [/^role subagents may not write into \.claude\/ through a shell command[\s\S]*so it could not be resolved -- but its raw text/] },
-  { id: 'redirect-guard/target', current: true, match: [/^role subagents may not write into \.claude\/ through a shell command/] },
-  // sandbox-guard.mjs.
-  { id: 'sandbox-guard/live-run', current: true, match: [/^`[\s\S]*?` will not run: /] },
-  { id: 'sandbox-guard/live-root-relative', current: true, match: [/^AEO_LIVE_DATA_ROOT is set to [\s\S]*which is not an absolute path, so the sandbox guard/] },
-  { id: 'sandbox-guard/seam-relative', current: true, match: [/^AEO_DATA_ROOT is set to [\s\S]*which is not an absolute path\. A relative seam/] },
-  { id: 'sandbox-guard/seam-overlap', current: true, match: [/One contains the other, so this run is pointed at production data\./] },
+  // redirect-guard.mjs, wording unchanged since #116; the module deleted in #259.
+  { id: 'redirect-guard/unresolved-target', current: false, match: [/^role subagents may not write into \.claude\/ through a shell command[\s\S]*could not be fully resolved/] },
+  { id: 'redirect-guard/unparsed-command', current: false, match: [/^role subagents may not write into \.claude\/ through a shell command[\s\S]*so it could not be resolved -- but its raw text/] },
+  { id: 'redirect-guard/target', current: false, match: [/^role subagents may not write into \.claude\/ through a shell command/] },
+  // sandbox-guard.mjs. Every rule here but write-unrestorable was deleted in #259.
+  { id: 'sandbox-guard/live-run', current: false, match: [/^`[\s\S]*?` will not run: /] },
+  { id: 'sandbox-guard/live-root-relative', current: false, match: [/^AEO_LIVE_DATA_ROOT is set to [\s\S]*which is not an absolute path, so the sandbox guard/] },
+  { id: 'sandbox-guard/seam-relative', current: false, match: [/^AEO_DATA_ROOT is set to [\s\S]*which is not an absolute path\. A relative seam/] },
+  { id: 'sandbox-guard/seam-overlap', current: false, match: [/One contains the other, so this run is pointed at production data\./] },
   // The unset seam, refused until #214.
   { id: 'sandbox-guard/seam-unset', current: false, match: [/and sets no AEO_DATA_ROOT, so anything it runs resolves its data through its own defaults/] },
-  { id: 'sandbox-guard/run-dir', current: true, match: [/^this command operates in [\s\S]*, inside the production data root /] },
+  { id: 'sandbox-guard/run-dir', current: false, match: [/^this command operates in [\s\S]*, inside the production data root /] },
   // The current wording since #237, and the write-tool wording before it.
   { id: 'sandbox-guard/write-unrestorable', current: true, match: [/inside the production data root [\s\S]*, and git cannot restore it: /, /^this \w+ targets [\s\S]*Production data is not reachable from a session\./] },
-  { id: 'sandbox-guard/run-names-root', current: true, match: [/A run pointed at production data is refused\./] },
+  { id: 'sandbox-guard/run-names-root', current: false, match: [/A run pointed at production data is refused\./] },
   // Refuses when the line reaches the root, warns when it does not (#237).
-  { id: 'sandbox-guard/write-unlocated', current: true, warns: true, match: [/and the guard cannot tell whether that lands inside the production data root/, /the guard cannot tell where [\s\S]* lands, and nothing on the line reaches/] },
+  { id: 'sandbox-guard/write-unlocated', current: false, warns: true, match: [/and the guard cannot tell whether that lands inside the production data root/, /the guard cannot tell where [\s\S]* lands, and nothing on the line reaches/] },
   // Warnings since #169; refusals before it.
-  { id: 'sandbox-guard/unread-command', current: true, warns: true, match: [/It was allowed on what could be read/, /A command the guard cannot read is a command it cannot clear\./] },
-  { id: 'sandbox-guard/unnamed-cd', current: true, warns: true, match: [/changes directory to somewhere the guard cannot name/] },
+  { id: 'sandbox-guard/unread-command', current: false, warns: true, match: [/It was allowed on what could be read/, /A command the guard cannot read is a command it cannot clear\./] },
+  { id: 'sandbox-guard/unnamed-cd', current: false, warns: true, match: [/changes directory to somewhere the guard cannot name/] },
 ];
 
 // A refusal as Claude Code records it: the hook's command in brackets, then the reason.

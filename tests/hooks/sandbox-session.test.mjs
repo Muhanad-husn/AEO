@@ -19,7 +19,6 @@ import { enterSandbox } from '../../plugin/scripts/sandbox-session.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
 const SESSION = path.join(repoRoot, 'plugin', 'scripts', 'sandbox-session.mjs');
-const GUARD = path.join(repoRoot, 'plugin', 'hooks', 'sandbox-guard.mjs');
 
 const LIVE = 'AEO_LIVE_DATA_ROOT';
 const DATA = 'AEO_DATA_ROOT';
@@ -227,49 +226,5 @@ describe('the fixture refuses before a test runs', () => {
     const second = enterSandbox({ env: bare });
     second.leave();
     assert.equal(DATA in bare, false, 'leave left a seam behind where there had been none');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// The fixture and the guard agree
-// ---------------------------------------------------------------------------
-
-describe('the fixture satisfies the guard', () => {
-  test('what the fixture produces is exactly what the guard requires', () => {
-    const { live } = production();
-    const env = { [LIVE]: live };
-    const sandbox = enterSandbox({ env });
-    try {
-      // A directory this test owns, never repoRoot. The guard resolves a project anchor
-      // from this path and reads the run-in-progress sentinels under it, so naming the
-      // real checkout made the assertion below depend on whether the founder happened
-      // to have a live job running (L-03).
-      const operationDir = tempDir('aeo-p15s-op-');
-      const payload = { tool_name: 'Bash', tool_input: { command: 'npm test' }, cwd: operationDir };
-      const childEnv = { ...process.env, CLAUDE_PROJECT_DIR: '', [LIVE]: live, [DATA]: sandbox.root };
-      const r = spawnSync(process.execPath, [GUARD], {
-        input: JSON.stringify(payload),
-        encoding: 'utf8',
-        cwd: operationDir,
-        env: childEnv,
-        windowsHide: true,
-      });
-      assert.equal(r.status, 0, `the guard rejected the fixture's own sandbox:\n${r.stderr}`);
-
-      // And the same call with the seam pointed inside production data is refused, so the
-      // pass above is the fixture's doing rather than the guard being asleep. A call with
-      // no seam at all runs (#214), so it cannot be this control.
-      const inside = { ...childEnv, [DATA]: path.join(live, 'scratch') };
-      const r2 = spawnSync(process.execPath, [GUARD], {
-        input: JSON.stringify(payload),
-        encoding: 'utf8',
-        cwd: operationDir,
-        env: inside,
-        windowsHide: true,
-      });
-      assert.equal(r2.status, 2, 'the guard allowed a run with its seam inside production data');
-    } finally {
-      sandbox.leave();
-    }
   });
 });
