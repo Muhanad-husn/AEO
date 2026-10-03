@@ -32,7 +32,7 @@ Nothing prescribes.
 | Layer | Kind | What it does | Fires |
 |---|---|---|---|
 | Invariants | code, PreToolUse, fails closed, no override | Merge and branch deletion stay with the founder. Production data is unreachable. A declared test command does not run while a long job's sentinel is live. A role does not rewrite the config that governs it. | Only on the matching tool and command. Nothing fires on Read, Grep, Glob, Task or MCP calls that are not a merge. |
-| Sensorium | code, SessionStart and `/status`, writes nothing | Prints what the model cannot passively see: the product number and its bar, dollars spent of the cap, open issues and pull requests, live runs and their last progress line, the last recommendation and whether it was executed, and the harness's own cost this session. | Every session start, and on demand. |
+| Sensorium | code, SessionStart and `/status`, writes nothing | Prints what the model cannot passively see: the product number and its bar, dollars spent of the cap, open issues and pull requests, live runs and their last progress line, and the harness's own cost this session. | Every session start, and on demand. |
 | Knowledge | prose, description-triggered, advisory | How this shop does a thing and why, with the incident behind each rule. Tests red first for behaviour; the existing suite as oracle for the rest. A pull request says what, what it cost, which number it expects to move. Branch cleanup classifies before it deletes. A long job is watched from its run log, not its shell. | When the model judges it relevant. No skill refuses, no skill is operator-only except `sprint-plan`, no skill names a step order. |
 
 Two mechanisms sit across the layers.

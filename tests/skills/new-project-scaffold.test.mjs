@@ -651,7 +651,7 @@ describe('the emitted tree records a test command, and that command is green', (
 });
 
 // ---------------------------------------------------------------------------
-// issue #199 — the oracle answer, the files it writes, and what the
+// issue #199: the oracle answer, the files it writes, and what the
 // sensorium reads back out of the scaffolded project
 // ---------------------------------------------------------------------------
 //
