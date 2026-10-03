@@ -333,4 +333,6 @@ Made 2026-10-02: phase 5 and phase 6 run on decision-model-poc (`D:\decision-mod
 
 Made 2026-10-03: phase 5 closes with its bar missed. Harness friction was 0.72 per merged pull request (0 guard, 13 process) against RLM's 0.19, on decision-model-poc's 18 merged pull requests; most of it came in the scaffold and plugin-update hours and was fixed during the run (#248, #250, #252). The sandbox guard refused legitimate work in a second phase (#246), which the kill line says removes the layer, so phase 6 first audits every guard refusal across Axial's DEC-75 and decision-model-poc and removes any rule that never stopped real harm.
 
+Made 2026-10-03, slicing phase 6: the trimmed plugin is rerun on diligence-reader's first UI milestone, because decision-model-poc is closed with no work ahead; this supersedes the 2026-10-02 line that ran phase 6 on decision-model-poc. block-merge's rules and the sandbox guard's rule against a write git cannot restore are counted in the audit but kept, because the merge and the data stay gated in code and two runs cannot show an irreversible harm will not come.
+
 No decision is open.
