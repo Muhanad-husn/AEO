@@ -83,20 +83,10 @@ const guardLines = [
   '  guard block-merge/remote-branch-delete: 0 refused',
   '  guard block-merge/text-fallback: 1 refused',
   '  guard gate/could-not-evaluate: 0 refused',
-  '  guard path-guard/harness-config: 1 refused',
-  '  guard redirect-guard/target: 1 refused',
-  '  guard redirect-guard/unparsed-command: 0 refused',
-  '  guard redirect-guard/unresolved-target: 0 refused',
-  '  guard sandbox-guard/live-root-relative: 0 refused',
-  '  guard sandbox-guard/live-run: 0 refused',
-  '  guard sandbox-guard/run-dir: 0 refused',
-  '  guard sandbox-guard/run-names-root: 0 refused',
-  '  guard sandbox-guard/seam-overlap: 0 refused',
-  '  guard sandbox-guard/seam-relative: 0 refused',
+  '  guard path-guard/harness-config: 1 refused (retired)',
+  '  guard redirect-guard/target: 1 refused (retired)',
   '  guard sandbox-guard/seam-unset: 2 refused (retired)',
-  '  guard sandbox-guard/unnamed-cd: 0 refused, 1 warned',
-  '  guard sandbox-guard/unread-command: 0 refused, 0 warned',
-  '  guard sandbox-guard/write-unlocated: 0 refused, 0 warned',
+  '  guard sandbox-guard/unnamed-cd: 0 refused, 1 warned (retired)',
   '  guard sandbox-guard/write-unrestorable: 2 refused',
 ];
 
@@ -114,7 +104,7 @@ test('refusals in the subagent transcript are counted', () => {
   // git-merge, pr-merge, the text fallback, the write rules and both fences fire only
   // inside the subagent session.
   assert.ok(lines.includes('  guard block-merge/git-merge: 1 refused'));
-  assert.ok(lines.includes('  guard path-guard/harness-config: 1 refused'));
+  assert.ok(lines.includes('  guard path-guard/harness-config: 1 refused (retired)'));
   assert.ok(lines.includes('  guard sandbox-guard/write-unrestorable: 2 refused'));
 });
 
@@ -123,9 +113,11 @@ test('the pre-#214 seam wording counts once per refusal, a resumed copy not agai
   assert.ok(lines.includes('  guard sandbox-guard/seam-unset: 2 refused (retired)'));
 });
 
+// The fixture's one refusal before the window is a retired rule's, and a retired rule is
+// printed only when it fired, so its absence is its zero.
 test('a refusal outside the window counts as zero', () => {
   const lines = rulesBlock(score(tempHome()).stdout);
-  assert.ok(lines.includes('  guard sandbox-guard/run-names-root: 0 refused'));
+  assert.ok(!lines.some((l) => l.startsWith('  guard sandbox-guard/run-names-root:')));
 });
 
 test('skill loads and reference reads are counted by name, inside the window only', () => {

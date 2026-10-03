@@ -9,9 +9,9 @@
 //
 // The remaining groups spawn the real gate, because a gate's decision is only observable
 // as an exit code from a real process (runGate owns process.exit). They check that the
-// rules the one script now dispatches to still refuse what they refused when each had
-// its own process: a merge on a shell call, a write into `.claude/`. A Read of the same
-// file exits 0, which is the count's other half stated as behaviour.
+// rules the one script dispatches to still refuse what they refused when each had its own
+// process: a merge on a shell call or through the forge. A Read exits 0, which is the
+// count's other half stated as behaviour.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -167,15 +167,6 @@ describe('gate.mjs refuses through the rules it now runs in one process', () => 
     assert.equal(r.status, 0, r.stderr);
   });
 
-  test('a write into the repository\'s own .claude/ exits 2', () => {
-    const r = runGateScript({
-      tool_name: 'Write',
-      tool_input: { file_path: settingsFile },
-      agent_type: 'aeo:builder',
-    });
-    assert.equal(r.status, 2, r.stderr);
-  });
-
   // The forge arm. hooks.json's matcher narrows to a merge-named action, so these two
   // start a process and the third does not; the gate is sent all three anyway, because
   // the matcher is a pre-filter and block-merge is what decides (C-04). The forge arm
@@ -195,7 +186,7 @@ describe('gate.mjs refuses through the rules it now runs in one process', () => 
     assert.equal(r.status, 0, r.stderr);
   });
 
-  test('a Read of that same file exits 0', () => {
+  test('a Read of a file exits 0', () => {
     const r = runGateScript({
       tool_name: 'Read',
       tool_input: { file_path: settingsFile },

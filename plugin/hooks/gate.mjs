@@ -1,14 +1,16 @@
 // AEO gate: the one script hooks.json wires on PreToolUse (#167). It decides nothing
 // itself; it reads the payload once and calls the rule modules, which is one node process
-// per matched call instead of four on a shell call and one on every Grep, Read and Task.
-// `block` throws, so the first rule that refuses wins, as the first refusing hook did.
+// per matched call. `block` throws, so the first rule that refuses wins.
+//
+// Two modules remain: block-merge, which keeps merging and branch deletion with the
+// founder, and sandbox-guard, which refuses a write under the declared production data
+// root that git cannot restore. A rule that throws is refused by runGate as a call it
+// could not evaluate.
 
 import { pathToFileURL } from 'node:url';
 
 import { SHELL_TOOLS, runGate } from './lib.mjs';
 import { blockMergeGate } from './block-merge.mjs';
-import { redirectGuard } from './redirect-guard.mjs';
-import { pathGuard } from './path-guard.mjs';
 import { sandboxGuard } from './sandbox-guard.mjs';
 
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -20,13 +22,11 @@ export function gate(payload) {
 
   if (SHELL_TOOLS.has(tool)) {
     blockMergeGate(payload);
-    redirectGuard(payload);
     sandboxGuard(payload);
     return;
   }
 
   if (WRITE_TOOLS.has(tool)) {
-    pathGuard(payload);
     sandboxGuard(payload);
     return;
   }

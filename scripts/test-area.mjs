@@ -27,8 +27,6 @@ export const AREAS = {
     src: [`${H}/block-merge.mjs`, `${T}/hooks/fixtures/**`],
     tests: [`${T}/hooks/block-merge.test.mjs`],
   },
-  'path-guard': { src: [`${H}/path-guard.mjs`], tests: [`${T}/hooks/path-guard.test.mjs`] },
-  'redirect-guard': { src: [`${H}/redirect-guard.mjs`], tests: [`${T}/hooks/redirect-guard.test.mjs`] },
   gate: { src: [`${H}/gate.mjs`], tests: [`${T}/hooks/gate.test.mjs`] },
   'hooks-json': { src: [`${H}/hooks.json`], tests: [`${T}/hooks/hooks-json.test.mjs`] },
   lib: { src: [`${H}/lib.mjs`], tests: [`${T}/hooks/lib.test.mjs`, `${T}/hooks/runtime-fallback.test.mjs`] },
