@@ -74,8 +74,8 @@ function renderDataRoot(payload) {
   if (live.root === null) {
     return [
       `**Production data root: DECLARED BUT UNUSABLE.** \`${LIVE_DATA_ROOT_ENV}\` is set to`,
-      `\`${live.raw}\`, which is not an absolute path. The sandbox guard cannot tell production`,
-      'data from a sandbox with it, so it is refusing every command until this is set to an',
+      `\`${live.raw}\`, which is not an absolute path. The sandbox guard cannot locate it, so it`,
+      'judges nothing and the data there is not protected until this is set to an',
       'absolute path or unset.',
       '',
     ];

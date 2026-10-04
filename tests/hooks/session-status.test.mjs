@@ -558,7 +558,8 @@ describe('production data root', () => {
     });
     assert.equal(r.status, 0);
     assert.match(r.stdout, /Production data root: DECLARED BUT UNUSABLE/);
-    assert.match(r.stdout, /refusing every command/);
+    assert.match(r.stdout, /judges nothing and the data there is not protected until this is set to an\s+absolute path or unset/);
+    assert.doesNotMatch(r.stdout, /refusing every command/);
     assert.doesNotMatch(r.stdout, /Production data root: declared at/);
   });
 
