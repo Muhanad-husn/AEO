@@ -40,9 +40,8 @@ collaborator access is involved.
 
 ### Versions: you install a release tag
 
-The current release is **v0.6.0**. It is `0.x` rather than `1.0.0` because phase 6
-is still removing every rule that two live runs showed never stopped real harm.
-`1.0.0` is cut when the trimmed plugin is scored on a consuming project.
+The current release is **v1.0.0**. Phase 6 removed the rules that two live runs showed
+never stopped real harm, and the trimmed plugin was scored on a consuming project.
 
 **The tag pins your install.** The marketplace entry fetches `plugin/` from
 the release tag it names, so a merge to `main` changes nothing you install.
@@ -208,8 +207,7 @@ server-side, and it is deleted (see "Who merges" below).
 The rules `gate` runs, each still its own module under `plugin/hooks/`:
 
 - **sandbox-guard**: a write, move or delete under the declared production
-  data root that git cannot restore, a run pointed at that root, and running
-  the suite over a job that's still live.
+  data root that git cannot restore.
 - **redirect-guard** — a role subagent writing into `.claude/` through a shell
   redirect or command (`>`, `tee`, `cp`, `sed -i`, and PowerShell
   equivalents): the route around path-guard, which only sees the file-edit
