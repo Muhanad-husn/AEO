@@ -225,7 +225,7 @@ describe('session-status.mjs prints the sensorium after gate health and before t
     // between.
     const between = stdout.slice(gateIndex, dataRootIndex);
     assert.ok(
-      between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\ndollars: none declared\nruns: none live\nlast run: none\n${EXPECTED_HARNESS}\n`),
+      between.includes(`\n\n${EXPECTED_SCORE}\n${EXPECTED_BAR}\ndollars: none declared\nruns: none live\nlast run: none\nservices: none declared\n${EXPECTED_HARNESS}\n`),
       'score then bar then harness, as their own three lines, right after the gate section',
     );
   });
@@ -236,7 +236,7 @@ describe('session-status.mjs prints the sensorium after gate health and before t
     assert.match(
       stdout,
       new RegExp(
-        `not one where none was wired\\.\\n\\nscore: none declared\\nbar: none declared\\ndollars: none declared\\nruns: none live\\nlast run: none\\n${EXPECTED_HARNESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`,
+        `not one where none was wired\\.\\n\\nscore: none declared\\nbar: none declared\\ndollars: none declared\\nruns: none live\\nlast run: none\\nservices: none declared\\n${EXPECTED_HARNESS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\n`,
       ),
     );
   });
