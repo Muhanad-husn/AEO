@@ -13,7 +13,7 @@
         "source": "git-subdir",
         "url": "https://github.com/Muhanad-husn/AEO.git",
         "path": "plugin",
-        "ref": "v0.6.0"
+        "ref": "v1.0.0"
       },
       "description": "A solo-operator AI software engineering harness: test-first build, on-demand review and triage, deterministic merge and test gates, and a GitHub-native issue and PR workflow that keeps a human in the merge seat."
     }
