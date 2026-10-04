@@ -22,7 +22,7 @@
 // The stack under test is Node. It is the only stack the manifest seeds, because node is
 // the one toolchain this plugin already requires (D8) and therefore the only toolchain a
 // test can assume is installed. Go, Rust and the rest are written by the agent to their
-// own conventions — manifest, first test, and the aeo-tests.json recording how to run it.
+// own conventions: manifest, first test, and the aeo-tests.json recording how to run it.
 //
 // Everything happens under os.tmpdir(). Nothing here touches this repository or the
 // testbed (D21).
