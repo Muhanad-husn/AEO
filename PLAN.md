@@ -331,4 +331,6 @@ Made 2026-10-03, slicing phase 6: the trimmed plugin is rerun on diligence-reade
 
 Made 2026-10-03: the commitment ledger is removed (`COMMITMENTS.md`, its sensorium lines `commitment:` and `executed:`, `plugin/scripts/commitment.mjs`, the score row's `executed:` line, and the `new-project` scaffold entry), because neither consumer wrote one: Axial and decision-model-poc both printed `executed: none declared` or `0 of 0 marked` for the whole run.
 
+Made 2026-10-04: a build that runs on every change reuses what did not change and finishes in about a minute; anything slower runs only at release. What a project installs is published when the founder cuts a release, never as a side effect of a merge. It came from RLM's phase 8 packaging slice, where the Docker image was rebuilt and published on every merge until the founder flagged the build time; that recipe stays in RLM. This repository already meets the first half (CI ran in 25 seconds on #267) and breaks the second: the marketplace serves the plugin from main, so every merge is what a consumer gets on its next update, as D27 recorded. Slice 07 of phase 6 pins the install to a release tag before the gate.
+
 No decision is open.
