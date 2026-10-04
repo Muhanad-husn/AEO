@@ -44,6 +44,10 @@ green before approval is asked for.
 If the fast tier has stopped being fast, roughly thirty seconds and judgement
 applies, that is a finding for the pull request body, not a delay to absorb.
 
+## A service the project needs is up before work that needs it
+
+Before building or fixing, the orchestrator reads the `services:` lines of the session readout, and a declared service that is down is started or named to the founder before any work that needs it.
+
 ## Two attempts per shape
 
 A fix that fails twice is not tried a third time the same way. The third attempt

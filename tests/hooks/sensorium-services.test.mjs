@@ -6,7 +6,7 @@
 // renderSensorium(root), which the acceptance criterion is stated in terms of.
 
 import net from 'node:net';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after, describe } from 'node:test';
@@ -49,8 +49,10 @@ async function closedPort() {
 
 // Quoted so the command works whatever PATH holds and whatever the shell does with spaces.
 const NODE = `"${process.execPath}"`;
-const exit0 = `${NODE} -e "process.exit(0)"`;
-const exit3 = `${NODE} -e "process.exit(3)"`;
+// Shell builtins, not node: a node start-up can pass 1.5 s when the whole suite runs at
+// once, and these tests are about the exit code, not about start-up cost.
+const exit0 = 'exit 0';
+const exit3 = 'exit 3';
 const hang = `${NODE} -e "setTimeout(()=>{},10000)"`;
 
 describe('40-services.mjs, render({ root })', () => {
@@ -196,12 +198,24 @@ describe('renderSensorium(root) with the services section', () => {
     assert.ok(lines.includes('services: none declared'));
   });
 
-  test('a docker-info style command (a PATH shim, not a bare exe) resolves', async () => {
-    // `npm` is a .cmd shim on Windows, the same kind of file `docker` can be.
-    const root = tempRoot();
-    declare(root, { services: [{ name: 'shim', command: 'npm --version' }] });
-    const lines = await render({ root });
-    assert.match(lines[1], /^  shim: up/);
+  test('a docker-info style command (a .cmd shim on PATH, not a bare exe) resolves', async () => {
+    // docker, npm and similar tools are .cmd shims on Windows; only a shell finds them by
+    // bare name. A shim of our own keeps the test fast and independent of what is installed.
+    const bin = tempRoot();
+    const win = process.platform === 'win32';
+    const shim = path.join(bin, win ? 'fakesvc.cmd' : 'fakesvc');
+    writeFileSync(shim, win ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n');
+    if (!win) chmodSync(shim, 0o755);
+    const saved = process.env.PATH;
+    process.env.PATH = `${bin}${path.delimiter}${saved}`;
+    try {
+      const root = tempRoot();
+      declare(root, { services: [{ name: 'shim', command: 'fakesvc info' }] });
+      const lines = await render({ root });
+      assert.match(lines[1], /^  shim: up/);
+    } finally {
+      process.env.PATH = saved;
+    }
   });
 });
 

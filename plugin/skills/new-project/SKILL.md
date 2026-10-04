@@ -46,6 +46,8 @@ Each of those strings is a marker a reader under `plugin/hooks/` matches on, whi
 the steps declare them in `requires`. A file that keeps its heading but loses its marker
 still looks written and reports nothing.
 
+When the PRD names a service the project runs against, such as a database or a local model server, the scaffold also writes `aeo-services.json` at the root, one entry per service with a name and either a `port` or a `command`.
+
 ## The rest of the tree
 
 Walk `steps` in array order, taking every step whose `stage` is 0 and whose `when` matches
