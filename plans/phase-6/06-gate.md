@@ -4,7 +4,7 @@ Issue: [#261](https://github.com/Muhanad-husn/AEO/issues/261)
 
 ## Goal
 
-PLAN.md 5a reads `6 Removal | done` with diligence-reader's first UI milestone scored under the trimmed plugin. plugin.json reads 1.0.0. main is tagged v1.0.0 with that row and RLM's reference row in the tag message.
+PLAN.md 5a reads `6 Removal | done` with diligence-reader's first UI milestone scored under the trimmed plugin. plugin.json reads 1.0.0. main is tagged v1.0.0 with that row and RLM's reference row in the tag message. The marketplace entry then moves to v1.0.0 in its own pull request.
 
 ## Acceptance criterion
 
@@ -21,8 +21,10 @@ slice: 06-gate
 depends-on: 03-guards
 depends-on: 04-prose
 depends-on: 05-ledger
+depends-on: 07-release-pin
 edits: PLAN.md
 edits: plugin/.claude-plugin/plugin.json
+edits: .claude-plugin/marketplace.json
 ```
 
 ## Out of scope
