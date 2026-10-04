@@ -333,4 +333,6 @@ Made 2026-10-03: the commitment ledger is removed (`COMMITMENTS.md`, its sensori
 
 Made 2026-10-04: a build that runs on every change reuses what did not change and finishes in about a minute; anything slower runs only at release. What a project installs is published when the founder cuts a release, never as a side effect of a merge. It came from RLM's phase 8 packaging slice, where the Docker image was rebuilt and published on every merge until the founder flagged the build time; that recipe stays in RLM. This repository already meets the first half (CI ran in 25 seconds on #267) and breaks the second: the marketplace serves the plugin from main, so every merge is what a consumer gets on its next update, as D27 recorded. Slice 07 of phase 6 pins the install to a release tag before the gate. The founder asked the same day that a session check the third-party services a project needs on the device, such as Docker, Postgres and Ollama, before it builds or fixes; slice 08 adds that to the session-start readout and carries the phase's one release, 0.6.0, which 07 pins.
 
+Made 2026-10-05: after v1.0.0 the repository is frozen; a change is made only to fix what a consuming project reports, and each one cites that report.
+
 No decision is open.
