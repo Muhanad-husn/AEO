@@ -27,6 +27,11 @@
       "date": "2026-09-16",
       "issue": 200,
       "change": "Reauthored against the closing roster (build, pr, safe-cleanup, status, new-project, sprint-plan): checked every expect against the shipped skills, none named a deleted lane, and the five 'why' rationales still naming red-green-refactor, the fix lane, tdd-plan or the review lane were rewritten to name the skill that now owns that ground. No case, expect or competes value changed. The set is still 25 cases. The number this run prints is reported in the pull request, never tuned toward."
+    },
+    {
+      "date": "2026-10-04",
+      "issue": 260,
+      "change": "The status skill was deleted, so st-p1, st-p2 and st-n1 are removed; no other case changed. The set is 22 cases after 25, and a number taken over it is not comparable with an earlier one."
     }
   ],
   "note": "Authored from what a founder would plausibly type, not derived from the skill descriptions. Wording deliberately avoids the descriptions' own vocabulary: a case set written out of the text it scores measures the case set. 'expect' is a roster skill name or NONE. NONE is correct whenever the prompt belongs to an operator lane (those carry disable-model-invocation: true and are unreachable by description) or to no skill at all.",
@@ -113,30 +118,6 @@
       ],
       "prompt": "Merge this once it is green.",
       "why": "No roster skill merges anything, and pr's description stops at opening the pull request. Anything that fires here has read past its own limits."
-    },
-    {
-      "id": "st-p1",
-      "kind": "positive",
-      "expect": "status",
-      "prompt": "Where are we? Give me the open issues and what is waiting on a merge.",
-      "why": "The core case: the founder wants the record read, not recalled."
-    },
-    {
-      "id": "st-p2",
-      "kind": "positive",
-      "expect": "status",
-      "prompt": "Before I decide anything, show me the score, the budget left and what is still running.",
-      "why": "Same intent named by the sensorium's own fields rather than by the word status, so the description cannot key on one word."
-    },
-    {
-      "id": "st-n1",
-      "kind": "near-miss",
-      "expect": "NONE",
-      "competes": [
-        "status"
-      ],
-      "prompt": "Update the tracker to say the login slice is done.",
-      "why": "status renders and writes nothing. A prompt asking for a record to be edited by hand is the drift it exists to stop, and a skill that takes it has read past its own limits."
     },
     {
       "id": "tp-p1",

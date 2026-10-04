@@ -21,9 +21,7 @@ disk first, then created through the GitHub issue tools.
 
 2. **Slice.** Cut each feature into thin vertical slices,
    INVEST-checked, a walking-skeleton slice first where infrastructure
-   doesn't exist yet. The bar, the skeleton rule and why a plan declares
-   the files it will create are in
-   `${CLAUDE_PLUGIN_ROOT}/references/slicing.md`.
+   doesn't exist yet.
    Each slice plan states its mechanism, in this
    order: an existing skill or plugin, then a first-party MCP, then a
    library, then a single model call. Only reach past one option when the

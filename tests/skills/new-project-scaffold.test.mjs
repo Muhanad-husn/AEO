@@ -22,8 +22,7 @@
 // The stack under test is Node. It is the only stack the manifest seeds, because node is
 // the one toolchain this plugin already requires (D8) and therefore the only toolchain a
 // test can assume is installed. Go, Rust and the rest are written by the agent to their
-// own conventions — manifest, first test, and the aeo-tests.json recording how to run it —
-// and confirmed with hooks/stack.mjs, which is step 4 of Stage 0.
+// own conventions — manifest, first test, and the aeo-tests.json recording how to run it.
 //
 // Everything happens under os.tmpdir(). Nothing here touches this repository or the
 // testbed (D21).
@@ -44,7 +43,6 @@ import path from 'node:path';
 import test, { after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveTestPlan } from '../../plugin/hooks/stack.mjs';
 import { parseStatusTable } from '../../plugin/hooks/status-table.mjs';
 
 const PLAN_PATH = path.resolve(
@@ -233,9 +231,9 @@ function world(caseName = 'founder-as-reader-no-money', prefix = 'aeo-p61-') {
     'commit', '-m', 'chore: scaffold the project',
   ]);
 
-  const detected = resolveTestPlan({ toplevel: root, files: [] });
+  const recorded = JSON.parse(readFileSync(path.join(root, 'aeo-tests.json'), 'utf8'));
 
-  return { root, ...emitted, detected, answers: answerCase.answers };
+  return { root, ...emitted, recorded, answers: answerCase.answers };
 }
 
 const scaffolded = world();
@@ -619,22 +617,18 @@ describe('the scaffold lands exactly one commit on main', () => {
 // ---------------------------------------------------------------------------
 
 describe('the emitted tree records a test command, and that command is green', () => {
-  test('stack.mjs resolves exactly one recorded command from the scaffold', () => {
-    // Step 4 of Stage 0. If this resolves nothing, sandbox-guard cannot recognise the
-    // new project's suite, and the founder finds out during their first live job.
-    const { units, missing } = scaffolded.detected;
-    assert.deepEqual(missing, [], `stack.mjs found no aeo-tests.json for: ${missing.join(', ')}`);
-    assert.equal(units.length, 1, `expected one resolved unit, got ${units.length}`);
+  test('aeo-tests.json records one command line for the project root', () => {
+    // Step 4 of Stage 0. sandbox-guard recognises the project's suite by this record.
+    const command = scaffolded.recorded.test;
     assert.equal(
-      typeof units[0].command === 'string' && units[0].command.length > 0,
+      typeof command === 'string' && command.trim().length > 0,
       true,
-      `stack.mjs resolved no command: ${units[0].reason}`,
+      `aeo-tests.json holds no "test" command: ${JSON.stringify(scaffolded.recorded)}`,
     );
-    assert.equal(units[0].root, scaffolded.root, 'the record resolves somewhere other than the project root');
   });
 
   test('that command runs green', () => {
-    const command = scaffolded.detected.units[0].command;
+    const command = scaffolded.recorded.test;
     const result = spawnSync(command, [], {
       cwd: scaffolded.root,
       encoding: 'utf8',

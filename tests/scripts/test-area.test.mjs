@@ -50,7 +50,7 @@ describe('selecting areas for changed paths', () => {
   test('a change to lib.mjs pulls in every area whose source imports it', () => {
     const { areas } = selectAreas(['plugin/hooks/lib.mjs'], { root: repoRoot });
     for (const a of ['lib', 'block-merge', 'sandbox-guard',
-      'session-status', 'gate', 'stack', 'collect-evidence', 'status']) {
+      'session-status', 'gate', 'collect-evidence']) {
       assert.ok(areas.includes(a), `${a} should be picked`);
     }
     assert.ok(!areas.includes('score'));

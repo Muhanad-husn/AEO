@@ -6,8 +6,10 @@
 // session.
 //
 // A sentinel is how one session tells every other session that this machine is busy.
-// It is read by the sandbox guard, and written by whoever starts the long job
-// (plugin/scripts/run-sentinel.mjs is the shipped writer).
+// It is written by whoever starts the long job (plugin/scripts/run-sentinel.mjs is the
+// shipped writer) and read by the sensorium's runs section, run-sentinel.mjs,
+// run-monitor.mjs and runlog.mjs. The sandbox guard no longer reads it; it uses only
+// worktreeAnchor from here.
 //
 // AN EARLIER VERSION WAS ALSO READ BY THE COMMIT GATE, which ran the suite as a side
 // effect of every commit and was itself half of L-02's hazard, not only a guard against
@@ -36,8 +38,8 @@
 // and does not block. Everything else blocks: no pid recorded, another host, a pid that
 // still exists, an unparseable file. Fail closed on every ambiguity.
 //
-// A stale sentinel is never deleted here. A gate that removes files is a gate that can
-// remove the wrong one, and the reader is on the block path.
+// A stale sentinel is never deleted here. A reader that removes files is a reader that
+// can remove the wrong one.
 
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
@@ -45,11 +47,6 @@ import path from 'node:path';
 
 /** Where sentinels live, relative to the repository toplevel. */
 export const SENTINEL_DIRNAME = path.join('.aeo', 'runs');
-
-const HOW_TO_CLEAR_INLINE =
-  'clear its sentinel with `node <plugin>/scripts/run-sentinel.mjs stop <id>`, or delete the file under .aeo/runs/.';
-const HOW_TO_CLEAR =
-  'Fix or remove the file under .aeo/runs/, or clear it with `node <plugin>/scripts/run-sentinel.mjs stop <id>`.';
 
 /** The id characters a sentinel filename may carry. Anything else is rewritten. */
 const SAFE_ID = /[^A-Za-z0-9._-]+/g;
@@ -239,42 +236,4 @@ export function inspectRuns(toplevel, { hostname = os.hostname, alive = processA
     }
   }
   return result;
-}
-
-/**
- * The reason a repository is closed for business, or null.
- *
- * `notes` carries what the caller should say on stderr even when nothing blocks. A stale
- * sentinel is reported rather than swallowed: a quiet pass is how a gate stops being
- * noticed at all (L-08).
- *
- * @returns {{reason: string|null, notes: string[]}}
- */
-export function runInProgress(toplevel, options) {
-  const { live, stale, unreadable, dirError } = inspectRuns(toplevel, options);
-  const notes = stale.map((s) => `sentinel: ${s}; not blocking. Clear it with \`node <plugin>/scripts/run-sentinel.mjs stop <id>\` or by deleting the file.`);
-
-  if (dirError !== null) {
-    return { reason: `${dirError}, so the gate cannot tell whether a long job is running. ${HOW_TO_CLEAR}`, notes };
-  }
-  if (unreadable.length > 0) {
-    return {
-      reason:
-        `a run-in-progress sentinel is present but unreadable, so the gate cannot tell whether a long job is running:\n` +
-        unreadable.map((u) => `  ${u}`).join('\n') +
-        `\n${HOW_TO_CLEAR}`,
-      notes,
-    };
-  }
-  if (live.length > 0) {
-    return {
-      reason:
-        `a long job is running and this would execute code alongside it (L-02):\n` +
-        live.map((l) => `  ${l}`).join('\n') +
-        `\nRunning the suite during a live job is what killed a four-hour pipeline four times. ` +
-        `Wait for the job, or if it is already over, ${HOW_TO_CLEAR_INLINE}`,
-      notes,
-    };
-  }
-  return { reason: null, notes };
 }
