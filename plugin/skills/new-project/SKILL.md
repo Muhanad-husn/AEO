@@ -69,12 +69,8 @@ other stack write the manifest, one trivial passing test and `aeo-tests.json` yo
 that stack's conventions. `aeo-tests.json` is the project's record of its own test
 command, one key holding one command line, tracked in git (D29, amended by D30).
 `sandbox-guard` reads it to recognise this project's suite by name, so a suite it cannot
-name is one it cannot hold back while a long job runs. Confirm the record resolves to
-exactly one unit by calling `resolveTestPlan` from `${CLAUDE_PLUGIN_ROOT}/hooks/stack.mjs`
-with the target directory as `toplevel`, importing it through `pathToFileURL`, since a
-bare dynamic import of an absolute Windows path is read as a `d:` URL scheme and fails.
-Then run the command it names and require green. Exactly one commit lands, on `main`,
-green, or the founder's first real change is where they find out the baseline was never
+name is one it cannot hold back while a long job runs. Run the command the record
+names and require green. Exactly one commit lands, on `main`, green, or the founder's first real change is where they find out the baseline was never
 trustworthy.
 
 ## The remote and its branch protection

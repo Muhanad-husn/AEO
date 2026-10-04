@@ -78,7 +78,8 @@ function pluginNames() {
   const skills = readdirSync(join(PLUGIN, 'skills'), { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name);
-  const references = readdirSync(join(PLUGIN, 'references'))
+  // The plugin carries no references/ directory once every reference is deleted.
+  const references = (existsSync(join(PLUGIN, 'references')) ? readdirSync(join(PLUGIN, 'references')) : [])
     .filter((name) => name.endsWith('.md'))
     .map((name) => name.slice(0, -3));
   return { skills, references };

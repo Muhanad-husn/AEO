@@ -39,9 +39,9 @@ from `${CLAUDE_SKILL_DIR}` to `${CLAUDE_PLUGIN_ROOT}/skills/...`.
 
 **Tools this plugin does not ship.** Upstream tells the reader to confirm
 current syntax with `find-docs`/`ctx7`. Neither ships here, so every mention was
-replaced with a pointer at official documentation. That is the entire change in
-the three workflow templates, one line each, and most of the change in
-`test-strategy.md` and `github-actions-guide.md`.
+replaced with a pointer at official documentation. The files that carried it
+(the three workflow templates, `test-strategy.md` and `github-actions-guide.md`)
+are deleted.
 
 **Repo-agnostic defaults, and accuracy about the tiers.** Hardcoded `main` was
 replaced with the resolved default branch
@@ -73,15 +73,10 @@ Changed lines are `diff | grep -c '^[<>]'` against the pinned commit, measured
 | `safe-cleanup/scripts/classify-branches.mjs` | 244 |
 | `pr/scripts/collect-evidence.mjs` | 132 |
 | `safe-cleanup/SKILL.md` | 128 |
-| `references/workflows/node-ci.yml` | 2 |
-| `references/workflows/playwright-e2e.yml` | 2 |
-| `references/workflows/python-ci.yml` | 2 |
 
-Paths in this table are relative to a skill directory, except the three workflow
-templates, which Phase 3 moved to `references/workflows/` and which are given
-relative to the plugin root. `red-green-refactor`, `tdd-plan`, `tdd-ci` and `safe-pr` were
-deleted in Phase 3; their rows went with them, and what they carried that held a
-measurement is now in `plugin/references/`.
+Paths in this table are relative to a skill directory. `red-green-refactor`, `tdd-plan`,
+`tdd-ci` and `safe-pr` were deleted in Phase 3, and the three workflow templates under
+`references/workflows/` in Phase 6; their rows went with them.
 
 ## How to re-sync with upstream
 

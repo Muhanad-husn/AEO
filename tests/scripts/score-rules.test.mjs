@@ -125,10 +125,9 @@ test('skill loads and reference reads are counted by name, inside the window onl
   assert.ok(lines.includes('  skill build: 1'));
   assert.ok(lines.includes('  skill pr: 1'), 'the aeo:pr load after the window closes is not counted');
   assert.ok(lines.includes('  skill sprint-plan: 1'), 'a typed /aeo:sprint-plan is a load');
-  assert.ok(lines.includes('  skill status: 0'));
+  assert.ok(lines.includes('  skill safe-cleanup: 0'), 'a skill the plugin carries and nobody loaded prints a zero');
   assert.ok(lines.includes('  reference ci: 1'), 'a read under the installed plugin cache');
   assert.ok(lines.includes('  reference slicing: 1'), 'a read of plugin/references/slicing.md');
-  assert.ok(lines.includes('  reference dispatch: 0'));
   assert.ok(!lines.some((l) => l.includes('update-config') || l.includes('notes')));
 });
 

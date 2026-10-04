@@ -91,10 +91,3 @@ under one hook and two skills. The same product under the first build's lanes to
 sixteen days and $20.58 over 122 pull requests and produced no graded report
 (PLAN.md section 4a). Everything above is what survived that comparison. A want on
 this page that costs a consumer days or dollars is wrong and gets deleted.
-
-## Further
-
-- `${CLAUDE_PLUGIN_ROOT}/references/test-strategy.md` - detecting a project's
-  runner, the two tiers, what a suite costs.
-- `${CLAUDE_PLUGIN_ROOT}/references/slicing.md` - the INVEST bar and the walking
-  skeleton, when the change needs slicing first.

@@ -30,16 +30,11 @@ export const AREAS = {
   gate: { src: [`${H}/gate.mjs`], tests: [`${T}/hooks/gate.test.mjs`] },
   'hooks-json': { src: [`${H}/hooks.json`], tests: [`${T}/hooks/hooks-json.test.mjs`] },
   lib: { src: [`${H}/lib.mjs`], tests: [`${T}/hooks/lib.test.mjs`, `${T}/hooks/runtime-fallback.test.mjs`] },
-  stack: { src: [`${H}/stack.mjs`], tests: [`${T}/hooks/stack.test.mjs`] },
-  'test-tiers': {
-    src: ['package.json', '.github/workflows/**'],
-    tests: [`${T}/hooks/test-tiers.test.mjs`],
-  },
   'test-area': { src: ['scripts/test-area.mjs'], tests: [`${T}/scripts/test-area.test.mjs`] },
   'session-status': { src: [`${H}/session-status.mjs`], tests: [`${T}/hooks/session-status.test.mjs`] },
   status: {
-    src: [`${H}/status-render.mjs`, 'plugin/skills/status/**'],
-    tests: [`${T}/skills/status.test.mjs`, `${T}/skills/status-render-smoke.test.mjs`],
+    src: [`${H}/status-render.mjs`],
+    tests: [`${T}/skills/status-render-smoke.test.mjs`],
   },
   sensorium: {
     src: [`${H}/sensorium.mjs`, `${H}/sensorium/**`, `${H}/ledger.mjs`,

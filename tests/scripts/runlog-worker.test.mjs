@@ -36,7 +36,7 @@ import path from 'node:path';
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runInProgress, sentinelDir } from '../../plugin/hooks/sentinel.mjs';
+import { inspectRuns, sentinelDir } from '../../plugin/hooks/sentinel.mjs';
 import { makeAnchor, runlog, spawnRunlog } from './runlog-harness.mjs';
 
 /** An opened run, and the anchor it lives under. */
@@ -390,14 +390,14 @@ describe('a worker run started while a sentinel is live', () => {
   });
 
   test('a whole worker run leaves a live sentinel standing, untouched by anything it did', async () => {
-    // Asserted through runInProgress(), sentinel.mjs's own predicate. The run is driven
+    // Asserted through inspectRuns(), sentinel.mjs's own reader. The run is driven
     // end to end first, because the claim worth pinning is not "a live sentinel reads as
     // live" — that is sentinel.mjs's own behaviour and it has its own tests — but that
     // nothing THIS lane does clears the sentinel it has no business touching. An earlier
     // version asserted only the former and passed with the whole slice deleted.
     const job = 'blocked-commit';
     const { anchor, dir } = await openedRun(job);
-    assert.equal(runInProgress(anchor).reason, null, 'the anchor was not clear before the sentinel went up');
+    assert.equal(inspectRuns(anchor).live.length, 0, 'the anchor was not clear before the sentinel went up');
     raiseLiveSentinel(anchor);
 
     for (const id of ['w1', 'w2']) {
@@ -414,9 +414,7 @@ describe('a worker run started while a sentinel is live', () => {
     const closed = await runlog(['close', '--dir', dir, '--job', job, '--status', 'ok'], { cwd: anchor });
     assert.equal(closed.status, 0, closed.stderr);
 
-    const blocked = runInProgress(anchor);
-    assert.notEqual(blocked.reason, null, 'the worker run cleared or exempted the live sentinel');
-    assert.match(blocked.reason, /long job is running/);
+    assert.equal(inspectRuns(anchor).live.length, 1, 'the worker run cleared or exempted the live sentinel');
   });
 
   test('a worker run raises no sentinel of its own', async () => {
@@ -427,7 +425,7 @@ describe('a worker run started while a sentinel is live', () => {
     const { anchor, dir } = await openedRun('no-sentinel');
     await claim(anchor, dir, 'w1');
     await claim(anchor, dir, 'w2');
-    assert.equal(runInProgress(anchor).reason, null, 'a worker run raised something that blocks commits');
+    assert.equal(inspectRuns(anchor).live.length, 0, 'a worker run raised a sentinel of its own');
   });
 });
 
