@@ -32,13 +32,13 @@ A Claude Code marketplace is a repository that publishes plugins, and this
 repository is one. The whole mechanism is a single file,
 `.claude-plugin/marketplace.json` at the root: it names a marketplace called
 `aeo` and one plugin, also called `aeo`, whose source is the `plugin/`
-directory sitting beside it. There is no build step, no release artifact, and
-nothing to download by hand.
+directory of this repository at a release tag. There is no build step, no
+release artifact, and nothing to download by hand.
 
 The repository is public. Anyone can install it, and no account, token, or
 collaborator access is involved.
 
-### Versions: the tag documents, `main` ships
+### Versions: you install a release tag
 
 The current release is **v0.2.0**. `0.x` rather than `1.0.0` on purpose: the
 gates and lanes work and the install path is proven, but the skill names,
@@ -49,13 +49,11 @@ the patch, because v0.2.0 removes the local commit gate that v0.1.0 shipped ([D3
 a project upgrading now has to configure GitHub branch protection to replace
 what that gate used to check locally.
 
-**The tag does not pin your install.** `marketplace add` clones this
-repository and reads `.claude-plugin/marketplace.json` from the **default
-branch**; it does not resolve tags, and the manifest has no version field to
-resolve one with. So you always get the current `main`, and the GitHub release
-is a marker for humans and an anchor for its notes. If you need a fixed
-version, clone the tag yourself and add the clone as a directory marketplace.
-The reasoning, and what it costs, is [D27](docs/DECISIONS.md).
+**The tag pins your install.** The marketplace entry fetches `plugin/` from
+the release tag it names, so a merge to `main` changes nothing you install.
+A new release reaches you only after a later pull request moves the entry to
+the new tag and the plugin updates, for example with
+`claude plugin update aeo@aeo`.
 
 From inside a Claude Code session:
 
