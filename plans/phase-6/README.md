@@ -20,11 +20,12 @@ The outcome: each rule the plugin carries is measured against what it did inside
 - **Verdict per rule: kept when it stopped real harm at least once; deleted otherwise.** Exception, pending the founder: block-merge's rules and sandbox-guard's write rule (a write git cannot restore) are marked "kept by founder decision" because RULES.md and a 2026-09-08 decision keep the merge and the data gated in code. Two runs are too few to show an irreversible harm will not come.
 - **A skill or reference is kept when either consumer loaded it at least once.** sprint-plan is operator-typed and counted the same way.
 - **The commitment ledger is removed without waiting for the audit.** Both consumers show it held nothing.
-- **One release for the rerun.** Slice 04 lands last of the removals and bumps plugin.json to 0.5.0, the version diligence-reader installs; 03 and 05 leave the version alone so no two removals collide on it. The gate sets 1.0.0.
+- **One release for the rerun.** Slice 04 lands last of the removals and bumps plugin.json to 0.5.0 as history; slice 08 sets it to 0.6.0, the version diligence-reader installs; 03 and 05 leave the version alone so no two removals collide on it. The gate sets 1.0.0.
+- **A release is published by a tag, not a merge** (PLAN.md section 11, 2026-10-04). 07 pins the marketplace to v0.6.0; the gate tags v1.0.0 and moves the pin.
 
 ## Slices
 
-Filed as #256 to #261 under milestone Phase 6.
+Filed as #256 to #261 under milestone Phase 6, 07 as #268 and 08 as #270.
 
 | NN | Slice | Plan | Issue | Depends on |
 |---|---|---|---|---|
@@ -33,6 +34,8 @@ Filed as #256 to #261 under milestone Phase 6.
 | 03 | The guard rules the audit marks delete are gone | [03-guards.md](03-guards.md) | #259 | 02 |
 | 04 | The skills and references no consumer loaded are gone | [04-prose.md](04-prose.md) | #260 | 02, 03, 05 |
 | 05 | The commitment ledger is removed | [05-ledger.md](05-ledger.md) | #257 | none |
-| 06 | Phase 6 gate: the trimmed plugin's score on diligence-reader and v1.0.0 | [06-gate.md](06-gate.md) | #261 | 03, 04, 05 |
+| 08 | The session opens on the device services the project needs | [08-services.md](08-services.md) | #270 | 04 |
+| 07 | A project installs a release tag, not main | [07-release-pin.md](07-release-pin.md) | #268 | 04, 08 |
+| 06 | Phase 6 gate: the trimmed plugin's score on diligence-reader and v1.0.0 | [06-gate.md](06-gate.md) | #261 | 03, 04, 05, 07, 08 |
 
-Order of work: 01 and 05 together, then 02, then 03, then 04 (it carries the 0.5.0 release), then 06 once diligence-reader's milestone closes under 0.5.0.
+Order of work: 01 and 05 together, then 02, then 03, then 04 (it set 0.5.0), then 08, which sets plugin.json to 0.6.0, then 07, which pins installs to the v0.6.0 tag, then 06 once diligence-reader's milestone closes under 0.6.0.
