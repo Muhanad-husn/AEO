@@ -40,14 +40,9 @@ collaborator access is involved.
 
 ### Versions: you install a release tag
 
-The current release is **v0.2.0**. `0.x` rather than `1.0.0` on purpose: the
-gates and lanes work and the install path is proven, but the skill names,
-command names and hook contract have been exercised by the projects
-[D35](docs/DECISIONS.md) counts, which is still not enough evidence for a
-stability promise. The minor moved, not
-the patch, because v0.2.0 removes the local commit gate that v0.1.0 shipped ([D30](docs/DECISIONS.md)):
-a project upgrading now has to configure GitHub branch protection to replace
-what that gate used to check locally.
+The current release is **v0.6.0**. It is `0.x` rather than `1.0.0` because phase 6
+is still removing every rule that two live runs showed never stopped real harm.
+`1.0.0` is cut when the trimmed plugin is scored on a consuming project.
 
 **The tag pins your install.** The marketplace entry fetches `plugin/` from
 the release tag it names, so a merge to `main` changes nothing you install.
