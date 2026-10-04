@@ -83,8 +83,7 @@ function renderDataRoot(payload) {
 
   return [
     `**Production data root: declared** at \`${live.root}\` (\`${LIVE_DATA_ROOT_ENV}\`). The sandbox`,
-    'guard refuses a write, move or delete there that git cannot restore, a run pointed at',
-    'it or run from inside it, and one that sets `AEO_DATA_ROOT` into it. Reads pass.',
+    'guard refuses a write, move or delete there that git cannot restore. Reads pass.',
     'That the declaration exists is what is being reported here;',
     'whether it names the right directory is not something this hook can check.',
     '',

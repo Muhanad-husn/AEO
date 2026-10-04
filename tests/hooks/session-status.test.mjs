@@ -529,6 +529,17 @@ describe('production data root', () => {
     assert.doesNotMatch(r.stdout, /NOT DECLARED/);
   });
 
+  test('a declared root names only the write rule the guard still holds', () => {
+    const repo = makeRepo();
+    const live = tempDir('aeo-p17-live-');
+    const r = runHook({
+      payload: { cwd: repo },
+      env: fakeGhEnv({ mode: 'empty', pluginRoot: makePassingPluginRoot(), AEO_LIVE_DATA_ROOT: live }),
+    });
+    assert.match(r.stdout, /guard refuses a write, move or delete there that git cannot restore\. Reads pass\./);
+    assert.doesNotMatch(r.stdout, /run pointed at|run from inside|AEO_DATA_ROOT/);
+  });
+
   test('a declared root is not reported as safe, only as declared', () => {
     const repo = makeRepo();
     const live = tempDir('aeo-p17-live-');

@@ -69,9 +69,7 @@ Steps carrying `from` take path and content from the chosen stack's seed. Node i
 seeded stack, because node is the one toolchain this plugin already requires (D8). For any
 other stack write the manifest, one trivial passing test and `aeo-tests.json` yourself, to
 that stack's conventions. `aeo-tests.json` is the project's record of its own test
-command, one key holding one command line, tracked in git (D29, amended by D30).
-`sandbox-guard` reads it to recognise this project's suite by name, so a suite it cannot
-name is one it cannot hold back while a long job runs. Run the command the record
+command, one key holding one command line, tracked in git (D29, amended by D30). Run the command the record
 names and require green. Exactly one commit lands, on `main`, green, or the founder's first real change is where they find out the baseline was never
 trustworthy.
 
