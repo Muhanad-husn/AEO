@@ -49,7 +49,7 @@ async function closedPort() {
 
 // Quoted so the command works whatever PATH holds and whatever the shell does with spaces.
 const NODE = `"${process.execPath}"`;
-// Shell builtins, not node: a node start-up can pass 1.5 s when the whole suite runs at
+// Shell builtins, not node: a node start-up can pass a second when the whole suite runs at
 // once, and these tests are about the exit code, not about start-up cost.
 const exit0 = 'exit 0';
 const exit3 = 'exit 3';
@@ -98,12 +98,12 @@ describe('40-services.mjs, render({ root })', () => {
     assert.match(lines[2], /^  bad: down \(.*exit 3.*\)$/);
   });
 
-  test('a command that never exits is down (timed out) and the section returns within 2 s', async () => {
+  test('a command that never exits is down (timed out) and the section returns within about 6 s', async () => {
     const root = tempRoot();
     declare(root, { services: [{ name: 'stuck', command: hang }] });
     const start = Date.now();
     const lines = await render({ root });
-    assert.ok(Date.now() - start < 2000, `took ${Date.now() - start} ms`);
+    assert.ok(Date.now() - start < 6000, `took ${Date.now() - start} ms`);
     assert.equal(lines[0], 'services: 1 declared, 1 down');
     assert.match(lines[1], /^  stuck: down \(.*timed out.*\)$/);
   });
@@ -113,7 +113,7 @@ describe('40-services.mjs, render({ root })', () => {
     declare(root, { services: [{ name: 'a', command: hang }, { name: 'b', command: hang }] });
     const start = Date.now();
     await render({ root });
-    assert.ok(Date.now() - start < 2000, `took ${Date.now() - start} ms`);
+    assert.ok(Date.now() - start < 6000, `took ${Date.now() - start} ms`);
   });
 
   test('a malformed file prints one line naming the problem', async () => {

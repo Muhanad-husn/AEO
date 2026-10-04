@@ -9,7 +9,7 @@
 // service is the orchestrator's or the founder's job.
 //
 // Cost: one TCP connect or one process per declared service, at session start only,
-// all started together and each bounded at PROBE_TIMEOUT_MS. No file, nothing runs.
+// all started together and each bounded at PROBE_TIMEOUT_MS (5 s). No file, nothing runs.
 //
 // Nothing is dropped silently. An unreadable file prints one line; a bad entry prints
 // its own line, counts as down, and leaves the good entries beside it untouched.
@@ -22,7 +22,9 @@ import { spawn } from 'node:child_process';
 export const name = '40-services';
 
 const FILE = 'aeo-services.json';
-const PROBE_TIMEOUT_MS = 1500;
+// 5 s, not less: `docker info` alone takes 1.7 to 2.7 s on the founder's machine, so a shorter
+// bound reads a running Docker as down. SessionStart allows the whole readout 20 s.
+const PROBE_TIMEOUT_MS = 5000;
 const DEFAULT_HOST = '127.0.0.1';
 
 /** TCP connect to host:port. Resolves { up, why }; never rejects. */
