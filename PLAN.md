@@ -335,4 +335,6 @@ Made 2026-10-04: a build that runs on every change reuses what did not change an
 
 Made 2026-10-05: after v1.0.0 the repository is frozen; a change is made only to fix what a consuming project reports, and each one cites that report.
 
+Made 2026-10-08: Haiku 5.5 takes prose, read-only work and mechanical code slices at a stated effort, and Sonnet 5.5 stays the default builder. On Anthropic's launch table Haiku 5.5 scores 39.2% on Terminal-Bench 4.0 at max effort (about 20% at its default, medium) against Sonnet 5.5's 70.6%, so it is not trusted with ordinary building. On Artificial Analysis's index it scores 43 at max effort for $0.21 a task, against Sonnet's 47 at its default high effort for $1.08 and 41 at medium for $0.59, so for reading and writing it is close to Sonnet at a fifth of the cost. The plugin names no model, so the v1.0.0 freeze is not touched.
+
 No decision is open.
