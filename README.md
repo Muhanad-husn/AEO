@@ -40,7 +40,7 @@ collaborator access is involved.
 
 ### Versions: you install a release tag
 
-The current release is **v1.0.0**. Phase 6 removed the rules that two live runs showed
+The current release is **v1.0.1**, which fixes the session-start harness line outside a git repository. Phase 6 removed the rules that two live runs showed
 never stopped real harm, and the trimmed plugin was scored on a consuming project.
 
 **The tag pins your install.** The marketplace entry fetches `plugin/` from
