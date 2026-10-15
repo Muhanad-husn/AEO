@@ -73,25 +73,14 @@ into whichever repository you happen to be working in.
 
 ### What that installs
 
-Fifteen skills, five agent charters, and two gate scripts wired to two hook
-events — `SessionStart` and `PreToolUse`.
+Five skills and one gate script, with a session-start reporter, wired to two
+hook events: `SessionStart` and `PreToolUse`. There are no agent charters.
 
-**Seven of the fifteen skills are operator-invoked only.** They run when you
-type their slash command and never on their own, no matter what you say to
-Claude:
-
-```
-/aeo:fix   /aeo:review   /aeo:sprint-plan   /aeo:sprint-start
-/aeo:status   /aeo:triage   /aeo:verify
-```
-
-This matters on the first day more than any other fact about the plugin. If
-you describe a sprint in a sentence and wait for `/aeo:sprint-start` to pick
-it up, nothing happens, and the plugin looks broken when it is behaving
-exactly as designed. Type the command. The remaining eight skills do trigger
-on description, so Claude reaches for them mid-session without being asked.
-[The lanes](#the-lanes) below shows the whole set and the order the
-development ones run in.
+**One skill is operator-invoked only:** `/aeo:sprint-plan`. It runs when you
+type the command and never on its own, no matter what you say to Claude. The
+other four trigger on their descriptions, so Claude reaches for them
+mid-session without being asked. There is no `/aeo:status` command; the
+status readout prints by itself at the start of every session.
 
 ## Uninstall
 
@@ -106,91 +95,15 @@ is Claude Code's, not this plugin's, and uninstall doesn't reach it. Run
 `claude plugin prune` afterward to clear it — that also clears any other
 orphaned plugin caches Claude Code is holding, not just this one.
 
-## The lanes
+## The skills
 
-All fifteen skills are below. The seven drawn with a `/aeo:` prefix are the
-operator-invoked ones, and `disable-model-invocation: true` in their
-frontmatter is what makes them so. The other eight carry no such flag and
-fire on their descriptions.
-
-```mermaid
-flowchart TB
-  subgraph dev["the development line, in the order it runs"]
-    direction TB
-    tddplan["tdd-plan"] --> rgr["red-green-refactor"]
-    rgr --> ci["tdd-ci"]
-    ci --> pr["safe-pr"]
-  end
-
-  subgraph obs["read-only, on no lane at all"]
-    direction TB
-    stat["/aeo:status"]
-    mon["monitor-design"]
-  end
-
-  scratch(["an empty directory"]) --> newproj["new-project"]
-  newproj -->|"scaffold to one green commit on main"| repo(["a repository the lanes can work in"])
-
-  repo --> triage["/aeo:triage"]
-  triage -->|"proposes issues, files none"| plan["/aeo:sprint-plan"]
-  plan -->|"files the backlog"| start["/aeo:sprint-start"]
-  start -->|"one issue = one worktree =<br>one branch = one PR"| tddplan
-
-  repo --> fix["/aeo:fix"]
-  fix -->|"skips the planning and the reviewer,<br>never the gates"| rgr
-
-  repo --> bulk["worker-dispatch"]
-  bulk -->|"many workers, one checkout, one commit.<br>No branch, no PR, no merge seat"| onecommit(["one commit"])
-
-  pr --> seat
-  pr -.->|"on demand, or on outsized<br>blast radius"| review["/aeo:review"]
-  pr -.->|"when the risk rubric asks for it"| verify["/aeo:verify"]
-  review -.-> seat
-  verify -.-> seat
-
-  seat{{"you merge, and only on<br>your explicit approval"}}
-  seat --> cleanup["safe-cleanup"]
-  cleanup -->|"retires the merged branch,<br>local only, never the remote"| done(["done"])
-
-  obs -.->|"report state, change none"| seat
-```
-
-Four things that map is for. The development line runs in one order and
-only that order, so a slice that has not been through `tdd-plan` has no
-plan for `red-green-refactor` to execute. `/aeo:fix` is a second entrance
-to the same line rather than a lane of its own, which is why it skips the
-ceremony and not the gates. `worker-dispatch` is the other way to write to
-your repository, and it stops at a commit without ever reaching a branch,
-a PR, or you. And every path that produces a pull request converges on one
-node you own.
-
-**Operator-invoked**
-
-| Skill | What it does |
-| --- | --- |
-| `fix` | A small, scoped fix straight to a founder-approved PR, skipping sprint planning and the reviewer. |
-| `review` | A three-stage read-only review of the current branch's diff against the default branch. |
-| `sprint-plan` | Decomposes a phase of the spec into a sprint backlog of GitHub issues. |
-| `sprint-start` | Dispatches the builder on the next unblocked issue, or several at once, up to the actor cap. |
-| `status` | Renders project state from git and GitHub just now, never from a memory file. |
-| `triage` | Turns a raw idea into scoped issue proposals. Proposes, never files. |
-| `verify` | Runs an independent verification of a change before it reaches you. |
-
-**Trigger on description**
-
-| Skill | What it does |
-| --- | --- |
-| `monitor-design` | Designs a job-specific monitoring overlay for one long-running job. |
-| `new-project` | Scaffolds a new repository the other skills can work in, to one green commit on `main`. |
-| `red-green-refactor` | Double-loop TDD: a failing acceptance test drives inner red/green/refactor cycles. |
-| `safe-cleanup` | Retires local branches once their PRs have merged or closed. Never touches the remote. |
-| `safe-pr` | Opens a reviewable PR with evidence attached, once a slice is green. |
-| `tdd-ci` | Writes the matching GitHub Actions workflow once a slice is green locally. |
-| `tdd-plan` | Splits new work into thin, independently valuable vertical slices before any code is written. |
-| `worker-dispatch` | Fans a bounded mechanical task across operation workers reaching one commit. |
-
-Five agent charters back these lanes: `builder`, `reviewer`, `triage`,
-`verifier`, `monitor-designer`.
+| Skill | How it runs | What it does |
+| --- | --- | --- |
+| `sprint-plan` | `/aeo:sprint-plan` only | Decomposes a phase of the spec into a sprint backlog of GitHub issues, each body drafted to disk for your review before anything is filed. |
+| `new-project` | on description | Stands up a new repository with its goal written down, to one green commit on `main`, and prepares branch protection. |
+| `build` | on description | How a change to existing code is made here: a bug, a small fix, a rename, a config tweak, a behaviour a slice plan names. |
+| `pr` | on description | Opens a pull request on a green branch, with a body that says what changed, what it cost and which number it expects to move. |
+| `safe-cleanup` | on description | Retires local branches whose pull requests are done, deleting only what you approve, with a recovery SHA logged for each. |
 
 ## The gates
 
@@ -208,14 +121,8 @@ The rules `gate` runs, each still its own module under `plugin/hooks/`:
 
 - **sandbox-guard**: a write, move or delete under the declared production
   data root that git cannot restore.
-- **redirect-guard** — a role subagent writing into `.claude/` through a shell
-  redirect or command (`>`, `tee`, `cp`, `sed -i`, and PowerShell
-  equivalents): the route around path-guard, which only sees the file-edit
-  tools.
-- **block-merge** — a subagent, or the GitHub forge tool, merging, or deleting
+- **block-merge**: a subagent, or the GitHub forge tool, merging, or deleting
   a branch.
-- **path-guard** — a role subagent editing the harness's own `.claude/`
-  configuration.
 
 `claude plugin details` reports **2 hooks** — that counts the event types
 these scripts are wired to (`SessionStart`, `PreToolUse`), not the scripts
@@ -224,8 +131,8 @@ themselves. Both numbers are correct; they're counting different things.
 ## Who merges
 
 You do. Always. Every lane stops at a pull request and waits for your
-approval; the plugin's own roles — builder, reviewer, triage — have no
-path to `git merge` or `gh pr merge`, no matter how they're invoked. Your
+approval; a subagent has no path to `git merge` or `gh pr merge`, no
+matter how it is invoked. Your
 own session merges, but only once you've approved it, never on a role's
 judgment and never before that approval. That's the product, not a
 limitation of it.
