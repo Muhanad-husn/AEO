@@ -167,15 +167,17 @@ function testsOverSource(dir) {
 // session-start section to call on every render.
 export function measureCost(dir, { homeDir = join(homedir(), '.claude'), pluginRoot = join(homeDir, 'plugins') } = {}) {
   const homeSettings = readJSON(join(homeDir, 'settings.json'));
-  const consumerSettings = readJSON(join(dir, '.claude', 'settings.json'));
-  const consumerLocalSettings = readJSON(join(dir, '.claude', 'settings.local.json'));
+  // A session outside a git repository has no project directory; measure the home
+  // directory and its plugins alone rather than throwing on join(null, ...).
+  const consumerSettings = dir ? readJSON(join(dir, '.claude', 'settings.json')) : null;
+  const consumerLocalSettings = dir ? readJSON(join(dir, '.claude', 'settings.local.json')) : null;
 
   const counts = { Bash: 0, Grep: 0, Read: 0, Task: 0 };
   tallyHooks(homeSettings, counts);
   tallyHooks(consumerSettings, counts);
   tallyHooks(consumerLocalSettings, counts);
 
-  let sessionStartLines = countLines(readText(join(homeDir, 'CLAUDE.md'))) + countLines(readText(join(dir, 'CLAUDE.md')));
+  let sessionStartLines = countLines(readText(join(homeDir, 'CLAUDE.md'))) + (dir ? countLines(readText(join(dir, 'CLAUDE.md'))) : 0);
 
   const installed = readJSON(join(pluginRoot, 'installed_plugins.json'));
   const enabledKeys = enabledPluginKeys(homeSettings, consumerSettings, consumerLocalSettings);

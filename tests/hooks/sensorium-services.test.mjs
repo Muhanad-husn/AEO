@@ -220,8 +220,8 @@ describe('renderSensorium(root) with the services section', () => {
 });
 
 describe('plugin.json', () => {
-  test('reads 1.0.0', () => {
+  test('reads 1.0.1', () => {
     const manifest = JSON.parse(readFileSync(new URL('../../plugin/.claude-plugin/plugin.json', import.meta.url), 'utf8'));
-    assert.equal(manifest.version, '1.0.0');
+    assert.equal(manifest.version, '1.0.1');
   });
 });

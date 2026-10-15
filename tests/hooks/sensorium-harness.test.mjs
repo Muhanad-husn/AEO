@@ -115,3 +115,13 @@ describe('scripts/score.mjs harness line, unchanged by the move', () => {
     assert.equal(lastLine, BASELINE_HARNESS_LINE);
   });
 });
+
+describe('50-harness.mjs outside a git repository', () => {
+  // A cloud session opened in a home directory has no worktree, so the composer
+  // passes a null root. The line still measures the home directory and its plugins.
+  test('a null root prints a harness line, not unknown', async () => {
+    process.env.AEO_HOME_DIR = fixtureHome;
+    const harnessLine = harnessLineOf(await renderSensorium(null));
+    assert.ok(harnessLine, `expected a harness: line, got ${JSON.stringify(await renderSensorium(null))}`);
+  });
+});
